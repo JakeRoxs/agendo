@@ -1,0 +1,274 @@
+{
+    "name": "file-todos",
+    "displayName": "File Todos Manager",
+    "description": "View, filter, and manage markdown-file-backed todos (docs/todos) from an Activity Bar TreeView.",
+    "version": "0.0.1",
+    "publisher": "jakemorgeson",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/jakemorgeson/todo-ext.git"
+    },
+    "engines": {
+        "vscode": "^1.103.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "keywords": [
+        "todo",
+        "markdown",
+        "tasks",
+        "file-todos"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "file-todos-container",
+                    "title": "File Todos",
+                    "icon": "$(checklist)"
+                }
+            ]
+        },
+        "views": {
+            "file-todos-container": [
+                {
+                    "id": "file-todos.todos",
+                    "name": "Todos",
+                    "icon": "$(checklist)",
+                    "contextualTitle": "File Todos"
+                }
+            ]
+        },
+        "viewsWelcome": [
+            {
+                "view": "file-todos.todos",
+                "contents": "No todos found in the configured root folder.\n[Create a Todo](command:file-todos.createTodo)\n[Choose Root Folder](command:file-todos.chooseRoot)"
+            }
+        ],
+        "commands": [
+            {
+                "command": "file-todos.refresh",
+                "title": "Refresh",
+                "category": "File Todos",
+                "icon": "$(refresh)"
+            },
+            {
+                "command": "file-todos.filter",
+                "title": "Filter Todos...",
+                "category": "File Todos",
+                "icon": "$(filter)"
+            },
+            {
+                "command": "file-todos.search",
+                "title": "Search Todos...",
+                "category": "File Todos",
+                "icon": "$(search)"
+            },
+            {
+                "command": "file-todos.clearFilters",
+                "title": "Clear Filters",
+                "category": "File Todos",
+                "icon": "$(clear-all)"
+            },
+            {
+                "command": "file-todos.createTodo",
+                "title": "Create Todo...",
+                "category": "File Todos",
+                "icon": "$(add)"
+            },
+            {
+                "command": "file-todos.openPreview",
+                "title": "Open in Preview",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setStatus.pending",
+                "title": "Set Status: Pending",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setStatus.ready",
+                "title": "Set Status: Ready",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setStatus.backlogged",
+                "title": "Set Status: Backlogged",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setStatus.complete",
+                "title": "Set Status: Complete",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setStatus.cancelled",
+                "title": "Set Status: Cancelled",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.setPriority",
+                "title": "Set Priority...",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.chooseRoot",
+                "title": "Choose Root Folder...",
+                "category": "File Todos"
+            },
+            {
+                "command": "file-todos.toggleGitignore",
+                "title": "Toggle Gitignore Todos Folder",
+                "category": "File Todos"
+            }
+        ],
+        "menus": {
+            "view/title": [
+                {
+                    "command": "file-todos.createTodo",
+                    "when": "view == file-todos.todos",
+                    "group": "navigation@1"
+                },
+                {
+                    "command": "file-todos.search",
+                    "when": "view == file-todos.todos",
+                    "group": "navigation@2"
+                },
+                {
+                    "command": "file-todos.filter",
+                    "when": "view == file-todos.todos",
+                    "group": "navigation@3"
+                },
+                {
+                    "command": "file-todos.refresh",
+                    "when": "view == file-todos.todos",
+                    "group": "navigation@4"
+                },
+                {
+                    "command": "file-todos.clearFilters",
+                    "when": "view == file-todos.todos",
+                    "group": "1_filters@1"
+                },
+                {
+                    "command": "file-todos.chooseRoot",
+                    "when": "view == file-todos.todos",
+                    "group": "2_config@1"
+                },
+                {
+                    "command": "file-todos.toggleGitignore",
+                    "when": "view == file-todos.todos",
+                    "group": "2_config@2"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "file-todos.openPreview",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "1_open@1"
+                },
+                {
+                    "command": "file-todos.setStatus.pending",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "2_status@1"
+                },
+                {
+                    "command": "file-todos.setStatus.ready",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "2_status@2"
+                },
+                {
+                    "command": "file-todos.setStatus.backlogged",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "2_status@3"
+                },
+                {
+                    "command": "file-todos.setStatus.complete",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "2_status@4"
+                },
+                {
+                    "command": "file-todos.setStatus.cancelled",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "2_status@5"
+                },
+                {
+                    "command": "file-todos.setPriority",
+                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "group": "3_priority@1"
+                }
+            ]
+        },
+        "configuration": {
+            "title": "File Todos",
+            "properties": {
+                "file-todos.root": {
+                    "type": "string",
+                    "default": "docs/todos",
+                    "description": "Workspace-relative path to the root todos folder."
+                },
+                "file-todos.defaultPriority": {
+                    "type": "string",
+                    "enum": [
+                        "p1",
+                        "p2",
+                        "p3"
+                    ],
+                    "default": "p3",
+                    "description": "Default priority applied to newly created todos."
+                },
+                "file-todos.completeFolder": {
+                    "type": "string",
+                    "default": "complete",
+                    "description": "Subfolder name (under the root) for completed todos."
+                },
+                "file-todos.cancelledFolder": {
+                    "type": "string",
+                    "default": "cancelled",
+                    "description": "Subfolder name (under the root) for cancelled todos."
+                },
+                "file-todos.backlogFolder": {
+                    "type": "string",
+                    "default": "backlog",
+                    "description": "Subfolder name (under the root) for backlogged todos."
+                },
+                "file-todos.openInPreview": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Open todos in Markdown preview instead of the text editor."
+                },
+                "file-todos.gitignoreTodos": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When enabled, write a .gitignore containing '*' into the todos root folder."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile && npm run lint",
+        "lint": "eslint src --ext ts",
+        "test": "node ./out/test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/glob": "^8.1.0",
+        "@types/mocha": "^10.0.10",
+        "@types/node": "16.x",
+        "@types/vscode": "^1.103.0",
+        "@typescript-eslint/eslint-plugin": "^5.45.0",
+        "@typescript-eslint/parser": "^5.45.0",
+        "@vscode/test-electron": "^2.2.0",
+        "eslint": "^8.28.0",
+        "glob": "^8.1.0",
+        "mocha": "^10.8.2",
+        "prettier": "^2.8.8",
+        "typescript": "^4.9.3"
+    }
+}
