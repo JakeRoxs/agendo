@@ -16,3 +16,8 @@ All notable changes to the File Todos Manager extension are documented here.
 - Create-todo command with next-id allocation and a built-in template.
 - `.todos-config.json` projection and `*` `.gitignore` toggle for the
   file-todos skill config bridge.
+- Bundled `file-todos` skill (`resources/skill/`) with install/enable and
+  update-from-source commands (`file-todos.enableSkill`, `file-todos.updateSkill`)
+  and a `file-todos.skillUpdateSource` setting.
+- Broken-link flagging: moving/renaming a todo warns when other todos still
+  reference its old filename (no auto-rewrite).

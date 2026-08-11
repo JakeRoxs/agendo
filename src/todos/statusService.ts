@@ -34,9 +34,9 @@ export class StatusService {
     }
 
     /** Change a todo's status, moving/renaming the file and updating its body. */
-    async setStatus(todo: Todo, newStatus: TodoStatus): Promise<void> {
+    async setStatus(todo: Todo, newStatus: TodoStatus): Promise<vscode.Uri | undefined> {
         if (todo.status === newStatus) {
-            return;
+            return undefined;
         }
 
         const bytes = await vscode.workspace.fs.readFile(todo.uri);
@@ -60,13 +60,13 @@ export class StatusService {
             todo.description
         );
 
-        await this.writeAndMove(todo, content, targetFolder, newName);
+        return this.writeAndMove(todo, content, targetFolder, newName);
     }
 
     /** Change a todo's priority, renaming the file and updating frontmatter. */
-    async setPriority(todo: Todo, newPriority: TodoPriority): Promise<void> {
+    async setPriority(todo: Todo, newPriority: TodoPriority): Promise<vscode.Uri | undefined> {
         if (todo.priority === newPriority) {
-            return;
+            return undefined;
         }
         const bytes = await vscode.workspace.fs.readFile(todo.uri);
         let content = Buffer.from(bytes).toString("utf8");
@@ -78,19 +78,19 @@ export class StatusService {
             newPriority,
             todo.description
         );
-        await this.writeAndMove(todo, content, todo.folder, newName);
+        return this.writeAndMove(todo, content, todo.folder, newName);
     }
 
     /**
      * Write the new content to the target location and remove the old file when
-     * the path changed.
+     * the path changed. Returns the URI the todo now lives at.
      */
     private async writeAndMove(
         todo: Todo,
         content: string,
         targetFolder: string,
         newName: string
-    ): Promise<void> {
+    ): Promise<vscode.Uri> {
         const rootUri = this.config.getRootUri();
         if (!rootUri) {
             throw new Error("No workspace root configured for todos.");
@@ -111,6 +111,8 @@ export class StatusService {
                 out`Failed to delete old todo file ${todo.uri.fsPath}: ${error}`;
             }
         }
+
+        return targetUri;
     }
 
     /** Replace a scalar frontmatter field, inserting it if missing. */

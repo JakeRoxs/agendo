@@ -39,6 +39,12 @@ naming contract:
   `file-todos` skill can read the active `root` and `gitignored` flag and choose
   its file-discovery strategy.
 - **Gitignore toggle**: optionally write a `*` `.gitignore` into the todos root.
+- **Bundled `file-todos` skill**: install/enable the skill into
+  `~/.agents/skills/file-todos/` from the view menu, and update it from a
+  configurable raw GitHub source.
+- **Broken-link flagging**: when a status/priority change moves or renames a
+  todo, other todos that still reference the old filename are flagged (v1 warns
+  and offers "Show Referrers"; it does not auto-rewrite links).
 
 ## Settings
 
@@ -51,6 +57,7 @@ naming contract:
 | `file-todos.backlogFolder` | `backlog` | Subfolder for backlogged todos. |
 | `file-todos.openInPreview` | `true` | Open todos in Markdown preview. |
 | `file-todos.gitignoreTodos` | `false` | Write a `*` `.gitignore` in the root. |
+| `file-todos.skillUpdateSource` | GitHub raw base URL | Base URL used by "Update file-todos Skill from Source". |
 
 ## Development
 
@@ -67,10 +74,7 @@ npm test          # compile + lint + integration tests
 
 ## Not yet implemented (planned)
 
-- Bundling the `file-todos` skill in the `.vsix` with an enable/install settings panel.
-- Optional update-from-GitHub source for the skill.
-- Flagging broken absolute cross-reference links on move/rename.
-- A richer webview "board" view.
+- A richer webview "board" view with drag-drop status columns.
 
-See `docs/todos/060-pending-p3-vscode-extension-file-todos-manager.md` for the
+See `docs/todos/001-pending-p3-vscode-extension-file-todos-manager.md` for the
 full design and open questions.

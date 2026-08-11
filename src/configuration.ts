@@ -15,6 +15,7 @@ export enum Settings {
     BacklogFolder = "backlogFolder",
     OpenInPreview = "openInPreview",
     GitignoreTodos = "gitignoreTodos",
+    SkillUpdateSource = "skillUpdateSource",
 }
 
 /**

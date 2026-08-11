@@ -1,0 +1,10 @@
+{
+  "name": "file-todos",
+  "source": "compound-engineering",
+  "description": "This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory.",
+  "description_ja": "File Todos",
+  "categories": [],
+  "version": "1.1.0",
+  "metadataVersion": 2,
+  "installedVia": "file-todos-extension"
+}

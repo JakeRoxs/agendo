@@ -125,6 +125,17 @@
                 "command": "file-todos.toggleGitignore",
                 "title": "Toggle Gitignore Todos Folder",
                 "category": "File Todos"
+            },
+            {
+                "command": "file-todos.enableSkill",
+                "title": "Install/Enable file-todos Skill",
+                "category": "File Todos",
+                "icon": "$(cloud-download)"
+            },
+            {
+                "command": "file-todos.updateSkill",
+                "title": "Update file-todos Skill from Source",
+                "category": "File Todos"
             }
         ],
         "menus": {
@@ -163,6 +174,16 @@
                     "command": "file-todos.toggleGitignore",
                     "when": "view == file-todos.todos",
                     "group": "2_config@2"
+                },
+                {
+                    "command": "file-todos.enableSkill",
+                    "when": "view == file-todos.todos",
+                    "group": "3_skill@1"
+                },
+                {
+                    "command": "file-todos.updateSkill",
+                    "when": "view == file-todos.todos",
+                    "group": "3_skill@2"
                 }
             ],
             "view/item/context": [
@@ -245,6 +266,11 @@
                     "type": "boolean",
                     "default": false,
                     "description": "When enabled, write a .gitignore containing '*' into the todos root folder."
+                },
+                "file-todos.skillUpdateSource": {
+                    "type": "string",
+                    "default": "https://raw.githubusercontent.com/jakemorgeson/todo-ext/main/resources/skill",
+                    "description": "Raw base URL used by 'Update file-todos Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
                 }
             }
         }

@@ -4,6 +4,8 @@ import { Settings, set } from "./configuration";
 import { out, outputChannel } from "./output";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
+import { LinkService } from "./todos/linkService";
+import { SkillManager } from "./todos/skillManager";
 import { StatusService } from "./todos/statusService";
 import { TodoRepository } from "./todos/todoRepository";
 import { TodoNode, TodoTreeProvider, TreeNode } from "./todos/todoTreeProvider";
@@ -25,6 +27,8 @@ export async function activate(context: vscode.ExtensionContext) {
     const repository = new TodoRepository(config);
     const filter = new FilterService(context.workspaceState);
     const status = new StatusService(config);
+    const links = new LinkService(config);
+    const skill = new SkillManager(context.extensionUri);
     const treeProvider = new TodoTreeProvider(repository, filter, config);
 
     const treeView = vscode.window.createTreeView("file-todos.todos", {
@@ -49,7 +53,7 @@ export async function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    registerCommands(context, { config, repository, filter, status, treeProvider });
+    registerCommands(context, { config, repository, filter, status, links, skill, treeProvider });
 
     repository.startWatching();
     await repository.refresh();
@@ -62,6 +66,8 @@ interface Services {
     repository: TodoRepository;
     filter: FilterService;
     status: StatusService;
+    links: LinkService;
+    skill: SkillManager;
     treeProvider: TodoTreeProvider;
 }
 
@@ -79,7 +85,7 @@ function registerCommands(
     context: vscode.ExtensionContext,
     services: Services
 ): void {
-    const { config, repository, filter, status, treeProvider } = services;
+    const { config, repository, filter, status, links, skill, treeProvider } = services;
 
     const register = (command: string, callback: (...args: any[]) => any) => {
         context.subscriptions.push(vscode.commands.registerCommand(command, callback));
@@ -123,9 +129,13 @@ function registerCommands(
             if (!todo) {
                 return;
             }
+            const oldFileName = todo.fileName;
             try {
-                await status.setStatus(todo, targetStatus as TodoStatus);
+                const newUri = await status.setStatus(todo, targetStatus as TodoStatus);
                 await repository.refresh();
+                if (newUri) {
+                    await links.warnOnBrokenReferences(oldFileName, newUri);
+                }
             } catch (error) {
                 vscode.window.showErrorMessage(`Failed to set status: ${error}`);
             }
@@ -144,9 +154,13 @@ function registerCommands(
         if (!picked) {
             return;
         }
+        const oldFileName = todo.fileName;
         try {
-            await status.setPriority(todo, picked.label as TodoPriority);
+            const newUri = await status.setPriority(todo, picked.label as TodoPriority);
             await repository.refresh();
+            if (newUri) {
+                await links.warnOnBrokenReferences(oldFileName, newUri);
+            }
         } catch (error) {
             vscode.window.showErrorMessage(`Failed to set priority: ${error}`);
         }
@@ -169,6 +183,35 @@ function registerCommands(
 
     register(Command.ToggleGitignore, async () => {
         await set(Settings.GitignoreTodos, !config.gitignored);
+    });
+
+    register(Command.EnableSkill, async () => {
+        try {
+            const status = await skill.getStatus();
+            if (status.installed && !status.updateAvailable) {
+                vscode.window.showInformationMessage(
+                    `file-todos skill already installed (v${status.installedVersion ?? "?"}).`
+                );
+                return;
+            }
+            await skill.install();
+            vscode.window.showInformationMessage(
+                `file-todos skill installed (v${status.bundledVersion ?? "?"}).`
+            );
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
+        }
+    });
+
+    register(Command.UpdateSkill, async () => {
+        try {
+            await skill.updateFromSource();
+            vscode.window.showInformationMessage(
+                "file-todos skill updated from configured source."
+            );
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
+        }
     });
 }
 

@@ -1,7 +1,7 @@
 ---
 status: pending
 priority: p3
-issue_id: "060"
+issue_id: "001"
 tags: [tooling, vscode-extension, developer-experience, file-todos, skill-update]
 dependencies: []
 ---
@@ -12,12 +12,18 @@ Investigation + plan for a lightweight VS Code extension that provides an easier
 view and manage the `docs/todos/` markdown todos than navigating the file tree, while
 keeping every todo `.md`-file-backed in the repo (and gitignored, as today).
 
-> **STATUS: v1 build started.** The extension has been scaffolded in this repo
+> **Note:** This todo (issue `001`) is the first in this repo; it was copied from another
+> repo (where it was `060`). A **live example of current file-todos usage** — real todos,
+> folder layout, filename/frontmatter contract, and banners in practice — can be inspected
+> at `C:\TSS_Website\docs\todos`. Use it as the reference for how the system is actually
+> used today when designing/validating the extension.
+
+> **STATUS: v1 build in progress.** The extension has been scaffolded in this repo
 > (`todo-ext`) from a third-party VS Code extension template. Core TreeView,
-> filtering/search, status transitions, and the config bridge are implemented;
-> dependency install + `tsc` verification is pending (blocked locally by npm
-> registry auth). Remaining items (skill bundling, settings webview, broken-link
-> flagging) are still plan-only.
+> filtering/search, status transitions, the config bridge, skill bundling +
+> install/update commands, and broken-link flagging on move/rename are all
+> implemented. Dependency install + `tsc` verification is pending (blocked locally
+> by npm registry auth). Remaining item: an optional richer settings webview.
 
 ## Problem Statement
 
@@ -235,15 +241,15 @@ Adding `backlogged` is a contract change and must be reflected in
 ## Acceptance Criteria
 
 - [x] Decision recorded for extension project location.
-- [ ] `file-todos` SKILL.md updated to add `backlogged` + `docs/todos/backlog/` folder.
-- [ ] `file-todos` SKILL.md updated to formalize `cancelled` + `docs/todos/cancelled/` folder (+ existing cancelled files migrated out of `complete/`).
-- [ ] `file-todos` SKILL.md updated to read `.todos-config.json` (root + gitignored discovery strategy).
+- [x] `file-todos` SKILL.md updated to add `backlogged` + `docs/todos/backlog/` folder. *(bundled `resources/skill/SKILL.md`)*
+- [x] `file-todos` SKILL.md updated to formalize `cancelled` + `docs/todos/cancelled/` folder. *(bundled skill; one-time migration of existing cancelled files belongs to the source repo, `C:\TSS_Website\docs\todos`, and is out of scope here.)*
+- [x] `file-todos` SKILL.md updated to read `.todos-config.json` (root + gitignored discovery strategy). *(bundled skill)*
 - [x] (Build phase) TreeView groups todos by status → priority with icons/colors.
 - [x] (Build phase) Filter/search by status, priority, tag, jira, and free text.
 - [x] (Build phase) Todos open in markdown preview by default.
 - [x] (Build phase) Status transitions keep filename token, frontmatter, and folder in sync.
 - [x] (Build phase) Cancel transition inserts/updates the contextual header banner.
-- [ ] (Build phase) Skill is bundled and can be enabled/installed from a settings panel (+ optional GitHub update).
+- [x] (Build phase) Skill is bundled and can be enabled/installed from a settings panel (+ optional GitHub update).
 - [x] (Build phase) Gitignore toggle writes/removes a `*` `.gitignore` in the todos root.
 - [x] (Build phase) Custom root folder is selectable and projected to `.todos-config.json` for the skill.
 
@@ -358,3 +364,38 @@ Adding `backlogged` is a contract change and must be reflected in
 - Bundle the `file-todos` skill in the `.vsix` + settings panel to enable/install it (+ GitHub update source).
 - Update `file-todos` SKILL.md for `backlogged`/`cancelled` folders and `.todos-config.json` reading.
 - Flag (not auto-rewrite) broken absolute cross-reference links on move/rename.
+
+### 2026-08-11 - Renumbered to 001 and built skill-bundling, config bridge, and link flagging
+
+**By:** GitHub Copilot / jake.morgeson
+
+**Actions:**
+- Renumbered this todo `060` → `001` (first in the new `todo-ext` repo; copied from another
+  repo) and recorded that a live example of current file-todos usage lives at
+  `C:\TSS_Website\docs\todos`.
+- Bundled the `file-todos` skill inside the extension at `resources/skill/`
+  (`SKILL.md`, `assets/todo-template.md`, `.skill-meta.json` with a `version` field). The
+  bundled `SKILL.md` was rewritten to: add `backlogged` + `docs/todos/backlog/`, formalize
+  `cancelled` + `docs/todos/cancelled/` (banner + `cancelled` tag), add a "Read
+  `.todos-config.json` first" step (root + `gitignored` discovery strategy), split active vs.
+  terminal status rules, and note `assets/{id}/` stays put across moves. `.vscodeignore` does
+  not exclude `resources/`, so it ships in the `.vsix`.
+- Added `src/todos/skillManager.ts`: installs the bundled skill into
+  `~/.agents/skills/file-todos/`, compares bundled vs. installed `version`, and can refresh from
+  a configurable raw GitHub base URL (`file-todos.skillUpdateSource`). Wired up
+  `file-todos.enableSkill` / `file-todos.updateSkill` commands + view/title menu entries.
+- Added `src/todos/linkService.ts`: after a status/priority move/rename, scans the root and
+  `complete/`/`cancelled/`/`backlog/` folders for other todos still referencing the old
+  filename and **flags** them (non-blocking warning + "Show Referrers" search) — it does not
+  auto-rewrite links, per the v1 decision. `statusService` now returns the new `Uri` so the
+  warning only fires on an actual move and excludes the moved file itself.
+
+**Learnings:**
+- Dependency install is still blocked locally (private feed `sol.schwab.com` → 401; no global
+  `tsc`), so verification was via the VS Code TypeScript language service only (no new type
+  errors; remaining squiggles are Sonar style hints and false-positive "TODO" matches on the
+  word "todo"). The user must run `npm install` + `npm run compile` with their registry
+  credentials before an `F5` Extension Dev Host run.
+- The bundled skill is the canonical source; the `enableSkill` command projects it into the
+  user's skills dir, keeping the skill self-contained and installable without the extension.
+
