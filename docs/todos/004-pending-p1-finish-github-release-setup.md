@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "004"
 tags: [github, actions, ci, release, vsix]

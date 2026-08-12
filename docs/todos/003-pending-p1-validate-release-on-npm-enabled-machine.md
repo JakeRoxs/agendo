@@ -1,5 +1,5 @@
 ---
-status: pending
+status: completed
 priority: p1
 issue_id: "003"
 tags: [release, validation, npm, vscode-extension, vsix]
