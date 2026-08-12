@@ -32,7 +32,7 @@ under the correct account with the final name `agendo`.
     and `agendo.skillUpdateSource` default → `https://github.com/JakeRoxs/agendo`
     / `https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill`.
   - `resources/skill/SKILL.md`: extension link → `https://github.com/JakeRoxs/agendo`.
-- Physical folder is still `todo-ext` (rename handled separately).
+- The local repository folder has been renamed to `agendo`.
 - The `.vscode/*.code-workspace` scaffolding file was removed.
 
 ## Recommended Action

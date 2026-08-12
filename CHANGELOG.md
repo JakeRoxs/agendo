@@ -2,7 +2,7 @@
 
 All notable changes to the Agendo extension are documented here.
 
-## [0.0.1] - Unreleased
+## [0.1.0] - Unreleased
 
 ### Added
 
