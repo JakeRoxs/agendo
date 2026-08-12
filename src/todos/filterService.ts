@@ -9,7 +9,7 @@ export interface TodoFilter {
     text?: string;
 }
 
-const STATE_KEY = "file-todos.filter";
+const STATE_KEY = "agendo.filter";
 
 /** Holds the current filter state and persists it in workspace state. */
 export class FilterService {

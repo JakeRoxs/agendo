@@ -1,27 +1,27 @@
 /**
- * Command identifiers for the File Todos extension.
+ * Command identifiers for the Agendo extension.
  *
- * Commands follow the format: "file-todos.commandName".
+ * Commands follow the format: "agendo.commandName".
  */
 export enum Command {
-    Refresh = "file-todos.refresh",
-    Filter = "file-todos.filter",
-    Search = "file-todos.search",
-    ClearFilters = "file-todos.clearFilters",
-    CreateTodo = "file-todos.createTodo",
-    OpenPreview = "file-todos.openPreview",
-    SetStatusPending = "file-todos.setStatus.pending",
-    SetStatusReady = "file-todos.setStatus.ready",
-    SetStatusBacklogged = "file-todos.setStatus.backlogged",
-    SetStatusComplete = "file-todos.setStatus.complete",
-    SetStatusCancelled = "file-todos.setStatus.cancelled",
-    SetPriority = "file-todos.setPriority",
-    ChooseRoot = "file-todos.chooseRoot",
-    ToggleGitignore = "file-todos.toggleGitignore",
-    TogglePreview = "file-todos.togglePreview",
-    SetDefaultRoot = "file-todos.setDefault.root",
-    SetDefaultPriority = "file-todos.setDefault.priority",
-    SetDefaultPreview = "file-todos.setDefault.preview",
-    EnableSkill = "file-todos.enableSkill",
-    UpdateSkill = "file-todos.updateSkill",
+    Refresh = "agendo.refresh",
+    Filter = "agendo.filter",
+    Search = "agendo.search",
+    ClearFilters = "agendo.clearFilters",
+    CreateTodo = "agendo.createTodo",
+    OpenPreview = "agendo.openPreview",
+    SetStatusPending = "agendo.setStatus.pending",
+    SetStatusReady = "agendo.setStatus.ready",
+    SetStatusBacklogged = "agendo.setStatus.backlogged",
+    SetStatusComplete = "agendo.setStatus.complete",
+    SetStatusCancelled = "agendo.setStatus.cancelled",
+    SetPriority = "agendo.setPriority",
+    ChooseRoot = "agendo.chooseRoot",
+    ToggleGitignore = "agendo.toggleGitignore",
+    TogglePreview = "agendo.togglePreview",
+    SetDefaultRoot = "agendo.setDefault.root",
+    SetDefaultPriority = "agendo.setDefault.priority",
+    SetDefaultPreview = "agendo.setDefault.preview",
+    EnableSkill = "agendo.enableSkill",
+    UpdateSkill = "agendo.updateSkill",
 }

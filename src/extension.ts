@@ -31,7 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const skill = new SkillManager(context.extensionUri);
   const treeProvider = new TodoTreeProvider(repository, filter, config);
 
-  const treeView = vscode.window.createTreeView("file-todos.todos", {
+  const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
   });
@@ -137,7 +137,7 @@ function registerCommands(
   });
 
   for (const targetStatus of TODO_STATUSES) {
-    register(`file-todos.setStatus.${targetStatus}`, async (arg: unknown) => {
+    register(`agendo.setStatus.${targetStatus}`, async (arg: unknown) => {
       const todo = resolveTodo(arg);
       if (!todo) {
         return;
@@ -253,7 +253,7 @@ function registerCommands(
       const status = await skill.getStatus();
       if (status.installed && !status.updateAvailable) {
         vscode.window.showInformationMessage(
-          `file-todos skill already installed (v${
+          `Agendo skill already installed (v${
             status.installedVersion ?? "?"
           }).`,
         );
@@ -261,7 +261,7 @@ function registerCommands(
       }
       await skill.install();
       vscode.window.showInformationMessage(
-        `file-todos skill installed (v${status.bundledVersion ?? "?"}).`,
+        `Agendo skill installed (v${status.bundledVersion ?? "?"}).`,
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
@@ -272,7 +272,7 @@ function registerCommands(
     try {
       await skill.updateFromSource();
       vscode.window.showInformationMessage(
-        "file-todos skill updated from configured source.",
+        "Agendo skill updated from configured source.",
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);

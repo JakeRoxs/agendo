@@ -1,17 +1,18 @@
 {
-    "name": "file-todos",
-    "displayName": "File Todos Manager",
-    "description": "View, filter, and manage markdown-file-backed todos (docs/todos) from an Activity Bar TreeView.",
+    "name": "agendo",
+    "displayName": "Agendo",
+    "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
     "version": "0.1.0",
     "publisher": "jakemorgeson",
+    "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/JakeRoxs/vscode-llm-todos.git"
+        "url": "https://github.com/JakeRoxs/agendo.git"
     },
     "bugs": {
-        "url": "https://github.com/JakeRoxs/vscode-llm-todos/issues"
+        "url": "https://github.com/JakeRoxs/agendo/issues"
     },
-    "homepage": "https://github.com/JakeRoxs/vscode-llm-todos#readme",
+    "homepage": "https://github.com/JakeRoxs/agendo#readme",
     "engines": {
         "vscode": "^1.103.0"
     },
@@ -22,257 +23,259 @@
         "todo",
         "markdown",
         "tasks",
-        "file-todos"
+        "agendo"
     ],
     "activationEvents": [],
     "main": "./out/extension.js",
     "contributes": {
-        "activationEvents": [
-            { "event": "onView:file-todos.todos" }
-        ],
         "viewsContainers": {
             "activitybar": [
                 {
-                    "id": "file-todos-container",
-                    "title": "File Todos",
+                    "id": "agendo-container",
+                    "title": "Agendo",
                     "icon": "$(checklist)"
                 }
             ]
         },
         "views": {
-            "file-todos-container": [
+            "agendo-container": [
                 {
-                    "id": "file-todos.todos",
+                    "id": "agendo.todos",
                     "name": "Todos",
                     "icon": "$(checklist)",
-                    "contextualTitle": "File Todos"
+                    "contextualTitle": "Agendo"
                 }
             ]
         },
         "viewsWelcome": [
             {
-                "view": "file-todos.todos",
-                "contents": "No todos found in the configured root folder.\n[Create a Todo](command:file-todos.createTodo)\n[Choose Root Folder](command:file-todos.chooseRoot)"
+                "view": "agendo.todos",
+                "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)"
             }
         ],
         "commands": [
             {
-                "command": "file-todos.refresh",
+                "command": "agendo.refresh",
                 "title": "Refresh",
-                "category": "File Todos",
+                "category": "Agendo",
                 "icon": "$(refresh)"
             },
             {
-                "command": "file-todos.filter",
+                "command": "agendo.filter",
                 "title": "Filter Todos...",
-                "category": "File Todos",
+                "category": "Agendo",
                 "icon": "$(filter)"
             },
             {
-                "command": "file-todos.search",
+                "command": "agendo.search",
                 "title": "Search Todos...",
-                "category": "File Todos",
+                "category": "Agendo",
                 "icon": "$(search)"
             },
             {
-                "command": "file-todos.clearFilters",
+                "command": "agendo.clearFilters",
                 "title": "Clear Filters",
-                "category": "File Todos",
+                "category": "Agendo",
                 "icon": "$(clear-all)"
             },
             {
-                "command": "file-todos.createTodo",
+                "command": "agendo.createTodo",
                 "title": "Create Todo...",
-                "category": "File Todos",
+                "category": "Agendo",
                 "icon": "$(add)"
             },
             {
-                "command": "file-todos.openPreview",
+                "command": "agendo.openPreview",
                 "title": "Open in Preview",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setStatus.pending",
+                "command": "agendo.setStatus.pending",
                 "title": "Set Status: Pending",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setStatus.ready",
+                "command": "agendo.setStatus.ready",
                 "title": "Set Status: Ready",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setStatus.backlogged",
+                "command": "agendo.setStatus.backlogged",
                 "title": "Set Status: Backlogged",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setStatus.complete",
+                "command": "agendo.setStatus.complete",
                 "title": "Set Status: Complete",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setStatus.cancelled",
+                "command": "agendo.setStatus.cancelled",
                 "title": "Set Status: Cancelled",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setPriority",
+                "command": "agendo.setPriority",
                 "title": "Set Priority...",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.chooseRoot",
+                "command": "agendo.chooseRoot",
                 "title": "Choose Root Folder...",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.toggleGitignore",
+                "command": "agendo.toggleGitignore",
                 "title": "Toggle Gitignore Todos Folder",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setDefault.root",
+                "command": "agendo.togglePreview",
+                "title": "Toggle Open In Preview",
+                "category": "Agendo"
+            },
+            {
+                "command": "agendo.setDefault.root",
                 "title": "Set Default Root Folder...",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setDefault.priority",
+                "command": "agendo.setDefault.priority",
                 "title": "Set Default Priority...",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.setDefault.preview",
+                "command": "agendo.setDefault.preview",
                 "title": "Set Default Preview Behavior...",
-                "category": "File Todos"
+                "category": "Agendo"
             },
             {
-                "command": "file-todos.enableSkill",
-                "title": "Install/Enable file-todos Skill",
-                "category": "File Todos",
+                "command": "agendo.enableSkill",
+                "title": "Install/Enable Agendo Skill",
+                "category": "Agendo",
                 "icon": "$(cloud-download)"
             },
             {
-                "command": "file-todos.updateSkill",
-                "title": "Update file-todos Skill from Source",
-                "category": "File Todos"
+                "command": "agendo.updateSkill",
+                "title": "Update Agendo Skill from Source",
+                "category": "Agendo"
             }
         ],
         "menus": {
             "view/title": [
                 {
-                    "command": "file-todos.createTodo",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.createTodo",
+                    "when": "view == agendo.todos",
                     "group": "navigation@1"
                 },
                 {
-                    "command": "file-todos.search",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.search",
+                    "when": "view == agendo.todos",
                     "group": "navigation@2"
                 },
                 {
-                    "command": "file-todos.filter",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.filter",
+                    "when": "view == agendo.todos",
                     "group": "navigation@3"
                 },
                 {
-                    "command": "file-todos.refresh",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.refresh",
+                    "when": "view == agendo.todos",
                     "group": "navigation@4"
                 },
                 {
-                    "command": "file-todos.clearFilters",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.clearFilters",
+                    "when": "view == agendo.todos",
                     "group": "1_filters@1"
                 },
                 {
-                    "command": "file-todos.chooseRoot",
-                    "when": "view == file-todos.todos",
+                    "command": "agendo.chooseRoot",
+                    "when": "view == agendo.todos",
                     "group": "2_config@1"
                 },
-            {
-                "command": "file-todos.toggleGitignore",
-                "when": "view == file-todos.todos",
-                "group": "2_config@2"
-            },
-            {
-                "command": "file-todos.togglePreview",
-                "when": "view == file-todos.todos",
-                "group": "2_config@3"
-            },
-            {
-                "command": "file-todos.setDefault.root",
-                "when": "view == file-todos.todos",
-                "group": "more_actions@1"
-            },
-            {
-                "command": "file-todos.setDefault.priority",
-                "when": "view == file-todos.todos",
-                "group": "more_actions@2"
-            },
-            {
-                "command": "file-todos.setDefault.preview",
-                "when": "view == file-todos.todos",
-                "group": "more_actions@3"
-            },
-            {
-                "command": "file-todos.enableSkill",
-                "when": "view == file-todos.todos",
-                "group": "3_skill@1"
-            },
-            {
-                "command": "file-todos.updateSkill",
-                "when": "view == file-todos.todos",
-                "group": "3_skill@2"
-            }
+                {
+                    "command": "agendo.toggleGitignore",
+                    "when": "view == agendo.todos",
+                    "group": "2_config@2"
+                },
+                {
+                    "command": "agendo.togglePreview",
+                    "when": "view == agendo.todos",
+                    "group": "2_config@3"
+                },
+                {
+                    "command": "agendo.setDefault.root",
+                    "when": "view == agendo.todos",
+                    "group": "more_actions@1"
+                },
+                {
+                    "command": "agendo.setDefault.priority",
+                    "when": "view == agendo.todos",
+                    "group": "more_actions@2"
+                },
+                {
+                    "command": "agendo.setDefault.preview",
+                    "when": "view == agendo.todos",
+                    "group": "more_actions@3"
+                },
+                {
+                    "command": "agendo.enableSkill",
+                    "when": "view == agendo.todos",
+                    "group": "3_skill@1"
+                },
+                {
+                    "command": "agendo.updateSkill",
+                    "when": "view == agendo.todos",
+                    "group": "3_skill@2"
+                }
             ],
             "view/item/context": [
                 {
-                    "command": "file-todos.openPreview",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.openPreview",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "1_open@1"
                 },
                 {
-                    "command": "file-todos.setStatus.pending",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setStatus.pending",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "2_status@1"
                 },
                 {
-                    "command": "file-todos.setStatus.ready",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setStatus.ready",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "2_status@2"
                 },
                 {
-                    "command": "file-todos.setStatus.backlogged",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setStatus.backlogged",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "2_status@3"
                 },
                 {
-                    "command": "file-todos.setStatus.complete",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setStatus.complete",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "2_status@4"
                 },
                 {
-                    "command": "file-todos.setStatus.cancelled",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setStatus.cancelled",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "2_status@5"
                 },
                 {
-                    "command": "file-todos.setPriority",
-                    "when": "view == file-todos.todos && viewItem == todoItem",
+                    "command": "agendo.setPriority",
+                    "when": "view == agendo.todos && viewItem == todoItem",
                     "group": "3_priority@1"
                 }
             ]
         },
         "configuration": {
-            "title": "File Todos",
+            "title": "Agendo",
             "properties": {
-                "file-todos.root": {
+                "agendo.root": {
                     "type": "string",
                     "default": "docs/todos",
                     "description": "Workspace-relative path to the root todos folder."
                 },
-                "file-todos.defaultPriority": {
+                "agendo.defaultPriority": {
                     "type": "string",
                     "enum": [
                         "p1",
@@ -282,35 +285,35 @@
                     "default": "p3",
                     "description": "Default priority applied to newly created todos."
                 },
-                "file-todos.completeFolder": {
+                "agendo.completeFolder": {
                     "type": "string",
                     "default": "complete",
                     "description": "Subfolder name (under the root) for completed todos."
                 },
-                "file-todos.cancelledFolder": {
+                "agendo.cancelledFolder": {
                     "type": "string",
                     "default": "cancelled",
                     "description": "Subfolder name (under the root) for cancelled todos."
                 },
-                "file-todos.backlogFolder": {
+                "agendo.backlogFolder": {
                     "type": "string",
                     "default": "backlog",
                     "description": "Subfolder name (under the root) for backlogged todos."
                 },
-                "file-todos.openInPreview": {
+                "agendo.openInPreview": {
                     "type": "boolean",
                     "default": true,
                     "description": "Open todos in preview mode using your default markdown editor. Requires 'Files: Enable Preview' enabled in VS Code settings."
                 },
-                "file-todos.gitignoreTodos": {
+                "agendo.gitignoreTodos": {
                     "type": "boolean",
                     "default": false,
                     "description": "When enabled, write a .gitignore containing '*' into the todos root folder."
                 },
-                "file-todos.skillUpdateSource": {
+                "agendo.skillUpdateSource": {
                     "type": "string",
-                    "default": "https://raw.githubusercontent.com/JakeRoxs/vscode-llm-todos/main/resources/skill",
-                    "description": "Raw base URL used by 'Update file-todos Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
+                    "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill",
+                    "description": "Raw base URL used by 'Update Agendo Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
                 }
             }
         }

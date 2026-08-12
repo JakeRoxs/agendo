@@ -7,7 +7,7 @@ import * as vscode from "vscode";
  * configuration scoping and output channel naming.
  */
 export enum Settings {
-    Identifier = "file-todos",
+    Identifier = "agendo",
     Root = "root",
     DefaultPriority = "defaultPriority",
     CompleteFolder = "completeFolder",

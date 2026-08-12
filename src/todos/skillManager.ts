@@ -16,8 +16,8 @@ export interface SkillStatus {
 }
 
 /**
- * Installs and updates the bundled `file-todos` skill into the user's agent
- * skills directory (`~/.agents/skills/file-todos/`), and can refresh it from a
+ * Installs and updates the bundled `agendo` skill into the user's agent
+ * skills directory (`~/.agents/skills/agendo/`), and can refresh it from a
  * configurable GitHub raw source.
  */
 export class SkillManager {
@@ -34,7 +34,7 @@ export class SkillManager {
             vscode.Uri.file(os.homedir()),
             ".agents",
             "skills",
-            "file-todos"
+            "agendo"
         );
     }
 
@@ -91,7 +91,7 @@ export class SkillManager {
             const bytes = await vscode.workspace.fs.readFile(source);
             await vscode.workspace.fs.writeFile(target, bytes);
         }
-        out`Installed file-todos skill to ${this.installDir.fsPath}`;
+        out`Installed agendo skill to ${this.installDir.fsPath}`;
     }
 
     /**
@@ -103,7 +103,7 @@ export class SkillManager {
         const base = (get<string>(Settings.SkillUpdateSource) || "").trim();
         if (!base) {
             throw new Error(
-                "No skill update source configured (file-todos.skillUpdateSource)."
+                "No skill update source configured (agendo.skillUpdateSource)."
             );
         }
         const baseUrl = stripTrailingSlashes(base);
@@ -117,7 +117,7 @@ export class SkillManager {
             const target = vscode.Uri.joinPath(this.installDir, ...relative.split("/"));
             await vscode.workspace.fs.writeFile(target, Buffer.from(body, "utf8"));
         }
-        out`Updated file-todos skill from ${baseUrl}`;
+        out`Updated agendo skill from ${baseUrl}`;
     }
 }
 

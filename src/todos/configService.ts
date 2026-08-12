@@ -13,7 +13,7 @@ export interface TodosConfig {
 
 /**
  * Bridges VS Code settings and the on-disk `.todos-config.json` projection that
- * the file-todos skill reads. VS Code settings are the source of truth; the
+ * the Agendo skill reads. VS Code settings are the source of truth; the
  * file is a skill-readable projection of them.
  */
 export class ConfigService {

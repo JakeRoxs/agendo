@@ -1,7 +1,7 @@
-# File Todos Manager
+# Agendo
 
 A VS Code extension that lets you view, filter, and manage markdown-file-backed
-todos (the `file-todos` convention) from a dedicated Activity Bar TreeView —
+todos (the Agendo convention) from a dedicated Activity Bar TreeView —
 without leaving your plain-markdown files in the repo.
 
 Todos are `.md` files under a root folder (default `docs/todos/`) that follow the
@@ -36,11 +36,11 @@ naming contract:
 - **Set priority**, renaming the file and updating frontmatter.
 - **Create Todo** with the next available id from a built-in template.
 - **Config bridge**: the extension writes `<root>/.todos-config.json` so the
-  `file-todos` skill can read the active `root` and `gitignored` flag and choose
+  Agendo skill can read the active `root` and `gitignored` flag and choose
   its file-discovery strategy.
 - **Gitignore toggle**: optionally write a `*` `.gitignore` into the todos root.
-- **Bundled `file-todos` skill**: install/enable the skill into
-  `~/.agents/skills/file-todos/` from the view menu, and update it from a
+- **Bundled `agendo` skill**: install/enable the skill into
+  `~/.agents/skills/agendo/` from the view menu, and update it from a
   configurable raw GitHub source.
 - **Broken-link flagging**: when a status/priority change moves or renames a
   todo, other todos that still reference the old filename are flagged (v1 warns
@@ -50,14 +50,14 @@ naming contract:
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| `file-todos.root` | `docs/todos` | Workspace-relative root todos folder. |
-| `file-todos.defaultPriority` | `p3` | Default priority for new todos. |
-| `file-todos.completeFolder` | `complete` | Subfolder for completed todos. |
-| `file-todos.cancelledFolder` | `cancelled` | Subfolder for cancelled todos. |
-| `file-todos.backlogFolder` | `backlog` | Subfolder for backlogged todos. |
-| `file-todos.openInPreview` | `true` | Open todos in Markdown preview. |
-| `file-todos.gitignoreTodos` | `false` | Write a `*` `.gitignore` in the root. |
-| `file-todos.skillUpdateSource` | GitHub raw base URL | Base URL used by "Update file-todos Skill from Source". |
+| `agendo.root` | `docs/todos` | Workspace-relative root todos folder. |
+| `agendo.defaultPriority` | `p3` | Default priority for new todos. |
+| `agendo.completeFolder` | `complete` | Subfolder for completed todos. |
+| `agendo.cancelledFolder` | `cancelled` | Subfolder for cancelled todos. |
+| `agendo.backlogFolder` | `backlog` | Subfolder for backlogged todos. |
+| `agendo.openInPreview` | `true` | Open todos in Markdown preview. |
+| `agendo.gitignoreTodos` | `false` | Write a `*` `.gitignore` in the root. |
+| `agendo.skillUpdateSource` | GitHub raw base URL | Base URL used by "Update Agendo Skill from Source". |
 
 ## Development
 

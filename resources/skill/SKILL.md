@@ -1,11 +1,11 @@
 ---
-name: file-todos
+name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, and integrating with slash commands and code review processes.
 disable-model-invocation: true
 version: 1.1.0
 ---
 
-# File-Based Todo Tracking Skill
+# Agendo — File-Based Todo Tracking Skill
 
 ## Overview
 
@@ -23,7 +23,7 @@ This skill should be used when:
 ## Read `.todos-config.json` first
 
 Before doing anything else, check for a `.todos-config.json` file in the todos root
-(default `docs/todos/.todos-config.json`). The [File Todos VS Code extension](https://github.com/JakeRoxs/vscode-llm-todos)
+(default `docs/todos/.todos-config.json`). The [Agendo VS Code extension](https://github.com/JakeRoxs/agendo)
 writes this file as a projection of its settings so this skill can honor the user's chosen
 configuration. When present, it looks like:
 
@@ -342,29 +342,29 @@ for status in pending ready backlogged complete cancelled; do
 done
 ```
 
-## File-Todos sub-agent workflow (runSubagent)
+## Agendo sub-agent workflow (runSubagent)
 
-This section describes how a parent agent should delegate todo ID tracking to the `file-todos` agent as a sub-agent. Do not treat these as direct CLI commands; they are internal agent handoffs.
+This section describes how a parent agent should delegate todo ID tracking to the `agendo` agent as a sub-agent. Do not treat these as direct CLI commands; they are internal agent handoffs.
 
-1. From your task agent (e.g., `coding` or `review`), call `file-todos` as a sub-agent to fetch todo metadata.
+1. From your task agent (e.g., `coding` or `review`), call `agendo` as a sub-agent to fetch todo metadata.
     - parent prompt example:
-      `runSubagent({ agentName: "file-todos", prompt: "show status 021" })`
+      `runSubagent({ agentName: "agendo", prompt: "show status 021" })`
     - verify `status`, `priority`, `dependencies`, and `Work Log` entries in the returned object.
 
 2. (Optional) Signal in-progress status via sub-agent call:
-    - `runSubagent({ agentName: "file-todos", prompt: "update 021 status in-progress" })`
+    - `runSubagent({ agentName: "agendo", prompt: "update 021 status in-progress" })`
 
 3. Append work log entries incrementally through the sub-agent interface:
-    - `runSubagent({ agentName: "file-todos", prompt: "append 021 work log: added server-side protobuf handling, 2026-03-29, tests added" })`
+    - `runSubagent({ agentName: "agendo", prompt: "append 021 work log: added server-side protobuf handling, 2026-03-29, tests added" })`
 
 4. Keep work log entries structured (date, author, actions, tests, results, learnings).
     - Include branch/PR references and commands run (`ctest`, `dotnet test`, etc.).
 
 5. Resolve and complete through sub-agent call:
-    - `runSubagent({ agentName: "file-todos", prompt: "complete 021 summary: fixes + tests passed" })`
+    - `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed" })`
     - then rename/retag file status from `ready` to `complete` and update frontmatter.
 
-> This workflow is intended to be used by a parent skill/agent orchestrating code tasks; `file-todos` is invoked as a child skill for data updates and audit-safe state changes.
+> This workflow is intended to be used by a parent skill/agent orchestrating code tasks; `agendo` is invoked as a child skill for data updates and audit-safe state changes.
 
 **Dependency management:**
 
@@ -391,7 +391,7 @@ grep -r "payment" docs/todos/
 
 ## Key Distinctions
 
-**File-todos system (this skill):**
+**Agendo system (this skill):**
 
 - Markdown files in `docs/todos/` directory
 - Development/project tracking

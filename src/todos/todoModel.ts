@@ -55,7 +55,7 @@ export interface Todo {
 const FILENAME_RE =
     /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
 
-/** True when a filename matches the file-todos naming contract. */
+/** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {
     return FILENAME_RE.test(fileName);
 }
