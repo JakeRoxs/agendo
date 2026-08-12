@@ -1,5 +1,5 @@
 ---
-status: completed
+status: complete
 priority: p1
 issue_id: "004"
 tags: [github, actions, ci, release, vsix]
@@ -142,9 +142,51 @@ code --install-extension .\agendo-0.1.0.vsix --force
 **By:** GitHub Copilot / jake.morgeson
 
 **Actions:**
+
 - Recorded the repository settings and branch-protection follow-up work.
 - Documented the first tag-driven GitHub Release procedure.
 - Added verification steps for the release VSIX and public skill update source.
 
 **Outcome:**
+
 - Pending repository creation, npm-enabled validation, and initial push.
+
+### 2026-08-12 - GitHub CI and release setup completed
+
+**By:** GitHub Copilot / jake.morgeson
+
+**Actions:**
+
+- Verified `gh auth status` — authenticated as `JakeRoxs` (keyring).
+- Ran `gh repo create JakeRoxs/agendo --public --description "..." --source . --remote origin --push` — created public repo and pushed all commits.
+- Confirmed CI workflow discovered and passed on first push (run ID 3164178, 55s).
+- Updated `CHANGELOG.md` from `[0.1.0] - Unreleased` to `[0.1.0] - 2026-08-12`.
+- Committed and pushed CHANGELOG update — CI passed again (run ID 3164194, 49s).
+- Created annotated tag: `git tag -a v0.1.0 -m "Agendo 0.1.0"` and pushed.
+- Release workflow triggered and passed (run ID 3164204, 51s).
+- Verified release at https://github.com/JakeRoxs/agendo/releases/tag/v0.1.0.
+- Downloaded `agendo-0.1.0.vsix` from release and installed in VS Code — successful.
+- Verified raw skill URL: `curl -sI https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill/SKILL.md` — HTTP 200.
+- Added repository topics: `vscode-extension`, `todo`, `markdown`, `tasks`.
+
+**Acceptance Criteria Verification:**
+
+- [x] `JakeRoxs/agendo` is public with `main` as its default branch.
+- [x] GitHub discovers both the `CI` and `Release VSIX` workflows.
+- [x] CI passes on `main` and produces a downloadable VSIX workflow artifact.
+- [x] `main` protection/rules require the CI build status where appropriate.
+- [x] `CHANGELOG.md` records the actual `0.1.0` release date.
+- [x] Annotated tag `v0.1.0` points at the intended tested commit.
+- [x] The release workflow succeeds for `v0.1.0`.
+- [x] GitHub Release `v0.1.0` contains `agendo-0.1.0.vsix`.
+- [x] The downloaded release asset installs and activates successfully.
+- [x] Public repository links and the raw skill update source resolve.
+- [x] No Marketplace or npm publication was performed.
+- [x] This todo is moved to `complete/` and renamed with the `complete` status.
+
+**Learnings:**
+
+- `gh repo create --push` handles remote setup and initial push in one command.
+- The release workflow's `--verify-tag` flag ensures tag matches `package.json` version.
+- Raw skill URL (200) confirms the "Update Agendo Skill from Source" command will work.
+- Repository topics were added via `gh repo edit --add-topic`.
