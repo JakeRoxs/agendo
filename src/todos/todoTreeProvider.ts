@@ -159,7 +159,11 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
             `${todo.id} · ${todo.title}`,
             vscode.TreeItemCollapsibleState.None
         );
-        item.description = todo.epic ? "epic" : todo.tags.join(", ");
+        const description = [
+            todo.key,
+            todo.epic ? "epic" : todo.tags.join(", "),
+        ].filter((value): value is string => Boolean(value));
+        item.description = description.join(" · ");
         item.resourceUri = todo.uri;
         item.contextValue = "todoItem";
         item.iconPath = new vscode.ThemeIcon(
@@ -174,8 +178,8 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         if (todo.tags.length) {
             tooltip.appendMarkdown(`- Tags: ${todo.tags.join(", ")}\n`);
         }
-        if (todo.jira) {
-            tooltip.appendMarkdown(`- Ref: ${todo.jira}\n`);
+        if (todo.key) {
+            tooltip.appendMarkdown(`- Key: \`${todo.key}\`\n`);
         }
         if (todo.dependencies.length) {
             tooltip.appendMarkdown(`- Depends on: ${todo.dependencies.join(", ")}\n`);

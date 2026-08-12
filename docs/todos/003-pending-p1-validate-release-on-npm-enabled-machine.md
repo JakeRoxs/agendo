@@ -86,6 +86,13 @@ Open a disposable workspace and verify:
 
 - The Agendo Activity Bar container and Todos view load without activation errors.
 - A todo can be created from the built-in template.
+- Creating a todo with a tracking key writes a quoted `key:` field, shows the
+  key in the tree and tooltip, and makes it searchable.
+- Creating a todo with the tracking-key prompt left blank omits `key:` from the
+  file and does not add empty key metadata to the tree or tooltip.
+- A todo with legacy `jira:` frontmatter still displays and searches by that
+  value, while a generic `key:` can hold Jira, GitHub, or other tracker IDs.
+- Tracking keys do not alter generated todo titles or filenames.
 - Todos can be filtered and searched.
 - A todo opens in Markdown preview.
 - Status changes update frontmatter, filename, and folder placement together.
@@ -113,6 +120,8 @@ errors below.
 
 - [ ] `npm ci` completes from the committed lockfile using the public registry.
 - [ ] `npm test` passes compilation, lint, and VS Code integration tests.
+- [ ] Optional generic and legacy tracking-key parsing tests pass.
+- [ ] Keyed and unkeyed todo creation behavior passes the VSIX smoke test.
 - [ ] `npm run vscode:prepublish` succeeds.
 - [ ] `npx @vscode/vsce ls` contains all runtime and bundled-skill assets.
 - [ ] The VSIX packages successfully as `agendo-0.1.0.vsix`.

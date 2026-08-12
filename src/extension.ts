@@ -125,7 +125,7 @@ function registerCommands(
 
   register(Command.Search, async () => {
     const text = await vscode.window.showInputBox({
-      prompt: "Search todos (id, title, tag, ref, dependency)",
+      prompt: "Search todos (id, title, tag, key, dependency)",
       value: filter.current.text ?? "",
       placeHolder: "Type text to filter...",
     });
@@ -358,6 +358,15 @@ async function createTodo(
   const priority =
     (priorityPick?.label as TodoPriority) ?? config.defaultPriority;
 
+  const keyInput = await vscode.window.showInputBox({
+    prompt: "Optional external tracking key",
+    placeHolder: "e.g. JIRA-123, GH-456, or #789 (leave blank for none)",
+  });
+  if (keyInput === undefined) {
+    return;
+  }
+  const key = keyInput.trim() || undefined;
+
   const nextId = String(repository.getMaxId() + 1).padStart(3, "0");
   const fileName = buildFileName(
     nextId,
@@ -373,7 +382,7 @@ async function createTodo(
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
 
-  const content = renderTemplate(nextId, priority, title);
+  const content = renderTemplate(nextId, priority, title, key);
   await vscode.workspace.fs.createDirectory(rootUri);
   await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
   await repository.refresh();
@@ -384,12 +393,14 @@ function renderTemplate(
   id: string,
   priority: TodoPriority,
   title: string,
+  key?: string,
 ): string {
   return [
     "---",
     "status: pending",
     `priority: ${priority}`,
     `issue_id: "${id}"`,
+    ...(key ? [`key: ${JSON.stringify(key)}`] : []),
     "tags: []",
     "dependencies: []",
     "---",

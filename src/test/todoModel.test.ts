@@ -72,4 +72,28 @@ suite("todoModel", () => {
         assert.strictEqual(todo!.title, "Do The Thing");
         assert.deepStrictEqual(todo!.tags, ["alpha"]);
     });
+
+    test("parseTodo accepts generic and legacy external keys", () => {
+        const uri = vscode.Uri.file("/tmp/061-pending-p3-track-work.md");
+
+        const generic = parseTodo(
+            uri,
+            "---\nkey: TSS-1601\njira: TSS-9999\n---\n# Track Work",
+            ""
+        );
+        assert.strictEqual(generic!.key, "TSS-1601");
+        assert.strictEqual(generic!.jira, "TSS-9999");
+
+        const legacy = parseTodo(
+            uri,
+            "---\njira: TSS-1601\n---\n# Track Work",
+            ""
+        );
+        assert.strictEqual(legacy!.key, "TSS-1601");
+        assert.strictEqual(legacy!.jira, "TSS-1601");
+
+        const untracked = parseTodo(uri, "# Track Work", "");
+        assert.strictEqual(untracked!.key, undefined);
+        assert.strictEqual(untracked!.jira, undefined);
+    });
 });

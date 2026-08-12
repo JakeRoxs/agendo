@@ -60,6 +60,7 @@ export class FilterService {
                 todo.id,
                 todo.title,
                 todo.description,
+                todo.key ?? "",
                 todo.jira ?? "",
                 todo.tags.join(" "),
                 todo.dependencies.join(" "),

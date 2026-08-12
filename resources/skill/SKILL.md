@@ -134,6 +134,16 @@ dependencies: ["001"] # Issue IDs this is blocked by
 ---
 ```
 
+An external tracking key is optional. Add it only when the todo is associated
+with work in Jira, GitHub, or another tracker:
+
+```yaml
+key: "JIRA-123"
+```
+
+Do not add an empty `key`, and do not automatically include the key in the todo
+title or filename. Existing `jira:` fields are supported as a legacy alias.
+
 **Two coupled sources of truth:** the filename status token AND the frontmatter `status` must stay
 in sync, and the folder placement is **derived** from the status. When transitioning a todo, update
 all three together (filename token, frontmatter, folder).
@@ -158,7 +168,8 @@ all three together (filename token, frontmatter, folder).
     - Add initial Work Log entry
 4. Determine status: `pending` (needs triage) or `ready` (pre-approved)
 5. Add relevant tags for filtering
-6. **Verify the chosen ID is unique** before writing: confirm no existing file in the root or ANY subfolder (`complete/`, `cancelled/`, `backlog/`) already starts with that number. If a collision is found, bump to the next free number and keep both the filename prefix and the `issue_id` frontmatter field in sync.
+6. If an external issue or work item was provided, add its identifier as the optional `key` field.
+7. **Verify the chosen ID is unique** before writing: confirm no existing file in the root or ANY subfolder (`complete/`, `cancelled/`, `backlog/`) already starts with that number. If a collision is found, bump to the next free number and keep both the filename prefix and the `issue_id` frontmatter field in sync.
 
 **When to create a todo:**
 

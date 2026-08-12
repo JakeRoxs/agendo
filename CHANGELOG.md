@@ -21,3 +21,6 @@ All notable changes to the Agendo extension are documented here.
   and a `agendo.skillUpdateSource` setting.
 - Broken-link flagging: moving/renaming a todo warns when other todos still
   reference its old filename (no auto-rewrite).
+- Optional generic `key` frontmatter for Jira, GitHub, and other external
+  trackers, with create-flow, tree display, and search integration. Legacy
+  `jira` frontmatter remains supported.

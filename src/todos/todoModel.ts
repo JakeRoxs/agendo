@@ -39,6 +39,9 @@ export interface Todo {
     description: string;
     tags: string[];
     dependencies: string[];
+    /** External tracking key, e.g. a Jira issue key. */
+    key?: string;
+    /** Legacy Jira-specific alias retained for API compatibility. */
     jira?: string;
     parent?: string;
     children: string[];
@@ -198,6 +201,7 @@ export function parseTodo(
     // used only when the filename is somehow ambiguous.
     const status = statusToken.toLowerCase() as TodoStatus;
     const priority = priorityToken.toLowerCase() as TodoPriority;
+    const jira = optionalString(frontmatter.jira);
 
     return {
         id,
@@ -207,7 +211,8 @@ export function parseTodo(
         description,
         tags: toStringArray(frontmatter.tags),
         dependencies: toStringArray(frontmatter.dependencies),
-        jira: optionalString(frontmatter.jira),
+        key: optionalString(frontmatter.key) ?? jira,
+        jira,
         parent: optionalString(frontmatter.parent),
         children: toStringArray(frontmatter.children),
         epic: frontmatter.epic === true,

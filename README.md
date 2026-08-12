@@ -16,6 +16,17 @@ naming contract:
 - `priority` — `p1` | `p2` | `p3`.
 - `description` — kebab-case.
 
+Todo frontmatter may optionally include a generic external tracking key:
+
+```yaml
+key: "JIRA-123"
+```
+
+The value can identify work in Jira, GitHub, or another tracking system. It is
+shown in the tree and included in search only when present. Legacy `jira:`
+frontmatter remains supported. Tracking keys do not change the todo title or
+filename.
+
 ## Folder layout
 
 - Active todos (`pending` / `ready`) live directly in the root folder.
@@ -28,13 +39,14 @@ naming contract:
 
 - **TreeView** grouping todos by status → priority, with icons and priority colors.
 - **Filter** by status and priority, and **search** free text (id, title, tag,
-  ref, dependency). Filter state persists per workspace.
+  key, dependency). Filter state persists per workspace.
 - **Open in Markdown preview** by default (configurable).
 - **Status transitions** that keep the filename token, frontmatter `status`, and
   folder placement in sync. Cancelling inserts a contextual `> **CANCELLED**`
   banner and a `cancelled` tag; reopening removes the banner.
 - **Set priority**, renaming the file and updating frontmatter.
-- **Create Todo** with the next available id from a built-in template.
+- **Create Todo** with the next available id, an optional external tracking key,
+  and a built-in template.
 - **Config bridge**: the extension writes `<root>/.todos-config.json` so the
   Agendo skill can read the active `root` and `gitignored` flag and choose
   its file-discovery strategy.
