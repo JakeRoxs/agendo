@@ -28,15 +28,15 @@ This creates unnecessary visual noise and requires repeated interaction to navig
 ```typescript
 // statusItem (line 136)
 new vscode.TreeItem(
-    `${STATUS_LABEL[node.status]} (${node.count})`,
-    vscode.TreeItemCollapsibleState.Expanded  // hardcoded
-)
+  `${STATUS_LABEL[node.status]} (${node.count})`,
+  vscode.TreeItemCollapsibleState.Expanded, // hardcoded
+);
 
 // priorityItem (line 146)
 new vscode.TreeItem(
-    `${PRIORITY_LABEL[node.priority]} (${node.todos.length})`,
-    vscode.TreeItemCollapsibleState.Expanded  // hardcoded
-)
+  `${PRIORITY_LABEL[node.priority]} (${node.todos.length})`,
+  vscode.TreeItemCollapsibleState.Expanded, // hardcoded
+);
 ```
 
 **Existing pattern to follow**: `FilterService` already persists state in `workspaceState`:

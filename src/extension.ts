@@ -31,7 +31,12 @@ export async function activate(context: vscode.ExtensionContext) {
   const status = new StatusService(config);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
-  const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
+  const treeProvider = new TodoTreeProvider(
+    repository,
+    filter,
+    config,
+    treeState,
+  );
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
@@ -97,8 +102,16 @@ function registerCommands(
   context: vscode.ExtensionContext,
   services: Services,
 ): void {
-  const { config, repository, filter, treeState, status, links, skill, treeProvider } =
-    services;
+  const {
+    config,
+    repository,
+    filter,
+    treeState,
+    status,
+    links,
+    skill,
+    treeProvider,
+  } = services;
 
   const register = (command: string, callback: (...args: any[]) => any) => {
     context.subscriptions.push(
@@ -237,13 +250,16 @@ function registerCommands(
     const currentValue = config.openInPreview;
     const picked = await vscode.window.showQuickPick(
       [
-        { label: "Preview enabled (default)", description: currentValue ? "On" : "Off" },
+        {
+          label: "Preview enabled (default)",
+          description: currentValue ? "On" : "Off",
+        },
         { label: "Preview disabled", description: currentValue ? "On" : "Off" },
       ],
       {
         prompt: "Global default for open-in-preview",
         placeHolder: currentValue ? "On" : "Off",
-      }
+      },
     );
     if (!picked) {
       return;
