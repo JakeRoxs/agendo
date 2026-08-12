@@ -15,7 +15,7 @@ keeping every todo `.md`-file-backed in the repo (and gitignored, as today).
 > **Note:** This todo (issue `001`) is the first in this repo; it was copied from another
 > repo (where it was `060`). A **live example of current file-todos usage** — real todos,
 > folder layout, filename/frontmatter contract, and banners in practice — can be inspected
-> at `C:\TSS_Website\docs\todos`. Use it as the reference for how the system is actually
+> in another repo's `docs/todos` folder. Use it as the reference for how the system is actually
 > used today when designing/validating the extension.
 
 > **STATUS: v1 build in progress.** The extension has been scaffolded in this repo
@@ -83,7 +83,7 @@ directly under the `# title` (e.g. `> **CANCELLED / SUPERSEDED by [057]...**`). 
 "contextual header" behavior the extension must generate/update on transitions.
 
 **Cross-references use absolute paths** inside bodies (e.g.
-`/C:/TSS_Website/docs/todos/050-...md`). Renames/moves will break these links.
+`/docs/todos/050-...md`). Renames/moves will break these links.
 
 ## Decisions already made (from Q&A 2026-07-20)
 
@@ -94,7 +94,7 @@ directly under the `# title` (e.g. `> **CANCELLED / SUPERSEDED by [057]...**`). 
    `complete/` keeps the active root clean. Requires a **skill update** (see below).
 4. **Extension project location:** OPEN — see Open Questions. (Original question meant: a VS
    Code extension is its own project with its own `package.json`/build; it needs to live
-   somewhere — a new folder inside `TSS_Website`, a sibling folder, or a separate repo.)
+   somewhere — a new folder inside the parent project, a sibling folder, or a separate repo.)
 
 ## Additional requirements (2026-07-20)
 
@@ -242,7 +242,7 @@ Adding `backlogged` is a contract change and must be reflected in
 
 - [x] Decision recorded for extension project location.
 - [x] `file-todos` SKILL.md updated to add `backlogged` + `docs/todos/backlog/` folder. *(bundled `resources/skill/SKILL.md`)*
-- [x] `file-todos` SKILL.md updated to formalize `cancelled` + `docs/todos/cancelled/` folder. *(bundled skill; one-time migration of existing cancelled files belongs to the source repo, `C:\TSS_Website\docs\todos`, and is out of scope here.)*
+- [x] `file-todos` SKILL.md updated to formalize `cancelled` + `docs/todos/cancelled/` folder. *(bundled skill; one-time migration of existing cancelled files belongs to the source repo, `docs/todos` of the source project, and is out of scope here.)*
 - [x] `file-todos` SKILL.md updated to read `.todos-config.json` (root + gitignored discovery strategy). *(bundled skill)*
 - [x] (Build phase) TreeView groups todos by status → priority with icons/colors.
 - [x] (Build phase) Filter/search by status, priority, tag, jira, and free text.
@@ -372,7 +372,7 @@ Adding `backlogged` is a contract change and must be reflected in
 **Actions:**
 - Renumbered this todo `060` → `001` (first in the new `todo-ext` repo; copied from another
   repo) and recorded that a live example of current file-todos usage lives at
-  `C:\TSS_Website\docs\todos`.
+  `docs/todos` in the source project.
 - Bundled the `file-todos` skill inside the extension at `resources/skill/`
   (`SKILL.md`, `assets/todo-template.md`, `.skill-meta.json` with a `version` field). The
   bundled `SKILL.md` was rewritten to: add `backlogged` + `docs/todos/backlog/`, formalize

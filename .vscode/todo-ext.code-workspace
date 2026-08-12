@@ -1,3 +1,5 @@
+// Local dev workspace. Requires sibling folders at ../.. (todo-ext parent repo and vscode-extension-template).
+// Clone vscode-extension-template as a sibling of todo-ext to use.
 {
 	"folders": [
 		{

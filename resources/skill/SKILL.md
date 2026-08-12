@@ -23,7 +23,7 @@ This skill should be used when:
 ## Read `.todos-config.json` first
 
 Before doing anything else, check for a `.todos-config.json` file in the todos root
-(default `docs/todos/.todos-config.json`). The [File Todos VS Code extension](https://github.com/jakemorgeson/todo-ext)
+(default `docs/todos/.todos-config.json`). The [File Todos VS Code extension](https://github.com/JakeRoxs/vscode-llm-todos)
 writes this file as a projection of its settings so this skill can honor the user's chosen
 configuration. When present, it looks like:
 

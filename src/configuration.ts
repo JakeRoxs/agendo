@@ -28,6 +28,16 @@ export function set(key: Settings, value: any) {
 }
 
 /**
+ * Set a global (user-level) default for this extension.
+ * Takes priority over package.json defaults but is overridden by workspace settings.
+ */
+export function setDefault(key: Settings, value: any) {
+    return vscode.workspace
+        .getConfiguration(Settings.Identifier)
+        .update(key, value, vscode.ConfigurationTarget.Global);
+}
+
+/**
  * Get a configuration value for this extension.
  */
 export function get<T>(key: Settings): T {

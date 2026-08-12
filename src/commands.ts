@@ -18,6 +18,10 @@ export enum Command {
     SetPriority = "file-todos.setPriority",
     ChooseRoot = "file-todos.chooseRoot",
     ToggleGitignore = "file-todos.toggleGitignore",
+    TogglePreview = "file-todos.togglePreview",
+    SetDefaultRoot = "file-todos.setDefault.root",
+    SetDefaultPriority = "file-todos.setDefault.priority",
+    SetDefaultPreview = "file-todos.setDefault.preview",
     EnableSkill = "file-todos.enableSkill",
     UpdateSkill = "file-todos.updateSkill",
 }

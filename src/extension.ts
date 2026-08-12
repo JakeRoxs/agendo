@@ -1,6 +1,6 @@
 import * as vscode from "vscode";
 import { Command } from "./commands";
-import { Settings, set } from "./configuration";
+import { Settings, set, setDefault } from "./configuration";
 import { out, outputChannel } from "./output";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
@@ -109,7 +109,9 @@ function registerCommands(
     if (!todo) {
       return;
     }
-    await vscode.commands.executeCommand("markdown.showPreview", todo.uri);
+    await vscode.commands.executeCommand("vscode.open", todo.uri, {
+      preview: true,
+    });
   });
 
   register(Command.ClearFilters, async () => {
@@ -197,6 +199,53 @@ function registerCommands(
 
   register(Command.ToggleGitignore, async () => {
     await set(Settings.GitignoreTodos, !config.gitignored);
+  });
+
+  register(Command.TogglePreview, async () => {
+    await set(Settings.OpenInPreview, !config.openInPreview);
+  });
+
+  register(Command.SetDefaultRoot, async () => {
+    const value = await vscode.window.showInputBox({
+      prompt: "Global default for todos root folder",
+      value: config.root,
+      placeHolder: "docs/todos",
+    });
+    if (value === undefined) {
+      return;
+    }
+    await setDefault(Settings.Root, value.trim() || "docs/todos");
+  });
+
+  register(Command.SetDefaultPriority, async () => {
+    const value = await vscode.window.showQuickPick(["p1", "p2", "p3"], {
+      prompt: "Global default priority",
+      placeHolder: "p3",
+      canPickMany: false,
+    });
+    if (value === undefined) {
+      return;
+    }
+    await setDefault(Settings.DefaultPriority, value);
+  });
+
+  register(Command.SetDefaultPreview, async () => {
+    const currentValue = config.openInPreview;
+    const picked = await vscode.window.showQuickPick(
+      [
+        { label: "Preview enabled (default)", description: currentValue ? "On" : "Off" },
+        { label: "Preview disabled", description: currentValue ? "On" : "Off" },
+      ],
+      {
+        prompt: "Global default for open-in-preview",
+        placeHolder: currentValue ? "On" : "Off",
+      }
+    );
+    if (!picked) {
+      return;
+    }
+    const newValue = picked.label.includes("enabled");
+    await setDefault(Settings.OpenInPreview, newValue);
   });
 
   register(Command.EnableSkill, async () => {
