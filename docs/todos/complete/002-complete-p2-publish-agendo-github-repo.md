@@ -54,10 +54,12 @@ git remote set-url origin https://github.com/JakeRoxs/agendo.git
 ## Technical Details
 
 **Affected / already-updated files:**
+
 - `package.json` — `repository`, `bugs`, `homepage`, `agendo.skillUpdateSource`
 - `resources/skill/SKILL.md` — extension link
 
 **Post-publish checks:**
+
 - Confirm `agendo.skillUpdateSource` raw URL resolves once `main` is pushed
   (used by "Update Agendo Skill from Source").
 - Confirm `LICENSE` (MIT) renders on the repo page.

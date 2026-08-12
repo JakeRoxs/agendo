@@ -3,6 +3,7 @@ import { Command } from "../commands";
 import { ConfigService } from "./configService";
 import { FilterService } from "./filterService";
 import { TodoRepository } from "./todoRepository";
+import { TreeStateService } from "./treeStateService";
 import { Todo, TodoPriority, TodoStatus, TODO_PRIORITIES } from "./todoModel";
 
 /** Display order and labels for status groups. */
@@ -72,7 +73,8 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     constructor(
         private readonly repository: TodoRepository,
         private readonly filter: FilterService,
-        private readonly config: ConfigService
+        private readonly config: ConfigService,
+        private readonly treeState: TreeStateService
     ) {
         this.repository.onDidChange(() => this.refresh());
     }
@@ -131,25 +133,35 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     }
 
     private statusItem(node: StatusNode): vscode.TreeItem {
+        const nodeKey = `status:${node.status}`;
+        const isCollapsed = this.treeState.isCollapsed(nodeKey);
         const item = new vscode.TreeItem(
             `${STATUS_LABEL[node.status]} (${node.count})`,
-            vscode.TreeItemCollapsibleState.Expanded
+            isCollapsed
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.Expanded
         );
         item.iconPath = new vscode.ThemeIcon(STATUS_ICON[node.status]);
         item.contextValue = "statusGroup";
+        item.id = nodeKey;
         return item;
     }
 
     private priorityItem(node: PriorityNode): vscode.TreeItem {
+        const nodeKey = `priority:${node.status}:${node.priority}`;
+        const isCollapsed = this.treeState.isCollapsed(nodeKey);
         const item = new vscode.TreeItem(
             `${PRIORITY_LABEL[node.priority]} (${node.todos.length})`,
-            vscode.TreeItemCollapsibleState.Expanded
+            isCollapsed
+                ? vscode.TreeItemCollapsibleState.Collapsed
+                : vscode.TreeItemCollapsibleState.Expanded
         );
         item.iconPath = new vscode.ThemeIcon(
             "circle-filled",
             new vscode.ThemeColor(PRIORITY_COLOR[node.priority])
         );
         item.contextValue = "priorityGroup";
+        item.id = nodeKey;
         return item;
     }
 

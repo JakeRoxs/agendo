@@ -9,6 +9,7 @@ import { SkillManager } from "./todos/skillManager";
 import { StatusService } from "./todos/statusService";
 import { TodoRepository } from "./todos/todoRepository";
 import { TodoNode, TodoTreeProvider, TreeNode } from "./todos/todoTreeProvider";
+import { TreeStateService } from "./todos/treeStateService";
 import {
   Todo,
   TodoPriority,
@@ -26,10 +27,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const config = new ConfigService();
   const repository = new TodoRepository(config);
   const filter = new FilterService(context.workspaceState);
+  const treeState = new TreeStateService(context.workspaceState);
   const status = new StatusService(config);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
-  const treeProvider = new TodoTreeProvider(repository, filter, config);
+  const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
@@ -57,6 +59,7 @@ export async function activate(context: vscode.ExtensionContext) {
     config,
     repository,
     filter,
+    treeState,
     status,
     links,
     skill,
@@ -73,6 +76,7 @@ interface Services {
   config: ConfigService;
   repository: TodoRepository;
   filter: FilterService;
+  treeState: TreeStateService;
   status: StatusService;
   links: LinkService;
   skill: SkillManager;
@@ -93,7 +97,7 @@ function registerCommands(
   context: vscode.ExtensionContext,
   services: Services,
 ): void {
-  const { config, repository, filter, status, links, skill, treeProvider } =
+  const { config, repository, filter, treeState, status, links, skill, treeProvider } =
     services;
 
   const register = (command: string, callback: (...args: any[]) => any) => {
@@ -276,6 +280,22 @@ function registerCommands(
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
+    }
+  });
+
+  register(Command.CollapseNode, async (arg: unknown) => {
+    const node = arg as TreeNode | undefined;
+    if (node && "id" in node && node.id) {
+      await treeState.collapse(node.id as string);
+      treeProvider.refresh();
+    }
+  });
+
+  register(Command.ExpandNode, async (arg: unknown) => {
+    const node = arg as TreeNode | undefined;
+    if (node && "id" in node && node.id) {
+      await treeState.expand(node.id as string);
+      treeProvider.refresh();
     }
   });
 }

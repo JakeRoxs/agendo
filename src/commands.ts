@@ -24,4 +24,6 @@ export enum Command {
     SetDefaultPreview = "agendo.setDefault.preview",
     EnableSkill = "agendo.enableSkill",
     UpdateSkill = "agendo.updateSkill",
+    CollapseNode = "agendo.collapseNode",
+    ExpandNode = "agendo.expandNode",
 }

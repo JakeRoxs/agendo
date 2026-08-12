@@ -159,6 +159,16 @@
                 "command": "agendo.updateSkill",
                 "title": "Update Agendo Skill from Source",
                 "category": "Agendo"
+            },
+            {
+                "command": "agendo.collapseNode",
+                "title": "Collapse",
+                "category": "Agendo"
+            },
+            {
+                "command": "agendo.expandNode",
+                "title": "Expand",
+                "category": "Agendo"
             }
         ],
         "menus": {
@@ -202,6 +212,18 @@
                     "command": "agendo.togglePreview",
                     "when": "view == agendo.todos",
                     "group": "2_config@3"
+                }
+            ],
+            "view/item/context": [
+                {
+                    "command": "agendo.collapseNode",
+                    "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup/",
+                    "group": "1_collapse@1"
+                },
+                {
+                    "command": "agendo.expandNode",
+                    "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup/",
+                    "group": "1_collapse@2"
                 },
                 {
                     "command": "agendo.setDefault.root",
@@ -227,9 +249,7 @@
                     "command": "agendo.updateSkill",
                     "when": "view == agendo.todos",
                     "group": "3_skill@2"
-                }
-            ],
-            "view/item/context": [
+                },
                 {
                     "command": "agendo.openPreview",
                     "when": "view == agendo.todos && viewItem == todoItem",
