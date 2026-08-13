@@ -3,7 +3,9 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
+import { activate, deactivate } from "../extension";
 import { out, outputChannel, showOutputChannel } from "../output";
 import { ConfigService } from "../todos/configService";
 import { FilterService } from "../todos/filterService";
@@ -16,6 +18,7 @@ import {
   parseFrontmatter,
   parseTodo,
   splitFrontmatter,
+  TODO_STATUSES,
   type Todo,
 } from "../todos/todoModel";
 import { TodoRepository } from "../todos/todoRepository";
@@ -629,6 +632,238 @@ suite("todoModel", () => {
         value: originalWatcher,
         configurable: true,
       });
+    }
+  });
+
+  test("extension activates and executes command registration paths", async () => {
+    const workspaceRoot = vscode.Uri.file(path.join(os.tmpdir(), "agendo-extension-tests"));
+    const todoRoot = vscode.Uri.joinPath(workspaceRoot, "docs", "todos");
+    await vscode.workspace.fs.createDirectory(todoRoot);
+
+    const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+    const originalCreateTreeView = vscode.window.createTreeView;
+    const originalRegisterCommand = vscode.commands.registerCommand;
+    const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
+    const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
+    const originalShowInputBox = vscode.window.showInputBox;
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalExecuteCommand = vscode.commands.executeCommand;
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const inputQueue = [
+      "add-login-page",
+      "my-key",
+      "docs/todos",
+      "fix the login issue",
+      "alpha",
+      undefined,
+      "p2",
+      "on",
+    ];
+
+    Object.defineProperty(vscode.workspace, "workspaceFolders", {
+      value: [{ uri: workspaceRoot, name: "workspace", index: 0 }],
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "createTreeView", {
+      value: () => ({
+        onDidCollapseElement: () => ({ dispose() {} }),
+        onDidExpandElement: () => ({ dispose() {} }),
+        dispose() {},
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+      value: () => ({ dispose() {} }),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
+      value: () => ({
+        onDidCreate: () => undefined,
+        onDidChange: () => undefined,
+        onDidDelete: () => undefined,
+        dispose() {},
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.commands, "registerCommand", {
+      value: (command: string, callback: (...args: any[]) => any) => {
+        registrations.set(command, callback);
+        return { dispose() {} };
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showInputBox", {
+      value: async () => inputQueue.shift(),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showQuickPick", {
+      value: async (items: unknown[], options?: { canPickMany?: boolean }) => {
+        if (options?.canPickMany) {
+          return Array.isArray(items) ? items : [];
+        }
+        if (Array.isArray(items) && items.length && typeof items[0] === "object" && items[0]) {
+          const first = items[0] as { label: string };
+          return { label: first.label };
+        }
+        return items[0];
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: () => undefined,
+        update: async () => undefined,
+      }),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.commands, "executeCommand", {
+      value: async (command: string, ...args: unknown[]) => {
+        if (command === "vscode.open") {
+          return { command, args };
+        }
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      const context = {
+        workspaceState: {
+          get: <T>(key: string, fallback: T): T => {
+            const store = new Map<string, unknown>();
+            return store.has(key) ? (store.get(key) as T) : fallback;
+          },
+          update: async () => undefined,
+        },
+        extensionUri: vscode.Uri.file(
+          path.join(os.tmpdir(), "agendo-extension-tests", "extension"),
+        ),
+        subscriptions: [] as vscode.Disposable[],
+      };
+      await activate(context as never);
+
+      await registrations.get(Command.Refresh)?.();
+      await registrations.get(Command.OpenPreview)?.({
+        kind: "todo",
+        todo: {
+          id: "001",
+          status: "pending",
+          priority: "p2",
+          title: "Login page",
+          description: "login",
+          tags: [],
+          dependencies: [],
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "001-pending-p2-login-page.md",
+          uri: vscode.Uri.file(path.join(todoRoot.fsPath, "001-pending-p2-login-page.md")),
+          frontmatter: { status: "pending", priority: "p2" },
+        },
+      });
+      await registrations.get(Command.ClearFilters)?.();
+      await registrations.get(Command.Filter)?.();
+      await registrations.get(Command.Search)?.();
+
+      for (const status of TODO_STATUSES) {
+        await registrations.get(`agendo.setStatus.${status}`)?.({
+          kind: "todo",
+          todo: {
+            id: "001",
+            status,
+            priority: "p2",
+            title: "Login page",
+            description: "login",
+            tags: [],
+            dependencies: [],
+            key: undefined,
+            children: [],
+            epic: false,
+            folder: "",
+            fileName: "001-pending-p2-login-page.md",
+            uri: vscode.Uri.file(path.join(todoRoot.fsPath, "001-pending-p2-login-page.md")),
+            frontmatter: { status, priority: "p2" },
+          },
+        });
+      }
+
+      await registrations.get(Command.SetPriority)?.({
+        kind: "todo",
+        todo: {
+          id: "001",
+          status: "pending",
+          priority: "p2",
+          title: "Login page",
+          description: "login",
+          tags: [],
+          dependencies: [],
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "001-pending-p2-login-page.md",
+          uri: vscode.Uri.file(path.join(todoRoot.fsPath, "001-pending-p2-login-page.md")),
+          frontmatter: { status: "pending", priority: "p2" },
+        },
+      });
+      await registrations.get(Command.CreateTodo)?.();
+      await registrations.get(Command.ChooseRoot)?.();
+      await registrations.get(Command.ToggleGitignore)?.();
+      await registrations.get(Command.TogglePreview)?.();
+      await registrations.get(Command.SetDefaultRoot)?.();
+      await registrations.get(Command.SetDefaultPriority)?.();
+      await registrations.get(Command.SetDefaultPreview)?.();
+      await registrations.get(Command.EnableSkill)?.();
+      await registrations.get(Command.UpdateSkill)?.();
+      await registrations.get(Command.CollapseNode)?.({ id: "status:ready" });
+      await registrations.get(Command.ExpandNode)?.({ id: "status:ready" });
+      deactivate();
+
+      assert.ok(registrations.has(Command.Refresh));
+      assert.ok(registrations.has(Command.OpenPreview));
+      assert.ok(registrations.has(Command.CollapseNode));
+      assert.ok(registrations.has(Command.ExpandNode));
+    } finally {
+      Object.defineProperty(vscode.workspace, "workspaceFolders", {
+        value: originalWorkspaceFolders,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "createTreeView", {
+        value: originalCreateTreeView,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegisterCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+        value: originalOnDidChangeConfiguration,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
+        value: originalCreateWatcher,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showInputBox", {
+        value: originalShowInputBox,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showQuickPick", {
+        value: originalShowQuickPick,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.commands, "executeCommand", {
+        value: originalExecuteCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+      await fs.rm(workspaceRoot.fsPath, { recursive: true, force: true });
     }
   });
 
