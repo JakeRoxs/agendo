@@ -1,11 +1,22 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { glob } from "glob";
 import Mocha from "mocha";
 
 export async function run(): Promise<void> {
+  const reportPath = path.resolve(
+    __dirname,
+    "../../../reports/test-results.xml",
+  );
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+
   const mocha = new Mocha({
     ui: "tdd",
     color: true,
+    reporter: "xunit",
+    reporterOptions: {
+      output: reportPath,
+    },
   });
 
   const testsRoot = path.resolve(__dirname, "..");
