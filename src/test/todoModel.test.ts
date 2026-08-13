@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { get, Settings, set, setDefault } from "../configuration";
 import { out, outputChannel, showOutputChannel } from "../output";
 import { ConfigService } from "../todos/configService";
 import { StatusService } from "../todos/statusService";
@@ -130,6 +131,54 @@ suite("todoModel", () => {
     assert.strictEqual(second.isCollapsed("status:pending"), false);
   });
 
+  test("configuration helpers delegate to VS Code settings", async () => {
+    const updates: Array<{ key: string; value: unknown; target: number }> = [];
+    const config = {
+      get: (key: string) => {
+        if (key === Settings.Root) return "docs\\todos";
+        if (key === Settings.DefaultPriority) return "p2";
+        if (key === Settings.OpenInPreview) return false;
+        if (key === Settings.GitignoreTodos) return true;
+        if (key === Settings.CompleteFolder) return "complete";
+        if (key === Settings.CancelledFolder) return "cancelled";
+        if (key === Settings.BacklogFolder) return "backlog";
+        return undefined;
+      },
+      update: async (key: string, value: unknown, target: number) => {
+        updates.push({ key, value, target });
+      },
+    };
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => config,
+      configurable: true,
+    });
+
+    try {
+      await set(Settings.Root, "docs/todos");
+      await setDefault(Settings.DefaultPriority, "p1");
+      assert.strictEqual(get<string>(Settings.Root), "docs\\todos");
+      assert.strictEqual(get<string>(Settings.DefaultPriority), "p2");
+      assert.strictEqual(get<boolean>(Settings.OpenInPreview), false);
+      assert.strictEqual(get<boolean>(Settings.GitignoreTodos), true);
+      assert.deepStrictEqual(updates[0], {
+        key: Settings.Root,
+        value: "docs/todos",
+        target: vscode.ConfigurationTarget.Workspace,
+      });
+      assert.deepStrictEqual(updates[1], {
+        key: Settings.DefaultPriority,
+        value: "p1",
+        target: vscode.ConfigurationTarget.Global,
+      });
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+    }
+  });
+
   test("config service normalizes the todo root and writes the project config file", async () => {
     const service = new ConfigService();
     const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-config-tests", "docs", "todos"));
@@ -149,6 +198,24 @@ suite("todoModel", () => {
       cancelledFolder: "cancelled",
       completeFolder: "complete",
     });
+
+    const root = service.root;
+    assert.strictEqual(root, "docs/todos");
+    assert.deepStrictEqual(service.toTodosConfig(), {
+      root: "docs/todos",
+      gitignored: false,
+      backlogFolder: "backlog",
+      cancelledFolder: "cancelled",
+      completeFolder: "complete",
+    });
+
+    const missingRoot = new ConfigService();
+    Object.defineProperty(vscode.workspace, "workspaceFolders", {
+      value: undefined,
+      configurable: true,
+    });
+    assert.strictEqual(missingRoot.getRootUri(), undefined);
+    assert.strictEqual(missingRoot.getSubfolderUri("backlog"), undefined);
   });
 
   test("tree provider groups visible todos by status and priority", () => {
