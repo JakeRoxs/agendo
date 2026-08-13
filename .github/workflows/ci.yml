@@ -85,8 +85,15 @@ jobs:
           name: sonar-test-results
           path: .
 
+      - name: Report resolved Sonar version
+        shell: bash
+        run: echo "Sonar project version = ${{ needs.build-test-package.outputs.package_version }}"
+
       - name: SonarQube scan
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f # v8.2.1
+        with:
+          args: >
+            -Dsonar.projectVersion=${{ needs.build-test-package.outputs.package_version }}
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
