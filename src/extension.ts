@@ -7,17 +7,17 @@ import { FilterService } from "./todos/filterService";
 import { LinkService } from "./todos/linkService";
 import { SkillManager } from "./todos/skillManager";
 import { StatusService } from "./todos/statusService";
-import { TodoRepository } from "./todos/todoRepository";
-import { TodoNode, TodoTreeProvider, TreeNode } from "./todos/todoTreeProvider";
-import { TreeStateService } from "./todos/treeStateService";
 import {
-  Todo,
-  TodoPriority,
-  TodoStatus,
+  buildFileName,
   TODO_PRIORITIES,
   TODO_STATUSES,
-  buildFileName,
+  type Todo,
+  type TodoPriority,
+  type TodoStatus,
 } from "./todos/todoModel";
+import { TodoRepository } from "./todos/todoRepository";
+import { type TodoNode, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
+import { TreeStateService } from "./todos/treeStateService";
 
 const subscriptions: vscode.Disposable[] = [];
 
@@ -31,12 +31,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const status = new StatusService(config);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
-  const treeProvider = new TodoTreeProvider(
-    repository,
-    filter,
-    config,
-    treeState,
-  );
+  const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
@@ -98,25 +93,11 @@ function resolveTodo(arg: unknown): Todo | undefined {
   return undefined;
 }
 
-function registerCommands(
-  context: vscode.ExtensionContext,
-  services: Services,
-): void {
-  const {
-    config,
-    repository,
-    filter,
-    treeState,
-    status,
-    links,
-    skill,
-    treeProvider,
-  } = services;
+function registerCommands(context: vscode.ExtensionContext, services: Services): void {
+  const { config, repository, filter, treeState, status, links, skill, treeProvider } = services;
 
   const register = (command: string, callback: (...args: any[]) => any) => {
-    context.subscriptions.push(
-      vscode.commands.registerCommand(command, callback),
-    );
+    context.subscriptions.push(vscode.commands.registerCommand(command, callback));
   };
 
   register(Command.Refresh, () => repository.refresh());
@@ -186,10 +167,7 @@ function registerCommands(
     }
     const oldFileName = todo.fileName;
     try {
-      const newUri = await status.setPriority(
-        todo,
-        picked.label as TodoPriority,
-      );
+      const newUri = await status.setPriority(todo, picked.label as TodoPriority);
       await repository.refresh();
       if (newUri) {
         await links.warnOnBrokenReferences(oldFileName, newUri);
@@ -273,9 +251,7 @@ function registerCommands(
       const status = await skill.getStatus();
       if (status.installed && !status.updateAvailable) {
         vscode.window.showInformationMessage(
-          `Agendo skill already installed (v${
-            status.installedVersion ?? "?"
-          }).`,
+          `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
         );
         return;
       }
@@ -291,9 +267,7 @@ function registerCommands(
   register(Command.UpdateSkill, async () => {
     try {
       await skill.updateFromSource();
-      vscode.window.showInformationMessage(
-        "Agendo skill updated from configured source.",
-      );
+      vscode.window.showInformationMessage("Agendo skill updated from configured source.");
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }
@@ -366,10 +340,7 @@ async function runFilterPicker(
   treeProvider.refresh();
 }
 
-async function createTodo(
-  config: ConfigService,
-  repository: TodoRepository,
-): Promise<void> {
+async function createTodo(config: ConfigService, repository: TodoRepository): Promise<void> {
   const rootUri = config.getRootUri();
   if (!rootUri) {
     vscode.window.showErrorMessage("Open a workspace folder to create todos.");
@@ -391,8 +362,7 @@ async function createTodo(
     TODO_PRIORITIES.map((p) => ({ label: p })),
     { placeHolder: "Select a priority" },
   );
-  const priority =
-    (priorityPick?.label as TodoPriority) ?? config.defaultPriority;
+  const priority = (priorityPick?.label as TodoPriority) ?? config.defaultPriority;
 
   const keyInput = await vscode.window.showInputBox({
     prompt: "Optional external tracking key",
@@ -404,12 +374,7 @@ async function createTodo(
   const key = keyInput.trim() || undefined;
 
   const nextId = String(repository.getMaxId() + 1).padStart(3, "0");
-  const fileName = buildFileName(
-    nextId,
-    "pending",
-    priority,
-    description.trim(),
-  );
+  const fileName = buildFileName(nextId, "pending", priority, description.trim());
   const target = vscode.Uri.joinPath(rootUri, fileName);
 
   const title = description
@@ -425,12 +390,7 @@ async function createTodo(
   await vscode.commands.executeCommand("vscode.open", target);
 }
 
-function renderTemplate(
-  id: string,
-  priority: TodoPriority,
-  title: string,
-  key?: string,
-): string {
+function renderTemplate(id: string, priority: TodoPriority, title: string, key?: string): string {
   return [
     "---",
     "status: pending",
@@ -458,5 +418,7 @@ function renderTemplate(
 
 export function deactivate() {
   out`${Settings.Identifier} deactivated`;
-  subscriptions.forEach((subscription) => subscription.dispose());
+  for (const subscription of subscriptions) {
+    subscription.dispose();
+  }
 }

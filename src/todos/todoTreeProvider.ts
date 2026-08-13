@@ -1,19 +1,13 @@
 import * as vscode from "vscode";
 import { Command } from "../commands";
-import { ConfigService } from "./configService";
-import { FilterService } from "./filterService";
-import { TodoRepository } from "./todoRepository";
-import { TreeStateService } from "./treeStateService";
-import { Todo, TodoPriority, TodoStatus, TODO_PRIORITIES } from "./todoModel";
+import type { ConfigService } from "./configService";
+import type { FilterService } from "./filterService";
+import { TODO_PRIORITIES, type Todo, type TodoPriority, type TodoStatus } from "./todoModel";
+import type { TodoRepository } from "./todoRepository";
+import type { TreeStateService } from "./treeStateService";
 
 /** Display order and labels for status groups. */
-const STATUS_ORDER: TodoStatus[] = [
-  "ready",
-  "pending",
-  "backlogged",
-  "complete",
-  "cancelled",
-];
+const STATUS_ORDER: TodoStatus[] = ["ready", "pending", "backlogged", "complete", "cancelled"];
 
 const STATUS_LABEL: Record<TodoStatus, string> = {
   ready: "Ready",
@@ -66,7 +60,7 @@ type TreeNode = StatusNode | PriorityNode | TodoNode;
 /** Groups todos by status, then priority, then leaf todo items. */
 export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<
-    TreeNode | undefined | void
+    TreeNode | undefined
   >();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
@@ -80,13 +74,11 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   refresh(): void {
-    this.onDidChangeTreeDataEmitter.fire();
+    this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
   private visibleTodos(): Todo[] {
-    return this.repository
-      .getTodos()
-      .filter((todo) => this.filter.matches(todo));
+    return this.repository.getTodos().filter((todo) => this.filter.matches(todo));
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -104,13 +96,13 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     const todos = this.visibleTodos();
 
     if (!node) {
-      return STATUS_ORDER.filter((status) =>
-        todos.some((t) => t.status === status),
-      ).map((status) => ({
-        kind: "status",
-        status,
-        count: todos.filter((t) => t.status === status).length,
-      }));
+      return STATUS_ORDER.filter((status) => todos.some((t) => t.status === status)).map(
+        (status) => ({
+          kind: "status",
+          status,
+          count: todos.filter((t) => t.status === status).length,
+        }),
+      );
     }
 
     if (node.kind === "status") {
@@ -173,10 +165,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       `${todo.id} · ${todo.title}`,
       vscode.TreeItemCollapsibleState.None,
     );
-    const description = [
-      todo.key,
-      todo.epic ? "epic" : todo.tags.join(", "),
-    ].filter((value): value is string => Boolean(value));
+    const description = [todo.key, todo.epic ? "epic" : todo.tags.join(", ")].filter(
+      (value): value is string => Boolean(value),
+    );
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
     item.contextValue = "todoItem";
@@ -209,4 +200,4 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 }
 
-export { TreeNode, TodoNode };
+export type { TodoNode, TreeNode };

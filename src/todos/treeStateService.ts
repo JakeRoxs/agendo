@@ -1,4 +1,4 @@
-import * as vscode from "vscode";
+import type * as vscode from "vscode";
 
 const TREE_STATE_KEY = "agendo.tree.collapsed";
 

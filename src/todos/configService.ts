@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { Settings, get } from "../configuration";
+import { get, Settings } from "../configuration";
 import { out } from "../output";
 
 /** Shape of the `.agendo-config.json` file the skill reads. */
@@ -19,10 +19,7 @@ export interface TodosConfig {
 export class ConfigService {
   /** Workspace-relative root folder for todos. */
   get root(): string {
-    const value = (get<string>(Settings.Root) ?? "docs/todos").replace(
-      /\\/g,
-      "/"
-    );
+    const value = (get<string>(Settings.Root) ?? "docs/todos").replace(/\\/g, "/");
     return value.split("/").filter(Boolean).join("/");
   }
 
@@ -105,7 +102,7 @@ export class ConfigService {
     try {
       await vscode.workspace.fs.createDirectory(rootUri);
       const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
-      const content = JSON.stringify(this.toTodosConfig(), null, 2) + "\n";
+      const content = `${JSON.stringify(this.toTodosConfig(), null, 2)}\n`;
       await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
       out`Wrote ${target.fsPath}`;
     } catch (error) {
@@ -128,10 +125,7 @@ export class ConfigService {
         await vscode.workspace.fs.createDirectory(rootUri);
         // Keep the config file trackable even when everything else is ignored.
         const content = "*\n!.gitignore\n!.agendo-config.json\n";
-        await vscode.workspace.fs.writeFile(
-          gitignoreUri,
-          Buffer.from(content, "utf8")
-        );
+        await vscode.workspace.fs.writeFile(gitignoreUri, Buffer.from(content, "utf8"));
         out`Wrote .gitignore in ${rootUri.fsPath}`;
       } else {
         await vscode.workspace.fs.delete(gitignoreUri);
