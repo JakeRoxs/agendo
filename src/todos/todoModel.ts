@@ -62,6 +62,25 @@ export function isTodoFileName(fileName: string): boolean {
   return FILENAME_RE.test(fileName);
 }
 
+/** Normalize a todo description into a safe filename segment. */
+function sanitizeDescription(description: string): string {
+  const normalized = description
+    .trim()
+    .replace(/[\\/]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/[._]+/g, "-")
+    .replace(/[^a-zA-Z0-9-]+/g, "-")
+    .replace(/-+/g, "-")
+    .toLowerCase();
+
+  const withoutLeadingHyphen = normalized.startsWith("-") ? normalized.slice(1) : normalized;
+  const withoutTrailingHyphen = withoutLeadingHyphen.endsWith("-")
+    ? withoutLeadingHyphen.slice(0, -1)
+    : withoutLeadingHyphen;
+
+  return withoutTrailingHyphen || "todo";
+}
+
 /** Build a filename from its component parts. */
 export function buildFileName(
   id: string,
@@ -69,7 +88,8 @@ export function buildFileName(
   priority: TodoPriority,
   description: string,
 ): string {
-  return `${id}-${status}-${priority}-${description}.md`;
+  const safeDescription = sanitizeDescription(description);
+  return `${id}-${status}-${priority}-${safeDescription}.md`;
 }
 
 function unquote(value: string): string {

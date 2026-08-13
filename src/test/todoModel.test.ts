@@ -42,6 +42,13 @@ suite("todoModel", () => {
     );
   });
 
+  test("buildFileName sanitizes unsafe path segments", () => {
+    assert.strictEqual(
+      buildFileName("060", "ready", "p2", "../../evil/notes.md"),
+      "060-ready-p2-evil-notes-md.md",
+    );
+  });
+
   test("splitFrontmatter separates data and body", () => {
     const content = "---\nstatus: pending\n---\n# Title\nBody";
     const { data, body } = splitFrontmatter(content);
