@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release (e.g., 0.1.1)
+        description: Version to release (semver)
         required: true
         type: string
       prerelease:
-        description: Mark as a pre-release (uncheck to make stable)
+        description: Mark as a pre-release
         required: false
         type: boolean
         default: false
