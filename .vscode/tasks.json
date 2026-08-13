@@ -2,17 +2,40 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Lint",
       "type": "npm",
-      "script": "watch",
-      "problemMatcher": "$tsc-watch",
-      "isBackground": true,
+      "script": "lint",
+      "problemMatcher": [],
+      "group": "lint",
       "presentation": {
-        "reveal": "never"
+        "reveal": "always",
+        "panel": "new"
       },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
+      "dependsOn": ["watch"]
+    },
+    {
+      "label": "Fix Lint",
+      "type": "npm",
+      "script": "lint:fix",
+      "problemMatcher": [],
+      "group": "lint",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "dependsOn": ["watch"]
+    },
+    {
+      "label": "Format",
+      "type": "npm",
+      "script": "format",
+      "problemMatcher": [],
+      "group": "format",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "dependsOn": ["watch"]
     },
     {
       "label": "Bump Version",

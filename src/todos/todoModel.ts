@@ -7,8 +7,7 @@ import type * as vscode from "vscode";
  * - `backlogged` is a deprioritized-but-open state (moves to the backlog subfolder).
  * - `complete` and `cancelled` are terminal states (each has its own subfolder).
  */
-export type TodoStatus =
-  "pending" | "ready" | "backlogged" | "complete" | "cancelled";
+export type TodoStatus = "pending" | "ready" | "backlogged" | "complete" | "cancelled";
 
 export type TodoPriority = "p1" | "p2" | "p3";
 
@@ -56,8 +55,7 @@ export interface Todo {
   frontmatter: Record<string, unknown>;
 }
 
-const FILENAME_RE =
-  /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
+const FILENAME_RE = /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
 
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {
@@ -107,9 +105,7 @@ export function splitFrontmatter(content: string): {
     return { data: "", body: content };
   }
 
-  const endIndex = lines.findIndex(
-    (line, index) => index > 0 && line.trim() === "---",
-  );
+  const endIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
   if (endIndex === -1) {
     return { data: "", body: content };
   }
@@ -135,9 +131,7 @@ function parseFrontmatterValue(value: string): unknown {
   return coerce(unquote(trimmed));
 }
 
-function parseFrontmatterLine(
-  line: string,
-): { key: string; value: unknown } | undefined {
+function parseFrontmatterLine(line: string): { key: string; value: unknown } | undefined {
   const separatorIndex = line.indexOf(":");
   if (separatorIndex <= 0) {
     return undefined;
@@ -169,9 +163,7 @@ export function parseFrontmatter(data: string): Record<string, unknown> {
     }
 
     if (line.trimStart().startsWith("- ") && currentKey) {
-      const existing = Array.isArray(result[currentKey])
-        ? (result[currentKey] as string[])
-        : [];
+      const existing = Array.isArray(result[currentKey]) ? (result[currentKey] as string[]) : [];
       existing.push(unquote(line.trimStart().slice(2).trim()));
       result[currentKey] = existing;
       continue;
@@ -228,11 +220,7 @@ function extractTitle(body: string, fallback: string): string {
  * @param content Raw file contents.
  * @param folder Subfolder relative to the root ("" for the root itself).
  */
-export function parseTodo(
-  uri: vscode.Uri,
-  content: string,
-  folder: string,
-): Todo | undefined {
+export function parseTodo(uri: vscode.Uri, content: string, folder: string): Todo | undefined {
   const fileName = uri.path.split("/").pop() ?? "";
   const nameMatch = FILENAME_RE.exec(fileName);
   if (!nameMatch) {
