@@ -1,18 +1,38 @@
 {
-	"version": "2.0.0",
-	"tasks": [
-		{
-			"type": "npm",
-			"script": "watch",
-			"problemMatcher": "$tsc-watch",
-			"isBackground": true,
-			"presentation": {
-				"reveal": "never"
-			},
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			}
-		}
-	]
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "watch",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Bump Version",
+      "type": "shell",
+      "command": "npm version ${input:bumpLevel} --no-git-tag-version",
+      "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      },
+      "inputs": [
+        {
+          "id": "bumpLevel",
+          "type": "promptString",
+          "description": "Version bump level",
+          "prompt": "Enter bump level (patch, minor, major)",
+          "default": "patch"
+        }
+      ]
+    }
+  ]
 }

@@ -47,7 +47,7 @@ filename.
 - **Set priority**, renaming the file and updating frontmatter.
 - **Create Todo** with the next available id, an optional external tracking key,
   and a built-in template.
-- **Config bridge**: the extension writes `<root>/.todos-config.json` so the
+- **Config bridge**: the extension writes `<root>/.agendo-config.json` so the
   Agendo skill can read the active `root` and `gitignored` flag and choose
   its file-discovery strategy.
 - **Gitignore toggle**: optionally write a `*` `.gitignore` into the todos root.
@@ -60,15 +60,15 @@ filename.
 
 ## Settings
 
-| Setting | Default | Description |
-| ------- | ------- | ----------- |
-| `agendo.root` | `docs/todos` | Workspace-relative root todos folder. |
-| `agendo.defaultPriority` | `p3` | Default priority for new todos. |
-| `agendo.completeFolder` | `complete` | Subfolder for completed todos. |
-| `agendo.cancelledFolder` | `cancelled` | Subfolder for cancelled todos. |
-| `agendo.backlogFolder` | `backlog` | Subfolder for backlogged todos. |
-| `agendo.openInPreview` | `true` | Open todos in Markdown preview. |
-| `agendo.gitignoreTodos` | `false` | Write a `*` `.gitignore` in the root. |
+| Setting                    | Default             | Description                                         |
+| -------------------------- | ------------------- | --------------------------------------------------- |
+| `agendo.root`              | `docs/todos`        | Workspace-relative root todos folder.               |
+| `agendo.defaultPriority`   | `p3`                | Default priority for new todos.                     |
+| `agendo.completeFolder`    | `complete`          | Subfolder for completed todos.                      |
+| `agendo.cancelledFolder`   | `cancelled`         | Subfolder for cancelled todos.                      |
+| `agendo.backlogFolder`     | `backlog`           | Subfolder for backlogged todos.                     |
+| `agendo.openInPreview`     | `true`              | Open todos in Markdown preview.                     |
+| `agendo.gitignoreTodos`    | `false`             | Write a `*` `.gitignore` in the root.               |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Base URL used by "Update Agendo Skill from Source". |
 
 ## Development

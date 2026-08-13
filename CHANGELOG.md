@@ -2,6 +2,18 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.1] - 2026-08-13
+
+### Added
+
+- Tree expansion state persistence (collapsed status/priority groups remembered)
+- SonarQube analysis job in CI workflow
+- `.gitattributes` and `.editorconfig` to prevent line ending issues
+
+### Changed
+
+- Renamed `.todos-config.json` → `.agendo-config.json` for better branding
+
 ## [0.1.0] - 2026-08-12
 
 ### Added
@@ -14,7 +26,7 @@ All notable changes to the Agendo extension are documented here.
   contextual `CANCELLED` banner handling.
 - Set-priority command with file rename.
 - Create-todo command with next-id allocation and a built-in template.
-- `.todos-config.json` projection and `*` `.gitignore` toggle for the
+- `.agendo-config.json` projection and `*` `.gitignore` toggle for the
   Agendo skill config bridge.
 - Bundled `agendo` skill (`resources/skill/`) with install/enable and
   update-from-source commands (`agendo.enableSkill`, `agendo.updateSkill`)

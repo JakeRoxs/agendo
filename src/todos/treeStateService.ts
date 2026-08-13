@@ -7,7 +7,7 @@ const TREE_STATE_KEY = "agendo.tree.collapsed";
  * Node keys follow the pattern: "status:<status>" or "priority:<status>:<priority>".
  */
 export class TreeStateService {
-  private collapsedNodes: Set<string> = new Set();
+  private readonly collapsedNodes: Set<string> = new Set();
 
   constructor(private readonly state: vscode.Memento) {
     const stored = state.get<string[]>(TREE_STATE_KEY, []);
