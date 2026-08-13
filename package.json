@@ -347,7 +347,7 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "node ./out/test/runTest.js",
-    "test:coverage": "c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js"
+    "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

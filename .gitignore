@@ -5,6 +5,7 @@ reports/
 .scannerwork/
 *.vsix
 .vscode-test/
+reports/
 
 .DS_Store
 Thumbs.db
