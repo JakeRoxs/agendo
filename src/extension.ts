@@ -16,7 +16,12 @@ import {
   type TodoStatus,
 } from "./todos/todoModel";
 import { TodoRepository } from "./todos/todoRepository";
-import { type TodoNode, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
+import {
+  getTreeNodeKey,
+  type TodoNode,
+  TodoTreeProvider,
+  type TreeNode,
+} from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
 
 const subscriptions: vscode.Disposable[] = [];
@@ -38,7 +43,23 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: true,
   });
 
-  subscriptions.push(outputChannel, repository, treeView);
+  subscriptions.push(
+    treeView.onDidCollapseElement(async (event) => {
+      const nodeKey = getTreeNodeKey(event.element as TreeNode | undefined);
+      if (nodeKey) {
+        await treeState.collapse(nodeKey);
+      }
+    }),
+    treeView.onDidExpandElement(async (event) => {
+      const nodeKey = getTreeNodeKey(event.element as TreeNode | undefined);
+      if (nodeKey) {
+        await treeState.expand(nodeKey);
+      }
+    }),
+    outputChannel,
+    repository,
+    treeView,
+  );
 
   // Keep the on-disk config projection and gitignore in sync on activation and
   // whenever relevant settings change.

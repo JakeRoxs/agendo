@@ -1,8 +1,12 @@
-<testsuite name="Mocha Tests" tests="6" failures="0" errors="0" skipped="0" timestamp="Thu, 13 Aug 2026 04:54:19 GMT" time="0.008">
-<testcase classname="todoModel" name="isTodoFileName matches the naming contract" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0"/>
-<testcase classname="todoModel" name="buildFileName composes parts" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0"/>
-<testcase classname="todoModel" name="splitFrontmatter separates data and body" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0"/>
-<testcase classname="todoModel" name="parseFrontmatter handles scalars, flow arrays and block arrays" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0.001"/>
-<testcase classname="todoModel" name="parseTodo derives fields from filename and body" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0.001"/>
-<testcase classname="todoModel" name="parseTodo accepts generic and legacy external keys" file="/home/jake/repos/agendo/out/test/todoModel.test.js" time="0"/>
-</testsuite>
+<?xml version="1.0" encoding="UTF-8"?>
+<testExecutions version="1">
+  <file path="out/test/todoModel.test.js">
+    <testCase name="todoModel isTodoFileName matches the naming contract" duration="0"/>
+    <testCase name="todoModel buildFileName composes parts" duration="0"/>
+    <testCase name="todoModel splitFrontmatter separates data and body" duration="0"/>
+    <testCase name="todoModel parseFrontmatter handles scalars, flow arrays and block arrays" duration="2"/>
+    <testCase name="todoModel parseTodo derives fields from filename and body" duration="0"/>
+    <testCase name="todoModel parseTodo accepts generic and legacy external keys" duration="0"/>
+    <testCase name="todoModel tree node IDs are stable for persisted collapse state" duration="0"/>
+  </file>
+</testExecutions>

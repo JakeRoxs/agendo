@@ -7,6 +7,7 @@ import {
   parseTodo,
   splitFrontmatter,
 } from "../todos/todoModel";
+import { getTreeNodeKey } from "../todos/todoTreeProvider";
 
 suite("todoModel", () => {
   test("isTodoFileName matches the naming contract", () => {
@@ -87,5 +88,17 @@ suite("todoModel", () => {
     const untracked = parseTodo(uri, "# Track Work", "");
     assert.strictEqual(untracked?.key, undefined);
     assert.strictEqual(untracked?.jira, undefined);
+  });
+
+  test("tree node IDs are stable for persisted collapse state", () => {
+    assert.strictEqual(
+      getTreeNodeKey({ kind: "status", status: "ready", count: 3 }),
+      "status:ready",
+    );
+    assert.strictEqual(
+      getTreeNodeKey({ kind: "priority", status: "ready", priority: "p2", todos: [] }),
+      "priority:ready:p2",
+    );
+    assert.strictEqual(getTreeNodeKey({ kind: "todo", todo: undefined as never }), undefined);
   });
 });

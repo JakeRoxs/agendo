@@ -57,6 +57,21 @@ interface TodoNode {
 
 type TreeNode = StatusNode | PriorityNode | TodoNode;
 
+export function getTreeNodeKey(node: TreeNode | undefined): string | undefined {
+  if (!node) {
+    return undefined;
+  }
+
+  switch (node.kind) {
+    case "status":
+      return `status:${node.status}`;
+    case "priority":
+      return `priority:${node.status}:${node.priority}`;
+    default:
+      return undefined;
+  }
+}
+
 /** Groups todos by status, then priority, then leaf todo items. */
 export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined>();
@@ -125,8 +140,8 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private statusItem(node: StatusNode): vscode.TreeItem {
-    const nodeKey = `status:${node.status}`;
-    const isCollapsed = this.treeState.isCollapsed(nodeKey);
+    const nodeKey = getTreeNodeKey(node);
+    const isCollapsed = nodeKey ? this.treeState.isCollapsed(nodeKey) : false;
     const item = new vscode.TreeItem(
       `${STATUS_LABEL[node.status]} (${node.count})`,
       isCollapsed
@@ -135,13 +150,13 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
     item.iconPath = new vscode.ThemeIcon(STATUS_ICON[node.status]);
     item.contextValue = "statusGroup";
-    item.id = nodeKey;
+    item.id = nodeKey ?? undefined;
     return item;
   }
 
   private priorityItem(node: PriorityNode): vscode.TreeItem {
-    const nodeKey = `priority:${node.status}:${node.priority}`;
-    const isCollapsed = this.treeState.isCollapsed(nodeKey);
+    const nodeKey = getTreeNodeKey(node);
+    const isCollapsed = nodeKey ? this.treeState.isCollapsed(nodeKey) : false;
     const item = new vscode.TreeItem(
       `${PRIORITY_LABEL[node.priority]} (${node.todos.length})`,
       isCollapsed
@@ -153,7 +168,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       new vscode.ThemeColor(PRIORITY_COLOR[node.priority]),
     );
     item.contextValue = "priorityGroup";
-    item.id = nodeKey;
+    item.id = nodeKey ?? undefined;
     return item;
   }
 

@@ -1,5 +1,8 @@
 node_modules/
 out/
+coverage/
+reports/
+.scannerwork/
 *.vsix
 .vscode-test/
 
