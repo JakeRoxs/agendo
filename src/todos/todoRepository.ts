@@ -108,7 +108,7 @@ export class TodoRepository implements vscode.Disposable {
   /** Highest numeric id across all known todos, for id allocation. */
   getMaxId(): number {
     return this.todos.reduce((max, todo) => {
-      const value = parseInt(todo.id, 10);
+      const value = Number.parseInt(todo.id, 10);
       return Number.isNaN(value) ? max : Math.max(max, value);
     }, 0);
   }

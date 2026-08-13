@@ -7,7 +7,8 @@ import type * as vscode from "vscode";
  * - `backlogged` is a deprioritized-but-open state (moves to the backlog subfolder).
  * - `complete` and `cancelled` are terminal states (each has its own subfolder).
  */
-export type TodoStatus = "pending" | "ready" | "backlogged" | "complete" | "cancelled";
+export type TodoStatus =
+  "pending" | "ready" | "backlogged" | "complete" | "cancelled";
 
 export type TodoPriority = "p1" | "p2" | "p3";
 
@@ -55,7 +56,8 @@ export interface Todo {
   frontmatter: Record<string, unknown>;
 }
 
-const FILENAME_RE = /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
+const FILENAME_RE =
+  /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
 
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {
@@ -94,12 +96,62 @@ function coerce(value: string): unknown {
 }
 
 /** Split a document into its frontmatter block and body. */
-export function splitFrontmatter(content: string): { data: string; body: string } {
-  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(content);
-  if (!match) {
+export function splitFrontmatter(content: string): {
+  data: string;
+  body: string;
+} {
+  const normalized = content.replace("\uFEFF", "");
+  const lines = normalized.split("\n").map((line) => line.replace("\r", ""));
+
+  if (lines[0]?.trim() !== "---") {
     return { data: "", body: content };
   }
-  return { data: match[1], body: match[2] };
+
+  const endIndex = lines.findIndex(
+    (line, index) => index > 0 && line.trim() === "---",
+  );
+  if (endIndex === -1) {
+    return { data: "", body: content };
+  }
+
+  return {
+    data: lines.slice(1, endIndex).join("\n"),
+    body: lines.slice(endIndex + 1).join("\n"),
+  };
+}
+
+function parseFrontmatterValue(value: string): unknown {
+  const trimmed = value.trim();
+  if (trimmed === "") {
+    return [];
+  }
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed
+      .slice(1, -1)
+      .split(",")
+      .map((item) => unquote(item))
+      .filter((item) => item.length > 0);
+  }
+  return coerce(unquote(trimmed));
+}
+
+function parseFrontmatterLine(
+  line: string,
+): { key: string; value: unknown } | undefined {
+  const separatorIndex = line.indexOf(":");
+  if (separatorIndex <= 0) {
+    return undefined;
+  }
+
+  const key = line.slice(0, separatorIndex).trim();
+  if (!/^\w+$/.test(key)) {
+    return undefined;
+  }
+
+  return {
+    key,
+    value: parseFrontmatterValue(line.slice(separatorIndex + 1)),
+  };
 }
 
 /**
@@ -108,39 +160,30 @@ export function splitFrontmatter(content: string): { data: string; body: string 
  */
 export function parseFrontmatter(data: string): Record<string, unknown> {
   const result: Record<string, unknown> = {};
-  const lines = data.split(/\r?\n/);
   let currentKey: string | null = null;
 
-  for (const rawLine of lines) {
-    const line = rawLine.replace(/\s+$/, "");
+  for (const rawLine of data.split("\n")) {
+    const line = rawLine.replace("\r", "").trimEnd();
     if (!line.trim() || line.trim().startsWith("#")) {
       continue;
     }
 
-    const listMatch = /^\s*-\s+(.*)$/.exec(line);
-    if (listMatch && currentKey) {
-      const existing = Array.isArray(result[currentKey]) ? (result[currentKey] as string[]) : [];
-      existing.push(unquote(listMatch[1]));
+    if (line.trimStart().startsWith("- ") && currentKey) {
+      const existing = Array.isArray(result[currentKey])
+        ? (result[currentKey] as string[])
+        : [];
+      existing.push(unquote(line.trimStart().slice(2).trim()));
       result[currentKey] = existing;
       continue;
     }
 
-    const kv = /^([A-Za-z0-9_]+):\s*(.*)$/.exec(line);
-    if (kv) {
-      currentKey = kv[1];
-      const value = kv[2].trim();
-      if (value === "") {
-        result[currentKey] = [];
-      } else if (value.startsWith("[") && value.endsWith("]")) {
-        result[currentKey] = value
-          .slice(1, -1)
-          .split(",")
-          .map((s) => unquote(s))
-          .filter((s) => s.length > 0);
-      } else {
-        result[currentKey] = coerce(unquote(value));
-      }
+    const parsed = parseFrontmatterLine(line);
+    if (!parsed) {
+      continue;
     }
+
+    currentKey = parsed.key;
+    result[currentKey] = parsed.value;
   }
 
   return result;
@@ -148,7 +191,7 @@ export function parseFrontmatter(data: string): Record<string, unknown> {
 
 function toStringArray(value: unknown): string[] {
   if (Array.isArray(value)) {
-    return value.map((v) => String(v)).filter((v) => v.length > 0);
+    return value.map(String).filter((item) => item.length > 0);
   }
   if (typeof value === "string" && value.trim().length > 0) {
     return [value.trim()];
@@ -167,8 +210,14 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function extractTitle(body: string, fallback: string): string {
-  const match = /^\s*#\s+(.+?)\s*$/m.exec(body);
-  return match ? match[1].trim() : fallback;
+  const lines = body.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith("#")) {
+      return trimmed.replace(/^#+\s*/, "").trim() || fallback;
+    }
+  }
+  return fallback;
 }
 
 /**
@@ -179,7 +228,11 @@ function extractTitle(body: string, fallback: string): string {
  * @param content Raw file contents.
  * @param folder Subfolder relative to the root ("" for the root itself).
  */
-export function parseTodo(uri: vscode.Uri, content: string, folder: string): Todo | undefined {
+export function parseTodo(
+  uri: vscode.Uri,
+  content: string,
+  folder: string,
+): Todo | undefined {
   const fileName = uri.path.split("/").pop() ?? "";
   const nameMatch = FILENAME_RE.exec(fileName);
   if (!nameMatch) {

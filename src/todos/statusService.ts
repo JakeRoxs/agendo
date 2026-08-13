@@ -34,7 +34,10 @@ export class StatusService {
   }
 
   /** Change a todo's status, moving/renaming the file and updating its body. */
-  async setStatus(todo: Todo, newStatus: TodoStatus): Promise<vscode.Uri | undefined> {
+  async setStatus(
+    todo: Todo,
+    newStatus: TodoStatus,
+  ): Promise<vscode.Uri | undefined> {
     if (todo.status === newStatus) {
       return undefined;
     }
@@ -53,13 +56,21 @@ export class StatusService {
     }
 
     const targetFolder = this.folderForStatus(newStatus);
-    const newName = buildFileName(todo.id, newStatus, todo.priority, todo.description);
+    const newName = buildFileName(
+      todo.id,
+      newStatus,
+      todo.priority,
+      todo.description,
+    );
 
     return this.writeAndMove(todo, content, targetFolder, newName);
   }
 
   /** Change a todo's priority, renaming the file and updating frontmatter. */
-  async setPriority(todo: Todo, newPriority: TodoPriority): Promise<vscode.Uri | undefined> {
+  async setPriority(
+    todo: Todo,
+    newPriority: TodoPriority,
+  ): Promise<vscode.Uri | undefined> {
     if (todo.priority === newPriority) {
       return undefined;
     }
@@ -67,7 +78,12 @@ export class StatusService {
     let content = Buffer.from(bytes).toString("utf8");
     content = this.rewriteFrontmatterField(content, "priority", newPriority);
 
-    const newName = buildFileName(todo.id, todo.status, newPriority, todo.description);
+    const newName = buildFileName(
+      todo.id,
+      todo.status,
+      newPriority,
+      todo.description,
+    );
     return this.writeAndMove(todo, content, todo.folder, newName);
   }
 
@@ -86,11 +102,16 @@ export class StatusService {
       throw new Error("No workspace root configured for todos.");
     }
 
-    const targetDir = targetFolder ? vscode.Uri.joinPath(rootUri, targetFolder) : rootUri;
+    const targetDir = targetFolder
+      ? vscode.Uri.joinPath(rootUri, targetFolder)
+      : rootUri;
     await vscode.workspace.fs.createDirectory(targetDir);
     const targetUri = vscode.Uri.joinPath(targetDir, newName);
 
-    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, "utf8"));
+    await vscode.workspace.fs.writeFile(
+      targetUri,
+      Buffer.from(content, "utf8"),
+    );
 
     if (targetUri.toString() !== todo.uri.toString()) {
       try {
@@ -104,14 +125,18 @@ export class StatusService {
   }
 
   /** Replace a scalar frontmatter field, inserting it if missing. */
-  private rewriteFrontmatterField(content: string, key: string, value: string): string {
+  private rewriteFrontmatterField(
+    content: string,
+    key: string,
+    value: string,
+  ): string {
     const { data } = splitFrontmatter(content);
     if (!data) {
       // No frontmatter block: create one.
       return `---\n${key}: ${value}\n---\n\n${content}`;
     }
 
-    const fieldRe = new RegExp(`^(${key}\\s*:\\s*).*$`, "m");
+    const fieldRe = new RegExp(String.raw`^(${key}\s*:\s*).*$`, "m");
     if (fieldRe.test(data)) {
       const newData = data.replace(fieldRe, `$1${value}`);
       return content.replace(data, newData);
@@ -151,12 +176,17 @@ export class StatusService {
     if (CANCELLED_BANNER_RE.test(content)) {
       return content;
     }
-    const supersede = todo.supersededBy ? ` / SUPERSEDED by [${todo.supersededBy}]` : "";
+    const supersede = todo.supersededBy
+      ? ` / SUPERSEDED by [${todo.supersededBy}]`
+      : "";
     const banner = `> **CANCELLED${supersede}**`;
-    const headingRe = /^(#\s+.+)$/m;
-    if (headingRe.test(content)) {
-      return content.replace(headingRe, `$1\n\n${banner}`);
+    const lines = content.split("\n");
+    const headingIndex = lines.findIndex((line) => line.startsWith("# "));
+    if (headingIndex >= 0) {
+      const before = lines.slice(0, headingIndex + 1).join("\n");
+      const after = lines.slice(headingIndex + 1).join("\n");
+        return before + "\n\n" + banner + (after ? "\n\n" + after : "");
     }
-    return `${banner}\n\n${content}`;
+    return banner + "\n\n" + content;
   }
 }
