@@ -2,6 +2,25 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.2] - 2026-08-13
+
+### Fixed
+
+- Persisted tree collapse/expand state now survives reloads by writing the
+  VS Code TreeView node IDs back to workspace state and restoring them reliably
+  after activation.
+- Resolved the reload bug where collapsed groups were not restored because the
+  UI node objects did not match the internal model shape used for persistence.
+
+### Changed
+
+- Simplified the CI test flow by removing duplicate test execution and keeping a
+  single headless VS Code run with the right Xvfb setup.
+- Added npm caching to the CI workflow to speed dependency installs in repeated
+  runs.
+- Expanded regression coverage around configuration, repository refresh, filter
+  logic, link validation, skill installation, and extension activation.
+
 ## [0.1.1] - 2026-08-13
 
 ### Added
