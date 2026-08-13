@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <testExecutions version="1">
   <file path="out/test/todoModel.test.js">
-    <testCase name="todoModel isTodoFileName matches the naming contract" duration="0"/>
+    <testCase name="todoModel isTodoFileName matches the naming contract" duration="1"/>
     <testCase name="todoModel buildFileName composes parts" duration="0"/>
-    <testCase name="todoModel splitFrontmatter separates data and body" duration="0"/>
-    <testCase name="todoModel parseFrontmatter handles scalars, flow arrays and block arrays" duration="2"/>
-    <testCase name="todoModel parseTodo derives fields from filename and body" duration="0"/>
+    <testCase name="todoModel splitFrontmatter separates data and body" duration="1"/>
+    <testCase name="todoModel parseFrontmatter handles scalars, flow arrays and block arrays" duration="3"/>
+    <testCase name="todoModel parseTodo derives fields from filename and body" duration="1"/>
     <testCase name="todoModel parseTodo accepts generic and legacy external keys" duration="0"/>
     <testCase name="todoModel tree node IDs are stable for persisted collapse state" duration="0"/>
   </file>
