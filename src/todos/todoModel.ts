@@ -118,8 +118,8 @@ export function splitFrontmatter(content: string): {
   data: string;
   body: string;
 } {
-  const normalized = content.replace("\uFEFF", "");
-  const lines = normalized.split("\n").map((line) => line.replace("\r", ""));
+  const normalized = content.replace("\uFEFF", "").replace(/\r/g, "");
+  const lines = normalized.split("\n");
 
   if (lines[0]?.trim() !== "---") {
     return { data: "", body: content };
@@ -177,7 +177,7 @@ export function parseFrontmatter(data: string): Record<string, unknown> {
   let currentKey: string | null = null;
 
   for (const rawLine of data.split("\n")) {
-    const line = rawLine.replace("\r", "").trimEnd();
+    const line = rawLine.replace(/\r/g, "").trimEnd();
     if (!line.trim() || line.trim().startsWith("#")) {
       continue;
     }
