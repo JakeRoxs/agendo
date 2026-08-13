@@ -18,6 +18,8 @@ jobs:
   build-test-package:
     name: Build, test, and package
     runs-on: ubuntu-latest
+    outputs:
+      package_version: ${{ steps.package.outputs.version }}
 
     steps:
       - name: Check out repository
@@ -88,4 +90,4 @@ jobs:
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-          SONAR_PROJECT_VERSION: ${{ steps.package.outputs.version }}
+          SONAR_PROJECT_VERSION: ${{ needs.build-test-package.outputs.package_version }}
