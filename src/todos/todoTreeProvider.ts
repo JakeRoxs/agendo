@@ -59,9 +59,7 @@ type TreeNode = StatusNode | PriorityNode | TodoNode;
 
 /** Groups todos by status, then priority, then leaf todo items. */
 export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
-  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<
-    TreeNode | undefined
-  >();
+  private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
   constructor(
