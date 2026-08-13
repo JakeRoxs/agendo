@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import { out, outputChannel, showOutputChannel } from "../output";
 import { ConfigService } from "../todos/configService";
 import { StatusService } from "../todos/statusService";
 import {
@@ -105,7 +106,28 @@ suite("todoModel", () => {
       getTreeNodeKey({ kind: "priority", status: "ready", priority: "p2", todos: [] }),
       "priority:ready:p2",
     );
+    assert.strictEqual(getTreeNodeKey({ id: "status:ready" }), "status:ready");
+    assert.strictEqual(getTreeNodeKey({ id: "priority:ready:p2" }), "priority:ready:p2");
     assert.strictEqual(getTreeNodeKey({ kind: "todo", todo: undefined as never }), undefined);
+  });
+
+  test("tree state persists collapsed nodes across workspace-state reloads", async () => {
+    const store = new Map<string, unknown>();
+    const state = {
+      get: <T>(key: string, fallback: T): T => (store.has(key) ? (store.get(key) as T) : fallback),
+      update: async (key: string, value: unknown) => {
+        store.set(key, value);
+      },
+    };
+
+    const first = new TreeStateService(state as never);
+    await first.collapse("status:ready");
+    await first.collapse("priority:ready:p2");
+
+    const second = new TreeStateService(state as never);
+    assert.strictEqual(second.isCollapsed("status:ready"), true);
+    assert.strictEqual(second.isCollapsed("priority:ready:p2"), true);
+    assert.strictEqual(second.isCollapsed("status:pending"), false);
   });
 
   test("config service normalizes the todo root and writes the project config file", async () => {
@@ -273,5 +295,97 @@ suite("todoModel", () => {
         )
       ).type !== undefined,
     );
+  });
+
+  test("tree state service persists collapsed state and clears all entries", async () => {
+    const memory = new Map<string, string[]>();
+    const state = {
+      get: (key: string, fallback: string[]) => memory.get(key) ?? fallback,
+      update: async (key: string, value: string[]) => {
+        memory.set(key, value);
+      },
+    };
+
+    const service = new TreeStateService(state as never);
+    assert.strictEqual(service.isCollapsed("status:ready"), false);
+
+    await service.collapse("status:ready");
+    assert.strictEqual(service.isCollapsed("status:ready"), true);
+
+    await service.toggle("status:ready");
+    assert.strictEqual(service.isCollapsed("status:ready"), false);
+
+    await service.expand("status:pending");
+    await service.toggle("status:pending");
+    assert.strictEqual(service.isCollapsed("status:pending"), true);
+
+    await service.clear();
+    assert.strictEqual(service.isCollapsed("status:ready"), false);
+    assert.strictEqual(service.isCollapsed("status:pending"), false);
+  });
+
+  test("config service exposes subfolder URIs and applies gitignore state", async () => {
+    const workspaceRoot = vscode.Uri.file(path.join(os.tmpdir(), "agendo-workspace"));
+    const workspaceFolder = {
+      uri: workspaceRoot,
+      name: "workspace",
+      index: 0,
+    };
+    Object.defineProperty(vscode.workspace, "workspaceFolders", {
+      value: [workspaceFolder],
+      configurable: true,
+    });
+
+    const service = new ConfigService();
+    Object.defineProperty(service, "root", { get: () => "docs/todos" });
+    Object.defineProperty(service, "gitignored", { get: () => true });
+    Object.defineProperty(service, "backlogFolder", { get: () => "backlog" });
+    Object.defineProperty(service, "cancelledFolder", { get: () => "cancelled" });
+    Object.defineProperty(service, "completeFolder", { get: () => "complete" });
+
+    const rootUri = service.getRootUri();
+    const subfolderUri = service.getSubfolderUri("backlog");
+    assert.ok(rootUri);
+    assert.ok(subfolderUri);
+    assert.strictEqual(rootUri?.fsPath, path.join(workspaceRoot.fsPath, "docs", "todos"));
+    assert.strictEqual(
+      subfolderUri?.fsPath,
+      path.join(workspaceRoot.fsPath, "docs", "todos", "backlog"),
+    );
+
+    await service.applyGitignore();
+    const gitignoreUri = vscode.Uri.joinPath(rootUri ?? workspaceRoot, ".gitignore");
+    const content = Buffer.from(await vscode.workspace.fs.readFile(gitignoreUri)).toString("utf8");
+    assert.match(content, /^\*/m);
+    assert.match(content, /!\.gitignore/);
+    assert.match(content, /!\.agendo-config\.json/);
+  });
+
+  test("output helpers format template strings and placeholder messages", () => {
+    const originalAppendLine = outputChannel.appendLine.bind(outputChannel);
+    const originalShow = outputChannel.show.bind(outputChannel);
+    const messages: string[] = [];
+    const shown: { count: number } = { count: 0 };
+
+    (outputChannel as { appendLine: (value: string) => void }).appendLine = (value: string) => {
+      messages.push(value);
+    };
+    (outputChannel as { show: () => void }).show = () => {
+      shown.count += 1;
+    };
+
+    try {
+      out`hello ${"world"}`;
+      out("value {0} and {1}", "alpha", "beta");
+      out("plain-message");
+      assert.ok(messages.some((value) => value.includes("hello world")));
+      assert.ok(messages.some((value) => value.includes("value alpha and beta")));
+      assert.ok(messages.some((value) => value === "plain-message"));
+      showOutputChannel();
+      assert.strictEqual(shown.count, 1);
+    } finally {
+      (outputChannel as { appendLine: (value: string) => void }).appendLine = originalAppendLine;
+      (outputChannel as { show: () => void }).show = originalShow;
+    }
   });
 });

@@ -1,5 +1,14 @@
 {
   "version": "2.0.0",
+  "inputs": [
+    {
+      "id": "bumpLevel",
+      "type": "pickString",
+      "description": "Version bump level",
+      "options": ["patch", "minor", "major"],
+      "default": "patch"
+    }
+  ],
   "tasks": [
     {
       "label": "Lint",
@@ -46,16 +55,7 @@
       "presentation": {
         "reveal": "always",
         "panel": "new"
-      },
-      "inputs": [
-        {
-          "id": "bumpLevel",
-          "type": "promptString",
-          "description": "Version bump level",
-          "prompt": "Enter bump level (patch, minor, major)",
-          "default": "patch"
-        }
-      ]
+      }
     }
   ]
 }

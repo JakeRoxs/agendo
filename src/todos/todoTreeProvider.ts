@@ -57,19 +57,29 @@ interface TodoNode {
 
 type TreeNode = StatusNode | PriorityNode | TodoNode;
 
-export function getTreeNodeKey(node: TreeNode | undefined): string | undefined {
+export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): string | undefined {
   if (!node) {
     return undefined;
   }
 
-  switch (node.kind) {
-    case "status":
-      return `status:${node.status}`;
-    case "priority":
-      return `priority:${node.status}:${node.priority}`;
-    default:
-      return undefined;
+  const maybeId =
+    typeof (node as { id?: string }).id === "string" ? (node as { id: string }).id : undefined;
+  if (maybeId && (maybeId.startsWith("status:") || maybeId.startsWith("priority:"))) {
+    return maybeId;
   }
+
+  if ("kind" in node) {
+    switch (node.kind) {
+      case "status":
+        return `status:${node.status}`;
+      case "priority":
+        return `priority:${node.status}:${node.priority}`;
+      default:
+        return undefined;
+    }
+  }
+
+  return undefined;
 }
 
 /** Groups todos by status, then priority, then leaf todo items. */
