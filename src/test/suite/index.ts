@@ -4,10 +4,7 @@ import { glob } from "glob";
 import Mocha from "mocha";
 
 export async function run(): Promise<void> {
-  const reportPath = path.resolve(
-    __dirname,
-    "../../../reports/test-results.xml",
-  );
+  const reportPath = path.resolve(__dirname, "../../../reports/test-results.xml");
   fs.mkdirSync(path.dirname(reportPath), { recursive: true });
 
   const mocha = new Mocha({
