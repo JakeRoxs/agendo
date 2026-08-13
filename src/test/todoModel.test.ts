@@ -1,10 +1,14 @@
 import * as assert from "node:assert";
+import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { get, Settings, set, setDefault } from "../configuration";
 import { out, outputChannel, showOutputChannel } from "../output";
 import { ConfigService } from "../todos/configService";
+import { FilterService } from "../todos/filterService";
+import { LinkService } from "../todos/linkService";
+import { SkillManager } from "../todos/skillManager";
 import { StatusService } from "../todos/statusService";
 import {
   buildFileName,
@@ -14,6 +18,7 @@ import {
   splitFrontmatter,
   type Todo,
 } from "../todos/todoModel";
+import { TodoRepository } from "../todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider } from "../todos/todoTreeProvider";
 import { TreeStateService } from "../todos/treeStateService";
 
@@ -426,6 +431,205 @@ suite("todoModel", () => {
     assert.match(content, /^\*/m);
     assert.match(content, /!\.gitignore/);
     assert.match(content, /!\.agendo-config\.json/);
+  });
+
+  test("filter service matches active search and tag filters", async () => {
+    const memory = new Map<string, unknown>();
+    const state = {
+      get: <T>(key: string, fallback: T): T =>
+        memory.has(key) ? (memory.get(key) as T) : fallback,
+      update: async (key: string, value: unknown) => {
+        memory.set(key, value);
+      },
+    };
+
+    const service = new FilterService(state as never);
+    assert.strictEqual(service.isActive, false);
+
+    await service.set({ statuses: ["pending"], priorities: ["p2"], tag: "alpha", text: "beta" });
+    assert.strictEqual(service.isActive, true);
+    assert.strictEqual(service.current.statuses?.includes("pending"), true);
+
+    const todo: Todo = {
+      id: "060",
+      status: "pending",
+      priority: "p2",
+      title: "Beta backlog",
+      description: "notes for beta",
+      tags: ["alpha", "ops"],
+      dependencies: ["050"],
+      key: "ABC-2",
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "060-pending-p2-beta-backlog.md",
+      uri: vscode.Uri.file("/tmp/060-pending-p2-beta-backlog.md"),
+      frontmatter: { status: "pending", priority: "p2", tags: ["alpha", "ops"] },
+    };
+
+    assert.strictEqual(service.matches(todo), true);
+    assert.strictEqual(service.matches({ ...todo, status: "ready" }), false);
+
+    await service.clear();
+    assert.strictEqual(service.isActive, false);
+    assert.deepStrictEqual(service.current, {});
+  });
+
+  test("link service finds stale references and warns when they are broken", async () => {
+    const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-link-tests"));
+    await fs.mkdir(rootUri.fsPath, { recursive: true });
+    const otherUri = vscode.Uri.joinPath(rootUri, "001-ready-p1-other.md");
+    const staleName = "060-ready-p2-do-the-thing.md";
+    await vscode.workspace.fs.writeFile(
+      otherUri,
+      Buffer.from(`# Example\n\nSee [${staleName}](${staleName})\nAnd ${staleName}\n`, "utf8"),
+    );
+
+    const config = {
+      getRootUri: () => rootUri,
+      backlogFolder: "backlog",
+      completeFolder: "complete",
+      cancelledFolder: "cancelled",
+    } as never;
+    const service = new LinkService(config);
+
+    const references = await service.findReferencesToName(staleName, otherUri);
+    assert.strictEqual(references.length, 0);
+
+    const hiddenUri = vscode.Uri.joinPath(rootUri, "060-ready-p2-do-the-thing.md");
+    const refs = await service.findReferencesToName(staleName, hiddenUri);
+    assert.strictEqual(refs[0]?.count, 3);
+
+    const originalWarning = vscode.window.showWarningMessage;
+    const originalExecute = vscode.commands.executeCommand;
+    let warned: string | undefined;
+    let executed = false;
+
+    Object.defineProperty(vscode.window, "showWarningMessage", {
+      value: async (message: string) => {
+        warned = message;
+        return "Show Referrers" as never;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.commands, "executeCommand", {
+      value: async (command: string) => {
+        executed = command === "workbench.action.findInFiles";
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      await service.warnOnBrokenReferences(staleName, hiddenUri);
+      assert.ok(warned?.includes(staleName));
+      assert.strictEqual(executed, true);
+    } finally {
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalWarning,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.commands, "executeCommand", {
+        value: originalExecute,
+        configurable: true,
+      });
+    }
+  });
+
+  test("skill manager installs bundled skill files and reports version status", async () => {
+    const homeDir = path.join(os.tmpdir(), "agendo-skill-tests");
+    const extensionDir = path.join(homeDir, "extension");
+    const skillDir = path.join(extensionDir, "resources", "skill");
+    await fs.mkdir(skillDir, { recursive: true });
+    await fs.mkdir(path.join(skillDir, "assets"), { recursive: true });
+    await fs.writeFile(
+      path.join(skillDir, ".skill-meta.json"),
+      JSON.stringify({ version: "1.2.3" }),
+    );
+    await fs.writeFile(path.join(skillDir, "SKILL.md"), "# bundled skill");
+    await fs.writeFile(path.join(skillDir, "assets", "todo-template.md"), "# template");
+
+    const originalHome = process.env.HOME;
+    process.env.HOME = homeDir;
+
+    try {
+      const manager = new SkillManager(vscode.Uri.file(extensionDir));
+      assert.strictEqual(await manager.isInstalled(), false);
+
+      await manager.install();
+      assert.strictEqual(await manager.isInstalled(), true);
+
+      const status = await manager.getStatus();
+      assert.strictEqual(status.installed, true);
+      assert.strictEqual(status.bundledVersion, "1.2.3");
+      assert.strictEqual(status.updateAvailable, false);
+    } finally {
+      if (originalHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = originalHome;
+      }
+      await fs.rm(homeDir, { recursive: true, force: true });
+    }
+  });
+
+  test("todo repository refreshes todo files and tracks the highest id", async () => {
+    const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-repo-tests"));
+    await vscode.workspace.fs.createDirectory(rootUri);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(rootUri, "backlog"));
+
+    const files = [
+      "001-ready-p1-first.md",
+      "020-pending-p2-second.md",
+      "099-cancelled-p3-third.md",
+    ];
+    for (const file of files) {
+      await vscode.workspace.fs.writeFile(
+        vscode.Uri.joinPath(rootUri, "backlog", file),
+        Buffer.from(
+          `---\nstatus: ${file.includes("ready") ? "ready" : file.includes("pending") ? "pending" : "cancelled"}\npriority: ${file.includes("p1") ? "p1" : file.includes("p2") ? "p2" : "p3"}\n---\n# ${file}\n`,
+          "utf8",
+        ),
+      );
+    }
+
+    const config = {
+      getRootUri: () => rootUri,
+      backlogFolder: "backlog",
+      completeFolder: "complete",
+      cancelledFolder: "cancelled",
+    } as never;
+    const repository = new TodoRepository(config);
+
+    await repository.refresh();
+    assert.strictEqual(repository.getTodos().length, 3);
+    assert.strictEqual(repository.getMaxId(), 99);
+
+    const created: string[] = [];
+    const originalWatcher = vscode.workspace.createFileSystemWatcher;
+    Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
+      value: (pattern: unknown) => {
+        created.push(String(pattern));
+        return {
+          onDidCreate: () => undefined,
+          onDidChange: () => undefined,
+          onDidDelete: () => undefined,
+          dispose: () => undefined,
+        } as never;
+      },
+      configurable: true,
+    });
+
+    try {
+      repository.startWatching();
+      assert.strictEqual(created.length, 1);
+    } finally {
+      repository.dispose();
+      Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
+        value: originalWatcher,
+        configurable: true,
+      });
+    }
   });
 
   test("output helpers format template strings and placeholder messages", () => {
