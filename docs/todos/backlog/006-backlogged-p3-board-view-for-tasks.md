@@ -1,6 +1,6 @@
 ---
-status: pending
-priority: p2
+status: backlogged
+priority: p3
 issue_id: "006"
 tags: [ui, workflow, board, task-management]
 dependencies: []
@@ -89,6 +89,17 @@ Related components:
 - [ ] The feature works without introducing a separate task database
 
 ## Work Log
+
+### 2026-08-19 - Backlogged
+
+**By:** Kilo Code
+
+**Actions:**
+- Moved the board view out of active consideration at the user's direction
+- Prioritized smaller workflow and maintainability improvements first
+
+**Learnings:**
+- The existing tree and digest surfaces cover current needs without adding board-level UI complexity
 
 ### 2026-08-13 - Initial Discovery
 

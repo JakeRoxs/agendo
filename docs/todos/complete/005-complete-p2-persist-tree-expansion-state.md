@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "005"
 tags: [vscode-extension, treeview, ux, state-persistence]
@@ -96,13 +96,13 @@ Implement Option A with the following steps:
 
 ## Acceptance Criteria
 
-- [ ] Status groups (Ready, Pending, etc.) can be collapsed and remain collapsed
-- [ ] Priority groups can be collapsed and remain collapsed
-- [ ] Collapsed state persists across VS Code reloads
-- [ ] Collapsed state is per-workspace (different workspaces can have different states)
-- [ ] Collapsing a status group collapses all its priority children
-- [ ] Expanding a collapsed status group re-expands all children
-- [ ] No regression in existing filter/search/persistence behavior
+- [x] Status groups (Ready, Pending, etc.) can be collapsed and remain collapsed
+- [x] Priority groups can be collapsed and remain collapsed
+- [x] Collapsed state persists across VS Code reloads
+- [x] Collapsed state is per-workspace (different workspaces can have different states)
+- [x] Collapsing a status group hides all its priority children
+- [x] Expanding a collapsed status group restores its children using their persisted state
+- [x] No regression in existing filter/search/persistence behavior
 
 ## Work Log
 

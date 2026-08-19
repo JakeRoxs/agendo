@@ -46,13 +46,42 @@ export interface Todo {
   parent?: string;
   children: string[];
   epic: boolean;
+  group?: string;
   supersededBy?: string;
   /** Subfolder name relative to the root ("" for the root itself). */
   folder: string;
   fileName: string;
   uri: vscode.Uri;
+  /** Last filesystem modification time, populated by the repository. */
+  updatedAt?: number;
   /** Raw parsed frontmatter, for fields not surfaced as first-class properties. */
   frontmatter: Record<string, unknown>;
+}
+
+/**
+ * Check whether a todo is blocked by any incomplete dependencies.
+ *
+ * A todo is "blocked" when at least one of its declared dependencies is not yet
+ * in a terminal state (`complete` or `cancelled`). This is a pure function — the
+ * caller passes the full repository snapshot so the check remains stateless.
+ */
+export function isBlocked(todo: Todo, allTodos: readonly Todo[]): boolean {
+  if (!todo.dependencies.length) {
+    return false;
+  }
+  const completeIds = new Set(
+    allTodos.filter((t) => TERMINAL_STATUSES.includes(t.status)).map((t) => t.id),
+  );
+  return todo.dependencies.some((depId) => !completeIds.has(depId));
+}
+
+/**
+ * Get the IDs of todos that this todo blocks (reverse dependency lookup).
+ */
+export function getBlockedBy(todo: Todo, allTodos: readonly Todo[]): string[] {
+  return allTodos
+    .filter((t) => t.dependencies.includes(todo.id) && !TERMINAL_STATUSES.includes(t.status))
+    .map((t) => t.id);
 }
 
 const FILENAME_RE = /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
@@ -270,6 +299,7 @@ export function parseTodo(uri: vscode.Uri, content: string, folder: string): Tod
     parent: optionalString(frontmatter.parent),
     children: toStringArray(frontmatter.children),
     epic: frontmatter.epic === true,
+    group: optionalString(frontmatter.group),
     supersededBy: optionalString(frontmatter.superseded_by),
     folder,
     fileName,

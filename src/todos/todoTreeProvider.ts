@@ -50,12 +50,19 @@ interface PriorityNode {
   todos: Todo[];
 }
 
+interface GroupNode {
+  kind: "group";
+  status: TodoStatus;
+  group: string;
+  todos: Todo[];
+}
+
 interface TodoNode {
   kind: "todo";
   todo: Todo;
 }
 
-type TreeNode = StatusNode | PriorityNode | TodoNode;
+type TreeNode = StatusNode | PriorityNode | GroupNode | TodoNode;
 
 export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): string | undefined {
   if (!node) {
@@ -64,7 +71,12 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
 
   const maybeId =
     typeof (node as { id?: string }).id === "string" ? (node as { id: string }).id : undefined;
-  if (maybeId && (maybeId.startsWith("status:") || maybeId.startsWith("priority:"))) {
+  if (
+    maybeId &&
+    (maybeId.startsWith("status:") ||
+      maybeId.startsWith("priority:") ||
+      maybeId.startsWith("group:"))
+  ) {
     return maybeId;
   }
 
@@ -74,6 +86,8 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
         return `status:${node.status}`;
       case "priority":
         return `priority:${node.status}:${node.priority}`;
+      case "group":
+        return `group:${node.status}:${node.group}`;
       default:
         return undefined;
     }
@@ -101,7 +115,8 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private visibleTodos(): Todo[] {
-    return this.repository.getTodos().filter((todo) => this.filter.matches(todo));
+    const dependencyGraph = this.repository.getDependencyGraph();
+    return this.repository.getTodos().filter((todo) => this.filter.matches(todo, dependencyGraph));
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
@@ -110,6 +125,8 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         return this.statusItem(node);
       case "priority":
         return this.priorityItem(node);
+      case "group":
+        return this.groupItem(node);
       case "todo":
         return this.todoItem(node);
     }
@@ -130,6 +147,34 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
     if (node.kind === "status") {
       const inStatus = todos.filter((t) => t.status === node.status);
+      const grouped = inStatus.filter((t) => t.group);
+      const ungrouped = inStatus.filter((t) => !t.group);
+
+      if (grouped.length > 0) {
+        const groups = [
+          ...new Set(
+            grouped.map((t) => t.group).filter((group): group is string => Boolean(group)),
+          ),
+        ].sort();
+        const groupNodes: GroupNode[] = groups.map((group) => ({
+          kind: "group",
+          status: node.status,
+          group,
+          todos: grouped.filter((t) => t.group === group).sort((a, b) => a.id.localeCompare(b.id)),
+        }));
+        const priorityNodes: PriorityNode[] = TODO_PRIORITIES.filter((priority) =>
+          ungrouped.some((t) => t.priority === priority),
+        ).map((priority) => ({
+          kind: "priority",
+          status: node.status,
+          priority,
+          todos: ungrouped
+            .filter((t) => t.priority === priority)
+            .sort((a, b) => a.id.localeCompare(b.id)),
+        }));
+        return [...groupNodes, ...priorityNodes];
+      }
+
       return TODO_PRIORITIES.filter((priority) =>
         inStatus.some((t) => t.priority === priority),
       ).map((priority) => ({
@@ -140,6 +185,10 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
           .filter((t) => t.priority === priority)
           .sort((a, b) => a.id.localeCompare(b.id)),
       }));
+    }
+
+    if (node.kind === "group") {
+      return node.todos.map((todo) => ({ kind: "todo", todo }));
     }
 
     if (node.kind === "priority") {
@@ -182,20 +231,40 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     return item;
   }
 
+  private groupItem(node: GroupNode): vscode.TreeItem {
+    const nodeKey = getTreeNodeKey(node);
+    const isCollapsed = nodeKey ? this.treeState.isCollapsed(nodeKey) : false;
+    const item = new vscode.TreeItem(
+      `Group: ${node.group} (${node.todos.length})`,
+      isCollapsed
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.Expanded,
+    );
+    item.iconPath = new vscode.ThemeIcon("symbol-class");
+    item.contextValue = "groupGroup";
+    item.id = nodeKey ?? undefined;
+    return item;
+  }
+
   private todoItem(node: TodoNode): vscode.TreeItem {
     const { todo } = node;
+    const incompleteDependencies =
+      this.repository.getDependencyGraph().blockedBy.get(todo.id) ?? [];
+    const isBlockedFlag = incompleteDependencies.length > 0;
     const item = new vscode.TreeItem(
       `${todo.id} · ${todo.title}`,
       vscode.TreeItemCollapsibleState.None,
     );
-    const description = [todo.key, todo.epic ? "epic" : todo.tags.join(", ")].filter(
-      (value): value is string => Boolean(value),
-    );
+    const description = [
+      todo.key,
+      todo.epic ? "epic" : todo.tags.join(", "),
+      isBlockedFlag ? "blocked" : undefined,
+    ].filter((value): value is string => Boolean(value));
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
-    item.contextValue = "todoItem";
+    item.contextValue = isBlockedFlag ? "todoItemBlocked" : "todoItem";
     item.iconPath = new vscode.ThemeIcon(
-      todo.epic ? "type-hierarchy" : "note",
+      todo.epic ? "type-hierarchy" : isBlockedFlag ? "circle-slash" : "note",
       new vscode.ThemeColor(PRIORITY_COLOR[todo.priority]),
     );
 
@@ -211,6 +280,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     }
     if (todo.dependencies.length) {
       tooltip.appendMarkdown(`- Depends on: ${todo.dependencies.join(", ")}\n`);
+    }
+    if (incompleteDependencies.length) {
+      tooltip.appendMarkdown(`\n> **Blocked by:** ${incompleteDependencies.join(", ")}\n`);
     }
     item.tooltip = tooltip;
 

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { out } from "../output";
 import type { ConfigService } from "./configService";
+import { readText } from "./fileSystem";
 import {
   buildFileName,
   splitFrontmatter,
@@ -8,6 +9,7 @@ import {
   type TodoPriority,
   type TodoStatus,
 } from "./todoModel";
+import type { TodoRepository } from "./todoRepository";
 
 const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[\s\S]*?(?:\r?\n>.*)*\r?\n?/m;
 
@@ -17,7 +19,10 @@ const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[\s\S]*?(?:\r?\n>.*)*\r?\n?/m;
  * the contextual cancelled banner.
  */
 export class StatusService {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly repository?: TodoRepository,
+  ) {}
 
   /** Target subfolder ("" = root) for a given status. */
   private folderForStatus(status: TodoStatus): string {
@@ -39,8 +44,27 @@ export class StatusService {
       return undefined;
     }
 
-    const bytes = await vscode.workspace.fs.readFile(todo.uri);
-    let content = Buffer.from(bytes).toString("utf8");
+    if (newStatus === "ready" && todo.dependencies.length > 0) {
+      const allTodos = this.repository?.getTodos() ?? [];
+      const todosById = new Map(allTodos.map((candidate) => [candidate.id, candidate]));
+      const incompleteIds = this.repository?.getDependencyGraph().blockedBy.get(todo.id) ?? [];
+      if (incompleteIds.length > 0) {
+        const incomplete = incompleteIds.map((id) => {
+          const dependency = todosById.get(id);
+          return `${id} (${dependency?.status ?? "missing"})`;
+        });
+        const answer = await vscode.window.showWarningMessage(
+          `Todo ${todo.id} has incomplete dependencies: ${incomplete.join(", ")}. Set to ready anyway?`,
+          "Set anyway",
+          "Cancel",
+        );
+        if (answer !== "Set anyway") {
+          return undefined;
+        }
+      }
+    }
+
+    let content = await readText(todo.uri);
 
     content = this.rewriteFrontmatterField(content, "status", newStatus);
 
@@ -63,18 +87,68 @@ export class StatusService {
     if (todo.priority === newPriority) {
       return undefined;
     }
-    const bytes = await vscode.workspace.fs.readFile(todo.uri);
-    let content = Buffer.from(bytes).toString("utf8");
+    let content = await readText(todo.uri);
     content = this.rewriteFrontmatterField(content, "priority", newPriority);
 
     const newName = buildFileName(todo.id, todo.status, newPriority, todo.description);
     return this.writeAndMove(todo, content, todo.folder, newName);
   }
 
-  /**
-   * Write the new content to the target location and remove the old file when
-   * the path changed. Returns the URI the todo now lives at.
-   */
+  /** Update the dependencies list in frontmatter and rename/move the file. */
+  async setDependencies(todo: Todo, newDependencies: string[]): Promise<vscode.Uri | undefined> {
+    if (
+      JSON.stringify([...todo.dependencies].sort()) === JSON.stringify([...newDependencies].sort())
+    ) {
+      return undefined;
+    }
+    let content = await readText(todo.uri);
+    const { data } = splitFrontmatter(content);
+    if (data) {
+      const depsRe = /^dependencies\s*:\s*(.*)$/m;
+      const depsMatch = depsRe.exec(data);
+      const newArray = `[${newDependencies.map((dependency) => JSON.stringify(dependency)).join(", ")}]`;
+      if (depsMatch) {
+        const newData = data.replace(depsRe, `dependencies: ${newArray}`);
+        content = content.replace(data, newData);
+      } else {
+        const newData = `${data}\ndependencies: ${newArray}`;
+        content = content.replace(data, newData);
+      }
+    }
+    const newName = buildFileName(todo.id, todo.status, todo.priority, todo.description);
+    return this.writeAndMove(todo, content, todo.folder, newName);
+  }
+
+  /** Update the group field in frontmatter and rename/move the file. */
+  async setGroup(todo: Todo, newGroup: string | undefined): Promise<vscode.Uri | undefined> {
+    if (todo.group === newGroup) {
+      return undefined;
+    }
+    let content = await readText(todo.uri);
+    const { data } = splitFrontmatter(content);
+    if (data) {
+      const groupRe = /^group\s*:\s*(.*)$/m;
+      if (newGroup) {
+        if (groupRe.test(data)) {
+          const newData = data.replace(groupRe, `group: ${newGroup}`);
+          content = content.replace(data, newData);
+        } else {
+          const newData = `${data}\ngroup: ${newGroup}`;
+          content = content.replace(data, newData);
+        }
+      } else {
+        const newData = data
+          .replace(groupRe, "")
+          .replace(/\n\s*\n/g, "\n")
+          .replace(/^\n/, "");
+        content = content.replace(data, newData);
+      }
+    }
+    const newName = buildFileName(todo.id, todo.status, todo.priority, todo.description);
+    return this.writeAndMove(todo, content, todo.folder, newName);
+  }
+
+  /** Rename first so editors and AI tooling follow the file, then update it in place. */
   private async writeAndMove(
     todo: Todo,
     content: string,
@@ -90,15 +164,12 @@ export class StatusService {
     await vscode.workspace.fs.createDirectory(targetDir);
     const targetUri = vscode.Uri.joinPath(targetDir, newName);
 
-    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, "utf8"));
-
     if (targetUri.toString() !== todo.uri.toString()) {
-      try {
-        await vscode.workspace.fs.delete(todo.uri);
-      } catch (error) {
-        out`Failed to delete old todo file ${todo.uri.fsPath}: ${error}`;
-      }
+      await vscode.workspace.fs.rename(todo.uri, targetUri, { overwrite: false });
+      out`Moved todo ${todo.uri.fsPath} to ${targetUri.fsPath} before updating its contents`;
     }
+
+    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, "utf8"));
 
     return targetUri;
   }

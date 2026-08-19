@@ -118,10 +118,18 @@ Testable checklist items for verifying completion.
 
 - [ ] All acceptance criteria checked
 - [ ] Tests pass (unit + integration if applicable)
-- [ ] Code reviewed and approved
+- [ ] Implementation reviewed where appropriate
 - [ ] (Example) Test coverage > 85%
 - [ ] (Example) Performance metrics acceptable
 - [ ] (Example) Documentation updated
+
+## Resume Context
+
+Keep this section short and current. It should describe where work stands now, not repeat the Work Log.
+
+**Current state:** Not started. The problem and proposed approaches have been documented.
+
+**Next step:** Review the proposed solutions and choose the recommended action during triage.
 
 ## Work Log
 
@@ -152,4 +160,4 @@ Additional context, decisions, or reminders.
 
 - Decision: Include both unit and integration tests for comprehensive coverage
 - Blocker: Depends on completion of issue #001
-- Timeline: Priority for sprint due to blocking other work
+- Timing: Prioritize because this blocks other work

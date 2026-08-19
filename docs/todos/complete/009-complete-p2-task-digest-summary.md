@@ -1,8 +1,8 @@
 ---
-status: pending
-priority: p3
+status: complete
+priority: p2
 issue_id: "009"
-tags: [summary, digest, workflow, agent-handoff]
+tags: [summary, digest, workflow, agent-continuity]
 dependencies: []
 ---
 
@@ -79,10 +79,16 @@ Related components:
 
 ## Acceptance Criteria
 
-- [ ] Users can view a compact overview of important tasks
-- [ ] Blocked and high-priority items are surfaced clearly
-- [ ] The summary is deterministic and low-risk to trust
-- [ ] The output supports contextual handoff for future work
+- [x] Users can view a compact overview of important tasks
+- [x] Blocked and high-priority items are surfaced clearly
+- [x] The summary is deterministic and low-risk to trust
+- [x] The output supports contextual handoff for future work
+
+## Resume Context
+
+**Current state:** Complete. The digest command generates a deterministic Markdown snapshot from current repository state.
+
+**Next step:** Open Agendo: Show Task Digest whenever a compact workload and next-action summary is needed.
 
 ## Work Log
 
@@ -97,6 +103,35 @@ Related components:
 **Learnings:**
 - A digest view is a natural companion to filtering and status management
 - It is especially valuable when multiple agents or human teammates share a todo workflow
+
+### 2026-08-19 - Implementation Started
+
+**By:** Kilo Code
+
+**Actions:**
+- Triaged the todo from pending to ready
+- Chose deterministic repository-derived Markdown over AI-generated summary text
+- Defined sections for counts, recommended next actions, P1 work, blockers, and recent updates
+
+**Learnings:**
+- A trusted digest should produce identical content for identical repository state
+- File modification time is needed for recent-work ordering but should not affect priority ranking
+
+### 2026-08-19 - Completion
+
+**By:** Kilo Code
+
+**Actions:**
+- Added deterministic digest generation for overview counts, recommended next actions, P1 work, blocked todos, and recent updates
+- Added repository file modification times for recent-work ordering
+- Added the `Agendo: Show Task Digest` command and Activity Bar action
+- Opened the digest as Markdown source before switching to preview for agent discoverability
+- Added ranking, blocker, determinism, registration, and preview sequencing coverage
+- Updated the README feature list
+- Ran `npm test`: 31 passing; TypeScript compilation and Biome checks clean
+
+**Learnings:**
+- Separating deterministic ranking from optional future natural-language summaries keeps the first version trustworthy
 
 ## Notes
 

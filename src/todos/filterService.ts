@@ -1,5 +1,6 @@
 import type * as vscode from "vscode";
 import type { Todo, TodoPriority, TodoStatus } from "./todoModel";
+import type { DependencyGraph } from "./todoRepository";
 
 /** Active filter/search criteria applied to the tree. */
 export interface TodoFilter {
@@ -7,6 +8,14 @@ export interface TodoFilter {
   priorities?: TodoPriority[];
   tag?: string;
   text?: string;
+  /** When set, only show todos that have unmet dependencies. */
+  blocked?: boolean;
+  /** When set, only show todos that depend on the given ID. */
+  dependsOn?: string;
+  /** When set, only show todos that are blocked by the given ID. */
+  blocking?: string;
+  /** When set, only show todos belonging to the given group. */
+  group?: string;
 }
 
 const STATE_KEY = "agendo.filter";
@@ -24,22 +33,22 @@ export class FilterService {
   }
 
   get isActive(): boolean {
-    const { statuses, priorities, tag, text } = this.filter;
-    return Boolean(statuses?.length || priorities?.length || tag?.length || text?.length);
-  }
-
-  async set(filter: TodoFilter): Promise<void> {
-    this.filter = filter;
-    await this.state.update(STATE_KEY, filter);
-  }
-
-  async clear(): Promise<void> {
-    await this.set({});
+    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group } = this.filter;
+    return Boolean(
+      statuses?.length ||
+        priorities?.length ||
+        tag?.length ||
+        text?.length ||
+        blocked !== undefined ||
+        dependsOn?.length ||
+        blocking?.length ||
+        group?.length,
+    );
   }
 
   /** True when the given todo passes the current filter. */
-  matches(todo: Todo): boolean {
-    const { statuses, priorities, tag, text } = this.filter;
+  matches(todo: Todo, dependencyGraph?: DependencyGraph): boolean {
+    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group } = this.filter;
 
     if (statuses?.length && !statuses.includes(todo.status)) {
       return false;
@@ -66,6 +75,36 @@ export class FilterService {
         return false;
       }
     }
+    if (blocked !== undefined) {
+      const isBlocked = Boolean(dependencyGraph?.blockedBy.get(todo.id)?.length);
+      if (isBlocked !== blocked) {
+        return false;
+      }
+    }
+    if (dependsOn?.length) {
+      if (!todo.dependencies.includes(dependsOn)) {
+        return false;
+      }
+    }
+    if (blocking?.length) {
+      if (todo.id !== blocking || !dependencyGraph?.blocking.get(todo.id)?.length) {
+        return false;
+      }
+    }
+    if (group?.length) {
+      if (todo.group !== group) {
+        return false;
+      }
+    }
     return true;
+  }
+
+  async set(filter: TodoFilter): Promise<void> {
+    this.filter = filter;
+    await this.state.update(STATE_KEY, filter);
+  }
+
+  async clear(): Promise<void> {
+    await this.set({});
   }
 }

@@ -50,7 +50,18 @@
     "viewsWelcome": [
       {
         "view": "agendo.todos",
-        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)"
+        "contents": "No todos match the current search.\n[Clear Search](command:agendo.clearSearch)",
+        "when": "agendo.searchActive"
+      },
+      {
+        "view": "agendo.todos",
+        "contents": "No todos match the current filters.\n[Clear Filters](command:agendo.clearFilters)",
+        "when": "agendo.filterActive && !agendo.searchActive"
+      },
+      {
+        "view": "agendo.todos",
+        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)",
+        "when": "!agendo.filterActive"
       }
     ],
     "commands": [
@@ -59,6 +70,12 @@
         "title": "Refresh",
         "category": "Agendo",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "agendo.showDigest",
+        "title": "Show Task Digest",
+        "category": "Agendo",
+        "icon": "$(list-selection)"
       },
       {
         "command": "agendo.filter",
@@ -71,6 +88,12 @@
         "title": "Search Todos...",
         "category": "Agendo",
         "icon": "$(search)"
+      },
+      {
+        "command": "agendo.clearSearch",
+        "title": "Clear Search",
+        "category": "Agendo",
+        "icon": "$(close)"
       },
       {
         "command": "agendo.clearFilters",
@@ -117,6 +140,16 @@
       {
         "command": "agendo.setPriority",
         "title": "Set Priority...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.setDependency",
+        "title": "Set Dependencies...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.setGroup",
+        "title": "Set Group...",
         "category": "Agendo"
       },
       {
@@ -180,18 +213,28 @@
         },
         {
           "command": "agendo.search",
+          "when": "view == agendo.todos && !agendo.searchActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agendo.clearSearch",
+          "when": "view == agendo.todos && agendo.searchActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agendo.showDigest",
           "when": "view == agendo.todos",
           "group": "navigation@2"
         },
         {
           "command": "agendo.filter",
           "when": "view == agendo.todos",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "agendo.refresh",
           "when": "view == agendo.todos",
-          "group": "navigation@4"
+          "group": "navigation@5"
         },
         {
           "command": "agendo.clearFilters",
@@ -212,17 +255,22 @@
           "command": "agendo.togglePreview",
           "when": "view == agendo.todos",
           "group": "2_config@3"
+        },
+        {
+          "command": "agendo.enableSkill",
+          "when": "view == agendo.todos",
+          "group": "9_skill@1"
         }
       ],
       "view/item/context": [
         {
           "command": "agendo.collapseNode",
-          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup/",
+          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@1"
         },
         {
           "command": "agendo.expandNode",
-          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup/",
+          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@2"
         },
         {
@@ -252,38 +300,48 @@
         },
         {
           "command": "agendo.openPreview",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "1_open@1"
         },
         {
           "command": "agendo.setStatus.pending",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@1"
         },
         {
           "command": "agendo.setStatus.ready",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@2"
         },
         {
           "command": "agendo.setStatus.backlogged",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@3"
         },
         {
           "command": "agendo.setStatus.complete",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@4"
         },
         {
           "command": "agendo.setStatus.cancelled",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@5"
         },
         {
           "command": "agendo.setPriority",
-          "when": "view == agendo.todos && viewItem == todoItem",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "3_priority@1"
+        },
+        {
+          "command": "agendo.setDependency",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "3_priority@2"
+        },
+        {
+          "command": "agendo.setGroup",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "3_priority@3"
         }
       ]
     },
@@ -339,6 +397,7 @@
     }
   },
   "overrides": {
+    "diff": "^8.0.4",
     "serialize-javascript": "^7.1.0"
   },
   "scripts": {
@@ -350,7 +409,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "test": "node ./out/test/runTest.js",
-    "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js"
+    "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js",
+    "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.8",

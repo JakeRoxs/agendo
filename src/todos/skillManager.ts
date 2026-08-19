@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as vscode from "vscode";
 import { get, Settings } from "../configuration";
 import { out } from "../output";
+import { readText } from "./fileSystem";
 
 /** Relative files that make up the bundled skill. */
 const SKILL_FILES = [".skill-meta.json", "SKILL.md", "assets/todo-template.md"];
@@ -45,10 +46,7 @@ export class SkillManager {
 
   private async readVersion(dir: vscode.Uri): Promise<string | undefined> {
     try {
-      const bytes = await vscode.workspace.fs.readFile(
-        vscode.Uri.joinPath(dir, ".skill-meta.json"),
-      );
-      const meta = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      const meta = JSON.parse(await readText(vscode.Uri.joinPath(dir, ".skill-meta.json")));
       return typeof meta.version === "string" ? meta.version : undefined;
     } catch {
       return undefined;

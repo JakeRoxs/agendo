@@ -3,10 +3,9 @@ out/
 coverage/
 reports/
 .scannerwork/
+.artifacts/
 *.vsix
 .vscode-test/
-reports/
-
 .DS_Store
 Thumbs.db
 ehthumbs-vista.db

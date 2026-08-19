@@ -2,7 +2,7 @@
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.1.0
+version: 1.2.0
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -114,6 +114,7 @@ Each todo is a markdown file with YAML frontmatter and structured sections. Use 
 - **Proposed Solutions** - Multiple options with pros/cons, effort, risk
 - **Recommended Action** - Clear plan (filled during triage)
 - **Acceptance Criteria** - Testable checklist items
+- **Resume Context** - Compact current state and next action for restarting work
 - **Work Log** - Chronological record with date, actions, learnings
 
 **Optional sections:**
@@ -165,6 +166,7 @@ all three together (filename token, frontmatter, folder).
    - Findings (if from investigation)
    - Proposed Solutions (multiple options)
    - Acceptance Criteria
+   - Initialize Resume Context with the current state and first next step
    - Add initial Work Log entry
 4. Determine status: `pending` (needs triage) or `ready` (pre-approved)
 5. Add relevant tags for filtering
@@ -176,7 +178,7 @@ all three together (filename token, frontmatter, folder).
 - Requires more than 15-20 minutes of work
 - Needs research, planning, or multiple approaches considered
 - Has dependencies on other work
-- Requires manager approval or prioritization
+- Requires explicit approval or prioritization
 - Part of larger feature or refactor
 - Technical debt needing documentation
 
@@ -190,6 +192,11 @@ all three together (filename token, frontmatter, folder).
 
 ### Triaging Pending Items
 
+> **Rename or move first, then edit the destination.** This applies to every lifecycle or priority
+> transition. VS Code Copilot may stage edits against the original path; editing before a rename can
+> recreate a stale copy when the change is accepted. After moving, perform all frontmatter, banner,
+> and work-log edits using only the new path.
+
 **To triage pending todos:**
 
 1. List pending items: `ls docs/todos/*-pending-*.md`
@@ -198,9 +205,9 @@ all three together (filename token, frontmatter, folder).
    - Review Proposed Solutions
    - Make decision: approve, defer (backlog), or modify priority
 3. Update approved todos:
-   - Rename file: `mv {file}-pending-{pri}-{desc}.md {file}-ready-{pri}-{desc}.md`
-   - Update frontmatter: `status: pending` → `status: ready`
-   - Fill "Recommended Action" section with clear plan
+   - First rename the file: `mv {file}-pending-{pri}-{desc}.md {file}-ready-{pri}-{desc}.md`
+   - Then update frontmatter at the new path: `status: pending` → `status: ready`
+   - Fill "Recommended Action" at the new path with a clear plan
    - Adjust priority if different from initial assessment
 4. Deferred todos either stay in `pending` status or move to `backlogged` (see below).
 
@@ -230,8 +237,9 @@ and counts** (see below). To reactivate, move the file back to the root and set 
    - `> **CANCELLED / SUPERSEDED by [057]**` — superseded by another todo (add `superseded_by: "057"` to frontmatter).
 4. Leave the `assets/{id}/` folder in place.
 
-To reopen a cancelled todo, move it back to the root, set the status to `pending`/`ready`, and
-remove the `CANCELLED` banner.
+To reopen a cancelled todo, first move it back to the root with the new status in its filename.
+Then, at the new path, set the frontmatter status to `pending`/`ready` and remove the `CANCELLED`
+banner.
 
 ### Managing Dependencies
 
@@ -289,8 +297,44 @@ Work logs serve as:
 
 - Historical record of investigation
 - Documentation of approaches attempted
-- Knowledge sharing for team
+- Durable context across personal work sessions and agents
 - Context for future similar work
+
+### Resuming and Pausing Work
+
+`Resume Context` is a compact snapshot, not a second Work Log. Keep it to two fields:
+
+```markdown
+## Resume Context
+
+**Current state:** Dependency graph implementation is complete and validated.
+
+**Next step:** Add file watcher debouncing and burst-event coverage.
+```
+
+- Do not add `owner`, assignment, or team-mode fields by default.
+- Keep structured blockers in frontmatter `dependencies`; do not duplicate them in Resume Context.
+- Keep attempts, commands, test results, and learnings in the Work Log.
+- Derive recency from the latest Work Log entry rather than maintaining a separate `last_updated` field.
+
+**When resuming a todo:**
+
+1. Read its status, priority, dependencies, and group metadata.
+2. Read Resume Context for the current state and next action.
+3. Read the latest Work Log entry for recent actions, results, and learnings.
+4. Verify dependencies against the current todo repository and inspect relevant code before changing it.
+5. Continue from the documented next step, adjusting it if the repository has changed.
+
+**Before pausing or handing execution to another agent:**
+
+1. Update `Current state` to describe what is true now, not a session history.
+2. Set one concrete `Next step` that can be acted on without rereading unrelated context.
+3. Update `dependencies` if structured blockers changed.
+4. Append a Work Log entry with actions, validation, and learnings.
+
+This workflow is individual-first: it supports returning after a break or switching AI agents. The
+same files may still be repository-tracked and shared without requiring collaboration-specific
+metadata.
 
 ### Completing a Todo
 
@@ -302,7 +346,7 @@ Work logs serve as:
 4. Check for unblocked work: `grep -l 'dependencies:.*"002"' docs/todos/*-ready-*.md`
 5. Commit with issue reference: `feat: resolve issue 002`
 
-> **Order matters — move before you edit.** In editors that stage AI edits for accept/reject (e.g. VS Code Copilot "Keep/Accept Changes"), editing a file and _then_ moving it causes the accepted edit to re-materialize the file at its **original** path, leaving a stale duplicate in `docs/todos/` next to the real one in `docs/todos/complete/`. Always `mv` to the target subfolder first, then make the frontmatter/work-log edits against the new path. If a stale duplicate does reappear after accepting, the subfolder copy is authoritative — delete the top-level one.
+> **Order matters — move before you edit.** In editors that stage AI edits for accept/reject (e.g. VS Code Copilot "Keep/Accept Changes"), editing a file and _then_ moving it causes the accepted edit to re-materialize the file at its **original** path, leaving a stale duplicate in `docs/todos/` next to the real one in `docs/todos/complete/`. Always `mv` to the target subfolder first, then make the frontmatter/work-log edits against the new path. If a stale duplicate does reappear after accepting, the moved copy is authoritative; compare the files, preserve any unique changes, and delete the stale original.
 
 ## Active vs. Terminal Status Rules
 
@@ -361,7 +405,7 @@ This section describes how a parent agent should delegate todo ID tracking to th
 
    - parent prompt example:
      `runSubagent({ agentName: "agendo", prompt: "show status 021" })`
-   - verify `status`, `priority`, `dependencies`, and `Work Log` entries in the returned object.
+   - verify `status`, `priority`, `dependencies`, Resume Context, and the latest Work Log entry.
 
 2. (Optional) Signal in-progress status via sub-agent call:
 
@@ -376,8 +420,8 @@ This section describes how a parent agent should delegate todo ID tracking to th
    - Include branch/PR references and commands run (`ctest`, `dotnet test`, etc.).
 
 5. Resolve and complete through sub-agent call:
-   - `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed" })`
-   - then rename/retag file status from `ready` to `complete` and update frontmatter.
+   - first move/rename the todo from `ready` to `complete`, before any final content edit
+   - then call `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed; the todo has already moved to its complete path, so edit only that path" })`
 
 > This workflow is intended to be used by a parent skill/agent orchestrating code tasks; `agendo` is invoked as a child skill for data updates and audit-safe state changes.
 

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "007"
 tags: [dependencies, workflow, task-relationships]
@@ -81,10 +81,10 @@ Related components:
 
 ## Acceptance Criteria
 
-- [ ] Todo files can declare blockers or dependencies
-- [ ] The tree view or filters can surface dependency-aware items
-- [ ] Blocked tasks are easy to identify without reading every file
-- [ ] Dependency metadata remains compatible with the existing markdown conventions
+- [x] Todo files can declare blockers or dependencies
+- [x] The tree view or filters can surface dependency-aware items
+- [x] Blocked tasks are easy to identify without reading every file
+- [x] Dependency metadata remains compatible with the existing markdown conventions
 
 ## Work Log
 
@@ -99,6 +99,18 @@ Related components:
 **Learnings:**
 - Dependency support is already partly modeled, so the main work is surfacing it in the UX and filters
 - This adds real operational value for large task sets
+
+### 2026-08-19 - Completion
+
+**By:** Kilo Code
+
+**Actions:**
+- Verified dependency parsing, editing, blocked-state icons, tooltips, and filters
+- Corrected blocked, unblocked, and blocker relationship filter semantics
+- Confirmed the full VS Code extension suite passes with 29 tests
+
+**Learnings:**
+- The dependency model is complete; repository-level graph caching is tracked separately in todo 013
 
 ## Notes
 

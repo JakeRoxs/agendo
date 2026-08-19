@@ -5,8 +5,10 @@
  */
 export enum Command {
   Refresh = "agendo.refresh",
+  ShowDigest = "agendo.showDigest",
   Filter = "agendo.filter",
   Search = "agendo.search",
+  ClearSearch = "agendo.clearSearch",
   ClearFilters = "agendo.clearFilters",
   CreateTodo = "agendo.createTodo",
   OpenPreview = "agendo.openPreview",
@@ -16,6 +18,8 @@ export enum Command {
   SetStatusComplete = "agendo.setStatus.complete",
   SetStatusCancelled = "agendo.setStatus.cancelled",
   SetPriority = "agendo.setPriority",
+  SetDependency = "agendo.setDependency",
+  SetGroup = "agendo.setGroup",
   ChooseRoot = "agendo.chooseRoot",
   ToggleGitignore = "agendo.toggleGitignore",
   TogglePreview = "agendo.togglePreview",

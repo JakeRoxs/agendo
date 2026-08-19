@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { out } from "../output";
 import type { ConfigService } from "./configService";
+import { readText } from "./fileSystem";
 import { isTodoFileName } from "./todoModel";
 
 /** A todo file that references another todo by its (now stale) filename. */
@@ -70,8 +71,7 @@ export class LinkService {
         continue;
       }
       try {
-        const bytes = await vscode.workspace.fs.readFile(fileUri);
-        const text = Buffer.from(bytes).toString("utf8");
+        const text = await readText(fileUri);
         const count = countOccurrences(text, oldFileName);
         if (count > 0) {
           references.push({ uri: fileUri, count });

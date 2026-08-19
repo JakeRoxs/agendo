@@ -47,6 +47,20 @@
       "dependsOn": ["watch"]
     },
     {
+      "label": "Package VSIX",
+      "type": "npm",
+      "script": "package:vsix",
+      "problemMatcher": [],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
       "label": "Bump Version",
       "type": "shell",
       "command": "npm version ${input:bumpLevel} --no-git-tag-version",

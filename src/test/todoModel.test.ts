@@ -2,18 +2,23 @@ import * as assert from "node:assert";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
+import { performance } from "node:perf_hooks";
 import * as vscode from "vscode";
 import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
 import { activate, deactivate } from "../extension";
 import { out, outputChannel, showOutputChannel } from "../output";
 import { ConfigService } from "../todos/configService";
+import { buildTodoDigest } from "../todos/digestService";
+import { readText } from "../todos/fileSystem";
 import { FilterService } from "../todos/filterService";
 import { LinkService } from "../todos/linkService";
 import { SkillManager } from "../todos/skillManager";
 import { StatusService } from "../todos/statusService";
 import {
   buildFileName,
+  getBlockedBy,
+  isBlocked,
   isTodoFileName,
   parseFrontmatter,
   parseTodo,
@@ -122,6 +127,14 @@ suite("todoModel", () => {
       getTreeNodeKey({ kind: "priority", status: "ready", priority: "p2", todos: [] }),
       "priority:ready:p2",
     );
+    assert.strictEqual(
+      getTreeNodeKey({ kind: "group", status: "ready", group: "auth", todos: [] }),
+      "group:ready:auth",
+    );
+    assert.notStrictEqual(
+      getTreeNodeKey({ kind: "group", status: "ready", group: "auth", todos: [] }),
+      getTreeNodeKey({ kind: "group", status: "pending", group: "auth", todos: [] }),
+    );
     assert.strictEqual(getTreeNodeKey({ id: "status:ready" }), "status:ready");
     assert.strictEqual(getTreeNodeKey({ id: "priority:ready:p2" }), "priority:ready:p2");
     assert.strictEqual(getTreeNodeKey({ kind: "todo", todo: undefined as never }), undefined);
@@ -191,6 +204,19 @@ suite("todoModel", () => {
         value: originalGetConfiguration,
         configurable: true,
       });
+    }
+  });
+
+  test("readText decodes workspace files as UTF-8", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-read-text-"));
+    const uri = vscode.Uri.file(path.join(directory, "sample.md"));
+    const expected = "Agendo \u2713";
+
+    try {
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(expected, "utf8"));
+      assert.strictEqual(await readText(uri), expected);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
     }
   });
 
@@ -270,6 +296,16 @@ suite("todoModel", () => {
 
     const repository = {
       getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map([
+          ["001", []],
+          ["002", ["001"]],
+        ]),
+        blocking: new Map([
+          ["001", ["002"]],
+          ["002", []],
+        ]),
+      }),
       onDidChange: () => undefined,
     };
     const filter = { matches: () => true };
@@ -302,8 +338,124 @@ suite("todoModel", () => {
     assert.strictEqual(item.command?.command, "vscode.open");
   });
 
+  test("tree provider renders 200 dependency-indexed todos without a performance regression", () => {
+    const todos = Array.from({ length: 200 }, (_, index): Todo => {
+      const id = String(index + 1).padStart(3, "0");
+      return {
+        id,
+        status: "ready",
+        priority: "p2",
+        title: `Todo ${id}`,
+        description: `todo-${id}`,
+        tags: [],
+        dependencies: index === 0 ? [] : ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: `${id}-ready-p2-todo-${id}.md`,
+        uri: vscode.Uri.file(`/tmp/${id}-ready-p2-todo-${id}.md`),
+        frontmatter: { status: "ready", priority: "p2" },
+      };
+    });
+    const dependencyGraph = {
+      blockedBy: new Map(todos.map((todo) => [todo.id, todo.dependencies.length ? ["001"] : []])),
+      blocking: new Map(todos.map((todo) => [todo.id, todo.id === "001" ? ["002"] : []])),
+    };
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => dependencyGraph,
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const config = { openInPreview: false };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(
+      repository as never,
+      filter as never,
+      config as never,
+      treeState,
+    );
+
+    const startedAt = performance.now();
+    const statuses = provider.getChildren();
+    const priorities = provider.getChildren(statuses[0]);
+    const todoNodes = provider.getChildren(priorities[0]);
+    for (const todoNode of todoNodes) {
+      provider.getTreeItem(todoNode);
+    }
+    const elapsed = performance.now() - startedAt;
+
+    assert.strictEqual(todoNodes.length, 200);
+    assert.ok(elapsed < 50, `Expected render under 50ms, received ${elapsed.toFixed(2)}ms`);
+  });
+
+  test("task digest deterministically ranks next actions and surfaces blockers", () => {
+    const createTodo = (
+      id: string,
+      status: Todo["status"],
+      priority: Todo["priority"],
+      dependencies: string[],
+      updatedAt: number,
+    ): Todo => ({
+      id,
+      status,
+      priority,
+      title: `Todo ${id}`,
+      description: `todo-${id}`,
+      tags: [],
+      dependencies,
+      children: [],
+      epic: false,
+      folder: status === "backlogged" ? "backlog" : "",
+      fileName: `${id}-${status}-${priority}-todo-${id}.md`,
+      uri: vscode.Uri.file(`/tmp/${id}-${status}-${priority}-todo-${id}.md`),
+      updatedAt,
+      frontmatter: { status, priority },
+    });
+    const todos = [
+      createTodo("001", "ready", "p2", [], 100),
+      createTodo("002", "pending", "p1", ["001"], 300),
+      createTodo("003", "ready", "p1", [], 200),
+      createTodo("004", "backlogged", "p1", [], 400),
+    ];
+    const dependencyGraph = {
+      blockedBy: new Map<string, readonly string[]>([
+        ["001", []],
+        ["002", ["001"]],
+        ["003", []],
+        ["004", []],
+      ]),
+      blocking: new Map<string, readonly string[]>([
+        ["001", ["002"]],
+        ["002", []],
+        ["003", []],
+        ["004", []],
+      ]),
+    };
+
+    const digest = buildTodoDigest(todos, dependencyGraph);
+    const recommended = digest.slice(
+      digest.indexOf("## Recommended Next Actions"),
+      digest.indexOf("## High Priority"),
+    );
+    const recent = digest.slice(digest.indexOf("## Recently Updated"));
+
+    assert.strictEqual(digest, buildTodoDigest(todos, dependencyGraph));
+    assert.match(digest, /Active: \*\*3\*\*/);
+    assert.match(digest, /Backlogged: \*\*1\*\*/);
+    assert.ok(recommended.indexOf("003") < recommended.indexOf("001"));
+    assert.ok(!recommended.includes("002"));
+    assert.match(digest, /002 · Todo 002 · blocked by 001/);
+    assert.ok(recent.indexOf("002 · Todo 002") < recent.indexOf("003 · Todo 003"));
+  });
+
   test("status service moves files and updates frontmatter when status or priority changes", async () => {
-    const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-status-tests"));
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-status-tests-")),
+    );
     await vscode.workspace.fs.createDirectory(rootUri);
     const originalUri = vscode.Uri.joinPath(rootUri, "060-ready-p2-do-the-thing.md");
     const initialContent = [
@@ -377,6 +529,54 @@ suite("todoModel", () => {
         )
       ).type !== undefined,
     );
+  });
+
+  test("status service warns before ready when a dependency is missing", async () => {
+    const todo: Todo = {
+      id: "060",
+      status: "pending",
+      priority: "p2",
+      title: "Missing dependency",
+      description: "missing-dependency",
+      tags: [],
+      dependencies: ["999"],
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "060-pending-p2-missing-dependency.md",
+      uri: vscode.Uri.file("/tmp/060-pending-p2-missing-dependency.md"),
+      frontmatter: { status: "pending", priority: "p2", dependencies: ["999"] },
+    };
+    const repository = {
+      getTodos: () => [todo],
+      getDependencyGraph: () => ({
+        blockedBy: new Map([["060", ["999"]]]),
+        blocking: new Map(),
+      }),
+    };
+    const originalShowWarningMessage = vscode.window.showWarningMessage;
+    let warning = "";
+    Object.defineProperty(vscode.window, "showWarningMessage", {
+      value: async (message: string) => {
+        warning = message;
+        return "Cancel";
+      },
+      configurable: true,
+    });
+
+    try {
+      const result = await new StatusService({} as never, repository as never).setStatus(
+        todo,
+        "ready",
+      );
+      assert.strictEqual(result, undefined);
+      assert.match(warning, /999 \(missing\)/);
+    } finally {
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalShowWarningMessage,
+        configurable: true,
+      });
+    }
   });
 
   test("tree state service persists collapsed state and clears all entries", async () => {
@@ -594,10 +794,16 @@ suite("todoModel", () => {
       "099-cancelled-p3-third.md",
     ];
     for (const file of files) {
+      const dependencies = file.startsWith("020") ? '\ndependencies: ["001"]' : "";
+      const group = file.startsWith("001")
+        ? "\ngroup: zeta"
+        : file.startsWith("020")
+          ? "\ngroup: alpha"
+          : "\ngroup: zeta";
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(rootUri, "backlog", file),
         Buffer.from(
-          `---\nstatus: ${file.includes("ready") ? "ready" : file.includes("pending") ? "pending" : "cancelled"}\npriority: ${file.includes("p1") ? "p1" : file.includes("p2") ? "p2" : "p3"}\n---\n# ${file}\n`,
+          `---\nstatus: ${file.includes("ready") ? "ready" : file.includes("pending") ? "pending" : "cancelled"}\npriority: ${file.includes("p1") ? "p1" : file.includes("p2") ? "p2" : "p3"}${dependencies}${group}\n---\n# ${file}\n`,
           "utf8",
         ),
       );
@@ -614,16 +820,23 @@ suite("todoModel", () => {
     await repository.refresh();
     assert.strictEqual(repository.getTodos().length, 3);
     assert.strictEqual(repository.getMaxId(), 99);
+    assert.deepStrictEqual(repository.getDependencyGraph().blockedBy.get("020"), ["001"]);
+    assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("001"), ["020"]);
+    assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("099"), []);
+    const groups = repository.getGroups();
+    assert.deepStrictEqual(groups, ["alpha", "zeta"]);
+    assert.strictEqual(repository.getGroups(), groups);
 
     const created: string[] = [];
+    const listeners: Array<() => void> = [];
     const originalWatcher = vscode.workspace.createFileSystemWatcher;
     Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
       value: (pattern: unknown) => {
         created.push(String(pattern));
         return {
-          onDidCreate: () => undefined,
-          onDidChange: () => undefined,
-          onDidDelete: () => undefined,
+          onDidCreate: (listener: () => void) => listeners.push(listener),
+          onDidChange: (listener: () => void) => listeners.push(listener),
+          onDidDelete: (listener: () => void) => listeners.push(listener),
           dispose: () => undefined,
         } as never;
       },
@@ -631,8 +844,28 @@ suite("todoModel", () => {
     });
 
     try {
+      let refreshCount = 0;
+      repository.refresh = async () => {
+        refreshCount += 1;
+      };
       repository.startWatching();
       assert.strictEqual(created.length, 1);
+      assert.strictEqual(listeners.length, 3);
+
+      for (let event = 0; event < 5; event++) {
+        listeners[0]();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      assert.strictEqual(refreshCount, 1);
+
+      listeners[1]();
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      assert.strictEqual(refreshCount, 2);
+
+      listeners[2]();
+      repository.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 450));
+      assert.strictEqual(refreshCount, 2);
     } finally {
       repository.dispose();
       Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
@@ -643,9 +876,18 @@ suite("todoModel", () => {
   });
 
   test("extension activates and executes command registration paths", async () => {
-    const workspaceRoot = vscode.Uri.file(path.join(os.tmpdir(), "agendo-extension-tests"));
+    const workspaceRoot = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-extension-tests-")),
+    );
     const todoRoot = vscode.Uri.joinPath(workspaceRoot, "docs", "todos");
     await vscode.workspace.fs.createDirectory(todoRoot);
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md"),
+      Buffer.from(
+        '---\nstatus: ready\npriority: p3\ngroup: auth\ndependencies: ["999"]\n---\n# Grouped\n',
+        "utf8",
+      ),
+    );
 
     const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
     const originalCreateTreeView = vscode.window.createTreeView;
@@ -654,10 +896,20 @@ suite("todoModel", () => {
     const originalCreateWatcher = vscode.workspace.createFileSystemWatcher;
     const originalShowInputBox = vscode.window.showInputBox;
     const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalShowTextDocument = vscode.window.showTextDocument;
+    const originalShowErrorMessage = vscode.window.showErrorMessage;
+    const originalShowInformationMessage = vscode.window.showInformationMessage;
+    const originalShowWarningMessage = vscode.window.showWarningMessage;
+    const originalOpenTextDocument = vscode.workspace.openTextDocument;
     const originalExecuteCommand = vscode.commands.executeCommand;
     const originalGetConfiguration = vscode.workspace.getConfiguration;
 
     const registrations = new Map<string, (...args: any[]) => any>();
+    const executedCommands: string[] = [];
+    const previewSteps: string[] = [];
+    const errorMessages: string[] = [];
+    const workspaceState = new Map<string, unknown>();
+    let watcherCreationCount = 0;
     const inputQueue = [
       "add-login-page",
       "my-key",
@@ -686,12 +938,15 @@ suite("todoModel", () => {
       configurable: true,
     });
     Object.defineProperty(vscode.workspace, "createFileSystemWatcher", {
-      value: () => ({
-        onDidCreate: () => undefined,
-        onDidChange: () => undefined,
-        onDidDelete: () => undefined,
-        dispose() {},
-      }),
+      value: () => {
+        watcherCreationCount += 1;
+        return {
+          onDidCreate: () => undefined,
+          onDidChange: () => undefined,
+          onDidDelete: () => undefined,
+          dispose() {},
+        };
+      },
       configurable: true,
     });
     Object.defineProperty(vscode.commands, "registerCommand", {
@@ -703,6 +958,21 @@ suite("todoModel", () => {
     });
     Object.defineProperty(vscode.window, "showInputBox", {
       value: async () => inputQueue.shift(),
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: async (message: string) => {
+        errorMessages.push(message);
+        return undefined;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showInformationMessage", {
+      value: async () => undefined,
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showWarningMessage", {
+      value: async () => undefined,
       configurable: true,
     });
     Object.defineProperty(vscode.window, "showQuickPick", {
@@ -718,6 +988,20 @@ suite("todoModel", () => {
       },
       configurable: true,
     });
+    Object.defineProperty(vscode.workspace, "openTextDocument", {
+      value: async (uri: vscode.Uri) => {
+        previewSteps.push("openTextDocument");
+        return { uri };
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showTextDocument", {
+      value: async () => {
+        previewSteps.push("showTextDocument");
+        return undefined;
+      },
+      configurable: true,
+    });
     Object.defineProperty(vscode.workspace, "getConfiguration", {
       value: () => ({
         get: () => undefined,
@@ -727,6 +1011,7 @@ suite("todoModel", () => {
     });
     Object.defineProperty(vscode.commands, "executeCommand", {
       value: async (command: string, ...args: unknown[]) => {
+        executedCommands.push(command);
         if (command === "vscode.open") {
           return { command, args };
         }
@@ -739,10 +1024,11 @@ suite("todoModel", () => {
       const context = {
         workspaceState: {
           get: <T>(key: string, fallback: T): T => {
-            const store = new Map<string, unknown>();
-            return store.has(key) ? (store.get(key) as T) : fallback;
+            return workspaceState.has(key) ? (workspaceState.get(key) as T) : fallback;
           },
-          update: async () => undefined,
+          update: async (key: string, value: unknown) => {
+            workspaceState.set(key, value);
+          },
         },
         extensionUri: vscode.Uri.file(
           path.join(os.tmpdir(), "agendo-extension-tests", "extension"),
@@ -750,6 +1036,7 @@ suite("todoModel", () => {
         subscriptions: [] as vscode.Disposable[],
       };
       await activate(context as never);
+      assert.strictEqual(watcherCreationCount, 1);
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({
@@ -773,7 +1060,15 @@ suite("todoModel", () => {
       });
       await registrations.get(Command.ClearFilters)?.();
       await registrations.get(Command.Filter)?.();
+      const selectedFilters = workspaceState.get("agendo.filter") as {
+        statuses?: string[];
+        group?: string;
+      };
+      assert.strictEqual(selectedFilters.group, "auth");
+      assert.ok(!selectedFilters.statuses?.includes("auth"));
       await registrations.get(Command.Search)?.();
+      await registrations.get(Command.ClearSearch)?.();
+      await registrations.get(Command.ShowDigest)?.();
 
       for (const status of TODO_STATUSES) {
         await registrations.get(`agendo.setStatus.${status}`)?.({
@@ -816,7 +1111,59 @@ suite("todoModel", () => {
           frontmatter: { status: "pending", priority: "p2" },
         },
       });
+      await registrations.get(Command.SetDependency)?.({
+        kind: "todo",
+        todo: {
+          id: "050",
+          status: "ready",
+          priority: "p3",
+          title: "Grouped",
+          description: "grouped",
+          tags: [],
+          dependencies: ["999"],
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "050-ready-p3-grouped.md",
+          uri: vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md"),
+          frontmatter: { status: "ready", priority: "p3", dependencies: ["999"] },
+        },
+      });
+      assert.match(
+        await readText(vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md")),
+        /dependencies: \["999"\]/,
+      );
+      await registrations.get(Command.SetGroup)?.({
+        kind: "todo",
+        todo: {
+          id: "001",
+          status: "pending",
+          priority: "p2",
+          title: "Login page",
+          description: "login",
+          tags: [],
+          dependencies: [],
+          group: undefined,
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "001-pending-p2-login-page.md",
+          uri: vscode.Uri.file(path.join(todoRoot.fsPath, "001-pending-p2-login-page.md")),
+          frontmatter: { status: "pending", priority: "p2" },
+        },
+      });
       await registrations.get(Command.CreateTodo)?.();
+      const createdEntries = await vscode.workspace.fs.readDirectory(todoRoot);
+      const createdTodo = createdEntries.find(
+        ([name]) => name.endsWith(".md") && name !== "050-ready-p3-grouped.md",
+      );
+      assert.ok(createdTodo);
+      assert.match(
+        await readText(vscode.Uri.joinPath(todoRoot, createdTodo[0])),
+        /## Resume Context/,
+      );
       await registrations.get(Command.ChooseRoot)?.();
       await registrations.get(Command.ToggleGitignore)?.();
       await registrations.get(Command.TogglePreview)?.();
@@ -830,9 +1177,34 @@ suite("todoModel", () => {
       deactivate();
 
       assert.ok(registrations.has(Command.Refresh));
+      assert.ok(registrations.has(Command.ShowDigest));
       assert.ok(registrations.has(Command.OpenPreview));
+      assert.ok(registrations.has(Command.ClearSearch));
       assert.ok(registrations.has(Command.CollapseNode));
       assert.ok(registrations.has(Command.ExpandNode));
+      assert.ok(registrations.has(Command.SetDependency));
+      assert.ok(registrations.has(Command.SetGroup));
+      assert.deepStrictEqual(previewSteps, [
+        "openTextDocument",
+        "showTextDocument",
+        "openTextDocument",
+        "showTextDocument",
+      ]);
+      assert.strictEqual(
+        executedCommands.filter((command) => command === "markdown.showPreview").length,
+        2,
+      );
+      assert.ok(executedCommands.includes("setContext"));
+      assert.ok(
+        errorMessages.every((message) =>
+          [
+            "Failed to set priority:",
+            "Failed to set group:",
+            "Failed to install skill:",
+            "Failed to update skill:",
+          ].some((prefix) => message.startsWith(prefix)),
+        ),
+      );
     } finally {
       Object.defineProperty(vscode.workspace, "workspaceFolders", {
         value: originalWorkspaceFolders,
@@ -858,8 +1230,28 @@ suite("todoModel", () => {
         value: originalShowInputBox,
         configurable: true,
       });
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: originalShowErrorMessage,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showInformationMessage", {
+        value: originalShowInformationMessage,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalShowWarningMessage,
+        configurable: true,
+      });
       Object.defineProperty(vscode.window, "showQuickPick", {
         value: originalShowQuickPick,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "openTextDocument", {
+        value: originalOpenTextDocument,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showTextDocument", {
+        value: originalShowTextDocument,
         configurable: true,
       });
       Object.defineProperty(vscode.commands, "executeCommand", {
@@ -872,6 +1264,426 @@ suite("todoModel", () => {
       });
       await fs.rm(workspaceRoot.fsPath, { recursive: true, force: true });
     }
+  });
+
+  test("isBlocked returns false when no dependencies exist", () => {
+    const todo: Todo = {
+      id: "001",
+      status: "ready",
+      priority: "p1",
+      title: "First",
+      description: "first",
+      tags: [],
+      dependencies: [],
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "001-ready-p1-first.md",
+      uri: vscode.Uri.file("/tmp/001-ready-p1-first.md"),
+      frontmatter: { status: "ready", priority: "p1" },
+    };
+    assert.strictEqual(isBlocked(todo, []), false);
+  });
+
+  test("isBlocked returns true when any dependency is incomplete", () => {
+    const todo: Todo = {
+      id: "002",
+      status: "pending",
+      priority: "p2",
+      title: "Second",
+      description: "second",
+      tags: [],
+      dependencies: ["001"],
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "002-pending-p2-second.md",
+      uri: vscode.Uri.file("/tmp/002-pending-p2-second.md"),
+      frontmatter: { status: "pending", priority: "p2" },
+    };
+    const allTodos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-first.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+    ];
+    assert.strictEqual(isBlocked(todo, allTodos), true);
+  });
+
+  test("isBlocked returns false when all dependencies are complete", () => {
+    const todo: Todo = {
+      id: "003",
+      status: "pending",
+      priority: "p2",
+      title: "Third",
+      description: "third",
+      tags: [],
+      dependencies: ["001", "002"],
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "003-pending-p2-third.md",
+      uri: vscode.Uri.file("/tmp/003-pending-p2-third.md"),
+      frontmatter: { status: "pending", priority: "p2" },
+    };
+    const allTodos: Todo[] = [
+      {
+        id: "001",
+        status: "complete",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "complete",
+        fileName: "001-complete-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-complete-p1-first.md"),
+        frontmatter: { status: "complete", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "cancelled",
+        priority: "p3",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "cancelled",
+        fileName: "002-cancelled-p3-second.md",
+        uri: vscode.Uri.file("/tmp/002-cancelled-p3-second.md"),
+        frontmatter: { status: "cancelled", priority: "p3" },
+      },
+    ];
+    assert.strictEqual(isBlocked(todo, allTodos), false);
+  });
+
+  test("getBlockedBy returns dependents that are not terminal", () => {
+    const todo: Todo = {
+      id: "001",
+      status: "complete",
+      priority: "p1",
+      title: "First",
+      description: "first",
+      tags: [],
+      dependencies: [],
+      children: [],
+      epic: false,
+      folder: "complete",
+      fileName: "001-complete-p1-first.md",
+      uri: vscode.Uri.file("/tmp/001-complete-p1-first.md"),
+      frontmatter: { status: "complete", priority: "p1" },
+    };
+    const allTodos: Todo[] = [
+      {
+        id: "002",
+        status: "pending",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p2-second.md"),
+        frontmatter: { status: "pending", priority: "p2" },
+      },
+      {
+        id: "003",
+        status: "complete",
+        priority: "p3",
+        title: "Third",
+        description: "third",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "complete",
+        fileName: "003-complete-p3-third.md",
+        uri: vscode.Uri.file("/tmp/003-complete-p3-third.md"),
+        frontmatter: { status: "complete", priority: "p3" },
+      },
+    ];
+    assert.deepStrictEqual(getBlockedBy(todo, allTodos), ["002"]);
+  });
+
+  test("filter service matches blocked/unblocked filters", async () => {
+    const memory = new Map<string, unknown>();
+    const state = {
+      get: <T>(key: string, fallback: T): T =>
+        memory.has(key) ? (memory.get(key) as T) : fallback,
+      update: async (key: string, value: unknown) => {
+        memory.set(key, value);
+      },
+    };
+
+    const service = new FilterService(state as never);
+    const allTodos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-first.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p2-second.md"),
+        frontmatter: { status: "pending", priority: "p2" },
+      },
+    ];
+    const dependencyGraph = {
+      blockedBy: new Map<string, readonly string[]>([
+        ["001", []],
+        ["002", ["001"]],
+      ]),
+      blocking: new Map<string, readonly string[]>([
+        ["001", ["002"]],
+        ["002", []],
+      ]),
+    };
+
+    await service.set({ blocked: true });
+    assert.strictEqual(service.matches(allTodos[0], dependencyGraph), false);
+    assert.strictEqual(service.matches(allTodos[1], dependencyGraph), true);
+
+    await service.set({ blocked: false });
+    assert.strictEqual(service.matches(allTodos[0], dependencyGraph), true);
+    assert.strictEqual(service.matches(allTodos[1], dependencyGraph), false);
+
+    await service.set({ dependsOn: "001" });
+    assert.strictEqual(service.matches(allTodos[0], dependencyGraph), false);
+    assert.strictEqual(service.matches(allTodos[1], dependencyGraph), true);
+
+    await service.set({ blocking: "001" });
+    assert.strictEqual(service.matches(allTodos[0], dependencyGraph), true);
+    assert.strictEqual(service.matches(allTodos[1], dependencyGraph), false);
+
+    await service.clear();
+  });
+
+  test("filter service matches group filters", async () => {
+    const memory = new Map<string, unknown>();
+    const state = {
+      get: <T>(key: string, fallback: T): T =>
+        memory.has(key) ? (memory.get(key) as T) : fallback,
+      update: async (key: string, value: unknown) => {
+        memory.set(key, value);
+      },
+    };
+
+    const service = new FilterService(state as never);
+    const allTodos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        group: "auth",
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-first.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: [],
+        group: "billing",
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p2-second.md"),
+        frontmatter: { status: "pending", priority: "p2" },
+      },
+      {
+        id: "003",
+        status: "pending",
+        priority: "p3",
+        title: "Third",
+        description: "third",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "003-pending-p3-third.md",
+        uri: vscode.Uri.file("/tmp/003-pending-p3-third.md"),
+        frontmatter: { status: "pending", priority: "p3" },
+      },
+    ];
+
+    await service.set({ group: "auth" });
+    assert.strictEqual(service.matches(allTodos[0]), true);
+    assert.strictEqual(service.matches(allTodos[1]), false);
+    assert.strictEqual(service.matches(allTodos[2]), false);
+
+    await service.set({ group: "billing" });
+    assert.strictEqual(service.matches(allTodos[0]), false);
+    assert.strictEqual(service.matches(allTodos[1]), true);
+    assert.strictEqual(service.matches(allTodos[2]), false);
+
+    await service.clear();
+  });
+
+  test("status service updates dependencies and renames the file", async () => {
+    const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-deps-tests"));
+    await vscode.workspace.fs.createDirectory(rootUri);
+    const originalUri = vscode.Uri.joinPath(rootUri, "060-ready-p2-do-the-thing.md");
+    const initialContent = [
+      "---",
+      "status: ready",
+      "priority: p2",
+      "dependencies: []",
+      "---",
+      "",
+      "# Do The Thing",
+      "",
+      "Body.",
+    ].join("\n");
+    await vscode.workspace.fs.writeFile(originalUri, Buffer.from(initialContent, "utf8"));
+
+    const todo: Todo = {
+      id: "060",
+      status: "ready",
+      priority: "p2",
+      title: "Do The Thing",
+      description: "do-the-thing",
+      tags: [],
+      dependencies: [],
+      key: undefined,
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "060-ready-p2-do-the-thing.md",
+      uri: originalUri,
+      frontmatter: { status: "ready", priority: "p2", dependencies: [] },
+    };
+
+    const config = {
+      getRootUri: () => rootUri,
+      backlogFolder: "backlog",
+      completeFolder: "complete",
+      cancelledFolder: "cancelled",
+    } as never;
+    const service = new StatusService(config);
+
+    const dependencies = ["002", "001"];
+    const unchanged = await service.setDependencies({ ...todo, dependencies }, ["001", "002"]);
+    assert.strictEqual(unchanged, undefined);
+    assert.deepStrictEqual(dependencies, ["002", "001"]);
+
+    const newUri = await service.setDependencies(todo, ["001", "002"]);
+    assert.ok(newUri);
+
+    const updatedData = Buffer.from(await vscode.workspace.fs.readFile(newUri)).toString("utf8");
+    assert.match(updatedData, /dependencies: \["001", "002"\]/);
+  });
+
+  test("status service updates and clears group metadata", async () => {
+    const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-group-tests"));
+    await vscode.workspace.fs.createDirectory(rootUri);
+    const originalUri = vscode.Uri.joinPath(rootUri, "061-ready-p2-grouped-task.md");
+    const initialContent = [
+      "---",
+      "status: ready",
+      "priority: p2",
+      "group: my-initiative",
+      "---",
+      "",
+      "# Grouped Task",
+      "",
+      "Body.",
+    ].join("\n");
+    await vscode.workspace.fs.writeFile(originalUri, Buffer.from(initialContent, "utf8"));
+
+    const todo: Todo = {
+      id: "061",
+      status: "ready",
+      priority: "p2",
+      title: "Grouped Task",
+      description: "grouped-task",
+      tags: [],
+      dependencies: [],
+      group: "my-initiative",
+      key: undefined,
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "061-ready-p2-grouped-task.md",
+      uri: originalUri,
+      frontmatter: { status: "ready", priority: "p2", group: "my-initiative" },
+    };
+
+    const config = {
+      getRootUri: () => rootUri,
+      backlogFolder: "backlog",
+      completeFolder: "complete",
+      cancelledFolder: "cancelled",
+    } as never;
+    const service = new StatusService(config);
+
+    const updatedUri = await service.setGroup(todo, "new-group");
+    if (!updatedUri) {
+      assert.fail("Expected group update to return a URI");
+    }
+    const updatedData = Buffer.from(await vscode.workspace.fs.readFile(updatedUri)).toString(
+      "utf8",
+    );
+    assert.match(updatedData, /group: new-group/);
+
+    const clearedUri = await service.setGroup({ ...todo, group: "new-group" }, undefined);
+    if (!clearedUri) {
+      assert.fail("Expected group removal to return a URI");
+    }
+    const clearedData = Buffer.from(await vscode.workspace.fs.readFile(clearedUri)).toString(
+      "utf8",
+    );
+    assert.ok(!clearedData.includes("group:"));
   });
 
   test("output helpers format template strings and placeholder messages", () => {

@@ -2,6 +2,40 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.3] - 2026-08-19
+
+### Added
+
+- Dependency editing, blocked-state indicators, reverse dependency filtering,
+  and repository-level dependency indexes.
+- Lightweight task groups with tree grouping and group filtering.
+- Deterministic task digest for next actions, high-priority work, blockers, and
+  recently updated todos.
+- Individual-first Resume Context guidance in the bundled Agendo skill.
+- Search-aware empty states and dedicated clear-search action.
+
+### Fixed
+
+- Status transitions now rename files before editing so VS Code and AI tooling
+  follow the authoritative path without recreating stale copies.
+- Markdown preview opening now registers the source document before switching
+  to preview.
+- File watcher bursts are debounced and watcher startup occurs during extension
+  activation.
+- Group filtering no longer corrupts status filters.
+- Blocked todos retain their context-menu actions, missing blockers trigger the
+  ready-state warning, and dependency editing preserves existing terminal or
+  missing dependencies.
+- Extension tests launch Electron correctly from extension-host environments.
+
+### Changed
+
+- Extracted command registration from `extension.ts` into a dedicated command
+  orchestration module.
+- Added shared UTF-8 filesystem reads and repository-cached group lists.
+- Expanded extension regression coverage to 32 tests.
+- Updated the bundled Agendo skill to version 1.2.0.
+
 ## [0.1.2] - 2026-08-13
 
 ### Fixed

@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       prerelease:
-        description: Mark as a pre-release
+        description: Mark the GitHub release as a pre-release
         required: false
         type: boolean
         default: false
@@ -34,38 +34,24 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          ref: main
           fetch-depth: 0
 
       - name: Resolve release tag
         id: release
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            TAG="v${{ inputs.version }}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            TAG="v${INPUT_VERSION}"
           else
-            TAG="${{ github.ref_name }}"
+            TAG="$REF_NAME"
           fi
 
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
-
-      - name: Create release tag
-        id: tag
-        shell: bash
-        run: |
-          TAG="${{ steps.release.outputs.tag }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          else
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
-            git tag -a "$TAG" -m "Agendo $TAG"
-            git push origin "$TAG"
-            echo "Created and pushed tag $TAG"
-            echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -88,6 +74,16 @@ jobs:
             exit 1
           fi
 
+          if git rev-parse "$release_tag" >/dev/null 2>&1; then
+            tag_commit=$(git rev-list -n 1 "$release_tag")
+            head_commit=$(git rev-parse HEAD)
+            if [[ "$tag_commit" != "$head_commit" ]]; then
+              echo "Existing tag '$release_tag' points to $tag_commit, but this run checked out $head_commit."
+              echo "Run the workflow from the tagged ref or use a new version."
+              exit 1
+            fi
+          fi
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "vsix=dist/agendo-${version}.vsix" >> "$GITHUB_OUTPUT"
 
@@ -102,6 +98,21 @@ jobs:
           mkdir -p dist
           npx --yes @vscode/vsce@3.6.2 package \
             --out "${{ steps.package.outputs.vsix }}"
+
+      - name: Create release tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git config user.name "GitHub Actions"
+            git config user.email "actions@github.com"
+            git tag -a "$TAG" -m "Agendo $TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
@@ -123,8 +134,8 @@ jobs:
 
           if gh release view "$release_tag" >/dev/null 2>&1; then
             gh release upload "$release_tag" "${{ steps.package.outputs.vsix }}" --clobber
-            if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.prerelease }}" == "true" ]]; then
-              gh release edit "$release_tag" --prerelease
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              gh release edit "$release_tag" --prerelease="${{ inputs.prerelease }}"
             fi
           else
             gh release create "$release_tag" \
