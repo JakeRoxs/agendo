@@ -40,7 +40,7 @@ jobs:
 
       - name: Upload test and coverage results for Sonar
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sonar-test-results
           path: |
@@ -70,6 +70,7 @@ jobs:
 
   sonar-analysis:
     name: SonarQube analysis
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     needs: build-test-package
 
@@ -80,7 +81,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download test results
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: sonar-test-results
           path: .
