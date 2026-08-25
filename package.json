@@ -47,7 +47,8 @@
         },
         {
           "id": "agendo.skillStatus",
-          "name": "Skill"
+          "name": "Skill",
+          "icon": "$(cloud-download)"
         }
       ]
     },
@@ -246,43 +247,43 @@
           "group": "1_filters@1"
         },
         {
-          "command": "agend.chooseRoot",
-          "when": "view == agend.todos",
+          "command": "agendo.chooseRoot",
+          "when": "view == agendo.todos",
           "group": "2_config@1"
         },
         {
-          "command": "agend.default.root",
-          "when": "view == agend.todos",
+          "command": "agendo.setDefault.root",
+          "when": "view == agendo.todos",
           "group": "2_config@2"
         },
         {
-          "command": "agend.default.priority",
-          "when": "view == agend.todos",
+          "command": "agendo.setDefault.priority",
+          "when": "view == agendo.todos",
           "group": "2_config@3"
         },
         {
-          "command": "agendo.default.preview",
-          "when": "view == agend.todos",
+          "command": "agendo.setDefault.preview",
+          "when": "view == agendo.todos",
           "group": "2_config@4"
         },
         {
           "command": "agendo.toggleGitignore",
-          "when": "view == agend.todos",
+          "when": "view == agendo.todos",
           "group": "2_config@5"
         },
         {
           "command": "agendo.togglePreview",
-          "when": "view == agend.todos",
+          "when": "view == agendo.todos",
           "group": "2_config@6"
         },
         {
-          "command": "agend.enableSkill",
-          "when": "view == agend.todos",
+          "command": "agendo.enableSkill",
+          "when": "view == agendo.todos",
           "group": "9_skill@1"
         },
         {
-          "command": "agend.updateSkill",
-          "when": "view == agend.todos",
+          "command": "agendo.updateSkill",
+          "when": "view == agendo.todos",
           "group": "9_skill@2"
         }
       ],
@@ -294,7 +295,7 @@
         },
         {
           "command": "agendo.expandNode",
-          "when": "view == agend.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
+          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@2"
         },
         {
