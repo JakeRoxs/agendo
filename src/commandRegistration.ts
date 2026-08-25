@@ -60,6 +60,10 @@ export async function updateFilterContexts(filter: FilterService): Promise<void>
   ]);
 }
 
+export async function updatePreviewContext(config: ConfigService): Promise<void> {
+  await vscode.commands.executeCommand("setContext", "agendo.previewActive", config.openInPreview);
+}
+
 function registerFilterCommands(register: Register, services: CommandServices): void {
   const { repository, filter, treeProvider } = services;
 
@@ -111,8 +115,6 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
     if (!todo) {
       return;
     }
-    const document = await vscode.workspace.openTextDocument(todo.uri);
-    await vscode.window.showTextDocument(document, { preview: true });
     await vscode.commands.executeCommand("markdown.showPreview", todo.uri);
   });
 
@@ -250,6 +252,10 @@ function registerConfigCommands(register: Register, services: CommandServices): 
   });
   register(Command.TogglePreview, async () => {
     await set(Settings.OpenInPreview, !config.openInPreview);
+    await updatePreviewContext(config);
+    vscode.window.showInformationMessage(
+      `Agendo: Open in preview is now ${config.openInPreview ? "On" : "Off"}.`,
+    );
   });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({

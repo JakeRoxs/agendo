@@ -104,14 +104,16 @@ export class StatusService {
     let content = await readText(todo.uri);
     const { data } = splitFrontmatter(content);
     if (data) {
-      const depsRe = /^dependencies\s*:\s*(.*)$/m;
-      const depsMatch = depsRe.exec(data);
+      const lineEnding = data.includes("\r\n") ? "\r\n" : "\n";
+      const lines = data.split(lineEnding);
+      const dependencyLineIndex = this.findFrontmatterFieldLine(lines, "dependencies");
       const newArray = `[${newDependencies.map((dependency) => JSON.stringify(dependency)).join(", ")}]`;
-      if (depsMatch) {
-        const newData = data.replace(depsRe, `dependencies: ${newArray}`);
+      if (dependencyLineIndex >= 0) {
+        lines[dependencyLineIndex] = `dependencies: ${newArray}`;
+        const newData = lines.join(lineEnding);
         content = content.replace(data, newData);
       } else {
-        const newData = `${data}\ndependencies: ${newArray}`;
+        const newData = `${data}${lineEnding}dependencies: ${newArray}`;
         content = content.replace(data, newData);
       }
     }
@@ -127,21 +129,21 @@ export class StatusService {
     let content = await readText(todo.uri);
     const { data } = splitFrontmatter(content);
     if (data) {
-      const groupRe = /^group\s*:\s*(.*)$/m;
+      const lineEnding = data.includes("\r\n") ? "\r\n" : "\n";
+      const lines = data.split(lineEnding);
+      const groupLineIndex = this.findFrontmatterFieldLine(lines, "group");
       if (newGroup) {
-        if (groupRe.test(data)) {
-          const newData = data.replace(groupRe, `group: ${newGroup}`);
+        if (groupLineIndex >= 0) {
+          lines[groupLineIndex] = `group: ${newGroup}`;
+          const newData = lines.join(lineEnding);
           content = content.replace(data, newData);
         } else {
-          const newData = `${data}\ngroup: ${newGroup}`;
+          const newData = `${data}${lineEnding}group: ${newGroup}`;
           content = content.replace(data, newData);
         }
-      } else {
-        const newData = data
-          .replace(groupRe, "")
-          .replace(/\n\s*\n/g, "\n")
-          .replace(/^\n/, "");
-        content = content.replace(data, newData);
+      } else if (groupLineIndex >= 0) {
+        lines.splice(groupLineIndex, 1);
+        content = content.replace(data, lines.join(lineEnding));
       }
     }
     const newName = buildFileName(todo.id, todo.status, todo.priority, todo.description);
@@ -172,6 +174,16 @@ export class StatusService {
     await vscode.workspace.fs.writeFile(targetUri, Buffer.from(content, "utf8"));
 
     return targetUri;
+  }
+
+  /** Find a top-level scalar frontmatter field without using a regular expression. */
+  private findFrontmatterFieldLine(lines: string[], key: string): number {
+    return lines.findIndex((line) => {
+      if (!line.startsWith(key)) {
+        return false;
+      }
+      return line.slice(key.length).trimStart().startsWith(":");
+    });
   }
 
   /** Replace a scalar frontmatter field, inserting it if missing. */

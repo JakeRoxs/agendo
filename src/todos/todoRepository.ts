@@ -88,7 +88,7 @@ export class TodoRepository implements vscode.Disposable {
       ...new Set(
         collected.map((todo) => todo.group).filter((group): group is string => Boolean(group)),
       ),
-    ].sort();
+    ].sort((left, right) => left.localeCompare(right));
     this.onDidChangeEmitter.fire();
   }
 

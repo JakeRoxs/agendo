@@ -155,7 +155,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
           ...new Set(
             grouped.map((t) => t.group).filter((group): group is string => Boolean(group)),
           ),
-        ].sort();
+        ].sort((left, right) => left.localeCompare(right));
         const groupNodes: GroupNode[] = groups.map((group) => ({
           kind: "group",
           status: node.status,
@@ -263,8 +263,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
     item.contextValue = isBlockedFlag ? "todoItemBlocked" : "todoItem";
+    const icon = todo.epic ? "type-hierarchy" : isBlockedFlag ? "circle-slash" : "note";
     item.iconPath = new vscode.ThemeIcon(
-      todo.epic ? "type-hierarchy" : isBlockedFlag ? "circle-slash" : "note",
+      icon,
       new vscode.ThemeColor(PRIORITY_COLOR[todo.priority]),
     );
 

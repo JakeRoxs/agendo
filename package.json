@@ -274,7 +274,8 @@
         {
           "command": "agendo.togglePreview",
           "when": "view == agendo.todos",
-          "group": "2_config@6"
+          "group": "2_config@6",
+          "toggled": "agendo.previewActive"
         },
         {
           "command": "agendo.enableSkill",

@@ -852,6 +852,9 @@ suite("todoModel", () => {
       treeDataProvider: provider,
     });
 
+    assert.ok(todosView);
+    assert.ok(skillView);
+
     todosView.dispose();
     skillView.dispose();
   });
@@ -1262,12 +1265,7 @@ suite("todoModel", () => {
       assert.ok(registrations.has(Command.ExpandNode));
       assert.ok(registrations.has(Command.SetDependency));
       assert.ok(registrations.has(Command.SetGroup));
-      assert.deepStrictEqual(previewSteps, [
-        "openTextDocument",
-        "showTextDocument",
-        "openTextDocument",
-        "showTextDocument",
-      ]);
+      assert.deepStrictEqual(previewSteps, ["openTextDocument", "showTextDocument"]);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
         2,
