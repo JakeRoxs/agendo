@@ -29,7 +29,7 @@ export interface CommandServices {
   links: LinkService;
   skill: SkillManager;
   treeProvider: TodoTreeProvider;
-  refreshSkillStatusBar: () => Promise<void>;
+  refreshSkillStatus: () => void;
 }
 
 type Register = (command: string, callback: (...args: any[]) => any) => void;
@@ -291,7 +291,7 @@ function registerConfigCommands(register: Register, services: CommandServices): 
 }
 
 function registerSkillCommands(register: Register, services: CommandServices): void {
-  const { skill, refreshSkillStatusBar } = services;
+  const { skill, refreshSkillStatus } = services;
 
   register(Command.EnableSkill, async () => {
     try {
@@ -306,7 +306,7 @@ function registerSkillCommands(register: Register, services: CommandServices): v
       vscode.window.showInformationMessage(
         `Agendo skill installed (v${status.bundledVersion ?? "?"}).`,
       );
-      await refreshSkillStatusBar();
+      refreshSkillStatus();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
     }
@@ -315,7 +315,7 @@ function registerSkillCommands(register: Register, services: CommandServices): v
     try {
       await skill.updateFromSource();
       vscode.window.showInformationMessage("Agendo skill updated from configured source.");
-      await refreshSkillStatusBar();
+      refreshSkillStatus();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }

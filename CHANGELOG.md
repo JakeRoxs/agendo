@@ -2,6 +2,18 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.4] - 2026-08-21
+
+### Added
+
+- Skill version, installation, and update status in a dedicated footer view
+  beneath the Agendo Todos panel.
+
+### Fixed
+
+- Extension tests no longer display expected failure-path notifications as
+  visible alerts in the VS Code test window.
+
 ## [0.1.3] - 2026-08-19
 
 ### Added

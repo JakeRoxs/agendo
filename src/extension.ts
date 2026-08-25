@@ -1,12 +1,12 @@
 import * as vscode from "vscode";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
-import { Command } from "./commands";
 import { Settings } from "./configuration";
 import { out, outputChannel } from "./output";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
 import { LinkService } from "./todos/linkService";
 import { SkillManager } from "./todos/skillManager";
+import { SkillStatusTreeProvider } from "./todos/skillStatusTreeProvider";
 import { StatusService } from "./todos/statusService";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
@@ -23,19 +23,15 @@ export async function activate(context: vscode.ExtensionContext) {
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
   const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
+  const skillStatusTreeProvider = new SkillStatusTreeProvider(skill);
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
   });
-
-  const skillStatusBar = vscode.window.createStatusBarItem(
-    "agendo.skill-status",
-    vscode.StatusBarAlignment.Left,
-    100,
-  );
-  skillStatusBar.tooltip = "Agendo skill status";
-  skillStatusBar.command = Command.EnableSkill;
+  const skillStatusTreeView = vscode.window.createTreeView("agendo.skillStatus", {
+    treeDataProvider: skillStatusTreeProvider,
+  });
   context.subscriptions.push(
     treeView.onDidCollapseElement(async (event) => {
       const nodeKey = getTreeNodeKey(event.element as TreeNode | undefined);
@@ -52,6 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
     outputChannel,
     repository,
     treeView,
+    skillStatusTreeView,
   );
 
   // Keep the on-disk config projection and gitignore in sync on activation and
@@ -69,25 +66,6 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  async function refreshSkillStatusBar(): Promise<void> {
-    try {
-      const s = await skill.getStatus();
-      if (s.updateAvailable) {
-        skillStatusBar.text = "$(cloud-download) Skill update available";
-        skillStatusBar.show();
-      } else if (s.installed) {
-        skillStatusBar.text = `$(check) Skill v${s.installedVersion ?? "?"}`;
-        skillStatusBar.show();
-      } else {
-        skillStatusBar.text = "$(cloud-download) Install skill";
-        skillStatusBar.show();
-      }
-    } catch {
-      skillStatusBar.text = "$(warning) Skill status unknown";
-      skillStatusBar.show();
-    }
-  }
-
   registerCommands(context, {
     config,
     repository,
@@ -97,12 +75,10 @@ export async function activate(context: vscode.ExtensionContext) {
     links,
     skill,
     treeProvider,
-    refreshSkillStatusBar,
+    refreshSkillStatus: () => skillStatusTreeProvider.refresh(),
   });
 
-  context.subscriptions.push(skillStatusBar);
   await updateFilterContexts(filter);
-  await refreshSkillStatusBar();
   repository.startWatching();
   await repository.refresh();
 }

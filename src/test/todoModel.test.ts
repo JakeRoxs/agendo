@@ -14,6 +14,7 @@ import { readText } from "../todos/fileSystem";
 import { FilterService } from "../todos/filterService";
 import { LinkService } from "../todos/linkService";
 import { SkillManager } from "../todos/skillManager";
+import { SkillStatusTreeProvider } from "../todos/skillStatusTreeProvider";
 import { StatusService } from "../todos/statusService";
 import {
   buildFileName,
@@ -783,6 +784,78 @@ suite("todoModel", () => {
     }
   });
 
+  test("skill status tree provider renders installed and update states", async () => {
+    let status = {
+      installed: true,
+      installedVersion: "1.1.0",
+      bundledVersion: "1.2.0",
+      updateAvailable: true,
+    };
+    const provider = new SkillStatusTreeProvider({ getStatus: async () => status } as never);
+
+    const [updateNode] = await provider.getChildren();
+    const updateItem = provider.getTreeItem(updateNode);
+    assert.strictEqual(updateItem.label, "Skill v1.1.0");
+    assert.strictEqual(updateItem.description, "v1.2.0 available");
+    assert.strictEqual(updateItem.command?.command, Command.EnableSkill);
+
+    status = { ...status, installedVersion: "1.2.0", updateAvailable: false };
+    const [installedNode] = await provider.getChildren();
+    const installedItem = provider.getTreeItem(installedNode);
+    assert.strictEqual(installedItem.label, "Skill v1.2.0");
+    assert.strictEqual(installedItem.description, "Installed");
+  });
+
+  test("skill status provider renders unknown and install states", async () => {
+    const unknownProvider = new SkillStatusTreeProvider({
+      getStatus: async () => {
+        throw new Error("unreadable");
+      },
+    } as never);
+
+    const [unknownNode] = await unknownProvider.getChildren();
+    const unknownItem = unknownProvider.getTreeItem(unknownNode);
+    assert.strictEqual(unknownItem.label, "Skill status unknown");
+    assert.strictEqual(
+      unknownItem.tooltip,
+      "Agendo could not read the installed or bundled skill version.",
+    );
+    assert.strictEqual(unknownItem.command?.command, Command.EnableSkill);
+
+    const installStatus = {
+      installed: false,
+      installedVersion: undefined,
+      bundledVersion: "1.2.0",
+      updateAvailable: false,
+    };
+    const installProvider = new SkillStatusTreeProvider({
+      getStatus: async () => installStatus,
+    } as never);
+
+    const [installNode] = await installProvider.getChildren();
+    const installItem = installProvider.getTreeItem(installNode);
+    assert.strictEqual(installItem.label, "Install Agendo skill");
+    assert.strictEqual(installItem.description, "Bundled v1.2.0");
+    assert.strictEqual(installItem.tooltip, "Select to install the bundled Agendo skill.");
+    assert.strictEqual(installItem.command?.command, Command.EnableSkill);
+  });
+
+  test("manifest registers the todos and skill status views", () => {
+    const provider = {
+      getTreeItem: (item: vscode.TreeItem) => item,
+      getChildren: () => [],
+    };
+    const todosView = vscode.window.createTreeView("agendo.todos", {
+      treeDataProvider: provider,
+    });
+    const skillView = vscode.window.createTreeView("agendo.skillStatus", {
+      treeDataProvider: provider,
+    });
+
+    todosView.dispose();
+    skillView.dispose();
+  });
+
   test("todo repository refreshes todo files and tracks the highest id", async () => {
     const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-repo-tests"));
     await vscode.workspace.fs.createDirectory(rootUri);
@@ -910,6 +983,7 @@ suite("todoModel", () => {
     const errorMessages: string[] = [];
     const workspaceState = new Map<string, unknown>();
     let watcherCreationCount = 0;
+    const treeViewIds: string[] = [];
     const inputQueue = [
       "add-login-page",
       "my-key",
@@ -926,11 +1000,14 @@ suite("todoModel", () => {
       configurable: true,
     });
     Object.defineProperty(vscode.window, "createTreeView", {
-      value: () => ({
-        onDidCollapseElement: () => ({ dispose() {} }),
-        onDidExpandElement: () => ({ dispose() {} }),
-        dispose() {},
-      }),
+      value: (id: string) => {
+        treeViewIds.push(id);
+        return {
+          onDidCollapseElement: () => ({ dispose() {} }),
+          onDidExpandElement: () => ({ dispose() {} }),
+          dispose() {},
+        };
+      },
       configurable: true,
     });
     Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
@@ -1037,6 +1114,7 @@ suite("todoModel", () => {
       };
       await activate(context as never);
       assert.strictEqual(watcherCreationCount, 1);
+      assert.deepStrictEqual(treeViewIds, ["agendo.todos", "agendo.skillStatus"]);
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({

@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -44,6 +44,10 @@
           "name": "Todos",
           "icon": "$(checklist)",
           "contextualTitle": "Agendo"
+        },
+        {
+          "id": "agendo.skillStatus",
+          "name": "Skill"
         }
       ]
     },
@@ -242,24 +246,44 @@
           "group": "1_filters@1"
         },
         {
-          "command": "agendo.chooseRoot",
-          "when": "view == agendo.todos",
+          "command": "agend.chooseRoot",
+          "when": "view == agend.todos",
           "group": "2_config@1"
         },
         {
-          "command": "agendo.toggleGitignore",
-          "when": "view == agendo.todos",
+          "command": "agend.default.root",
+          "when": "view == agend.todos",
           "group": "2_config@2"
         },
         {
-          "command": "agendo.togglePreview",
-          "when": "view == agendo.todos",
+          "command": "agend.default.priority",
+          "when": "view == agend.todos",
           "group": "2_config@3"
         },
         {
-          "command": "agendo.enableSkill",
-          "when": "view == agendo.todos",
+          "command": "agendo.default.preview",
+          "when": "view == agend.todos",
+          "group": "2_config@4"
+        },
+        {
+          "command": "agendo.toggleGitignore",
+          "when": "view == agend.todos",
+          "group": "2_config@5"
+        },
+        {
+          "command": "agendo.togglePreview",
+          "when": "view == agend.todos",
+          "group": "2_config@6"
+        },
+        {
+          "command": "agend.enableSkill",
+          "when": "view == agend.todos",
           "group": "9_skill@1"
+        },
+        {
+          "command": "agend.updateSkill",
+          "when": "view == agend.todos",
+          "group": "9_skill@2"
         }
       ],
       "view/item/context": [
@@ -270,33 +294,8 @@
         },
         {
           "command": "agendo.expandNode",
-          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
+          "when": "view == agend.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@2"
-        },
-        {
-          "command": "agendo.setDefault.root",
-          "when": "view == agendo.todos",
-          "group": "more_actions@1"
-        },
-        {
-          "command": "agendo.setDefault.priority",
-          "when": "view == agendo.todos",
-          "group": "more_actions@2"
-        },
-        {
-          "command": "agendo.setDefault.preview",
-          "when": "view == agendo.todos",
-          "group": "more_actions@3"
-        },
-        {
-          "command": "agendo.enableSkill",
-          "when": "view == agendo.todos",
-          "group": "3_skill@1"
-        },
-        {
-          "command": "agendo.updateSkill",
-          "when": "view == agendo.todos",
-          "group": "3_skill@2"
         },
         {
           "command": "agendo.openPreview",
