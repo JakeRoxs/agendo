@@ -434,12 +434,12 @@ async function runFilterPicker(
   const blockedPick = selected.find(
     (item) => item.itemType === "blocked" && ["blocked", "unblocked"].includes(item.value ?? ""),
   );
-  const blocked =
-    blockedPick?.value === "blocked"
-      ? true
-      : blockedPick?.value === "unblocked"
-        ? false
-        : undefined;
+  let blocked: boolean | undefined;
+  if (blockedPick?.value === "blocked") {
+    blocked = true;
+  } else if (blockedPick?.value === "unblocked") {
+    blocked = false;
+  }
   const group = selected.find(
     (item) => item.itemType === "group" && item.value !== "__clear__",
   )?.value;

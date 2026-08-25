@@ -20,6 +20,50 @@ export interface TodoFilter {
 
 const STATE_KEY = "agendo.filter";
 
+function matchesText(todo: Todo, text: string): boolean {
+  const haystack = [
+    todo.id,
+    todo.title,
+    todo.description,
+    todo.key ?? "",
+    todo.jira ?? "",
+    todo.tags.join(" "),
+    todo.dependencies.join(" "),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(text.toLowerCase());
+}
+
+function matchesBlocked(todo: Todo, blocked: boolean, dependencyGraph?: DependencyGraph): boolean {
+  const isBlocked = Boolean(dependencyGraph?.blockedBy.get(todo.id)?.length);
+  return isBlocked === blocked;
+}
+
+function matchesBlocking(todo: Todo, blocking: string, dependencyGraph?: DependencyGraph): boolean {
+  return todo.id === blocking && Boolean(dependencyGraph?.blocking.get(todo.id)?.length);
+}
+
+function matchesStatuses(todo: Todo, statuses?: TodoStatus[]): boolean {
+  return !statuses?.length || statuses.includes(todo.status);
+}
+
+function matchesPriorities(todo: Todo, priorities?: TodoPriority[]): boolean {
+  return !priorities?.length || priorities.includes(todo.priority);
+}
+
+function matchesTag(todo: Todo, tag?: string): boolean {
+  return !tag?.length || todo.tags.some((t) => t.toLowerCase() === tag.toLowerCase());
+}
+
+function matchesDependsOn(todo: Todo, dependsOn?: string): boolean {
+  return !dependsOn?.length || todo.dependencies.includes(dependsOn);
+}
+
+function matchesGroup(todo: Todo, group?: string): boolean {
+  return !group?.length || todo.group === group;
+}
+
 /** Holds the current filter state and persists it in workspace state. */
 export class FilterService {
   private filter: TodoFilter = {};
@@ -50,53 +94,17 @@ export class FilterService {
   matches(todo: Todo, dependencyGraph?: DependencyGraph): boolean {
     const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group } = this.filter;
 
-    if (statuses?.length && !statuses.includes(todo.status)) {
-      return false;
-    }
-    if (priorities?.length && !priorities.includes(todo.priority)) {
-      return false;
-    }
-    if (tag?.length && !todo.tags.some((t) => t.toLowerCase() === tag.toLowerCase())) {
-      return false;
-    }
-    if (text?.length) {
-      const haystack = [
-        todo.id,
-        todo.title,
-        todo.description,
-        todo.key ?? "",
-        todo.jira ?? "",
-        todo.tags.join(" "),
-        todo.dependencies.join(" "),
-      ]
-        .join(" ")
-        .toLowerCase();
-      if (!haystack.includes(text.toLowerCase())) {
-        return false;
-      }
-    }
-    if (blocked !== undefined) {
-      const isBlocked = Boolean(dependencyGraph?.blockedBy.get(todo.id)?.length);
-      if (isBlocked !== blocked) {
-        return false;
-      }
-    }
-    if (dependsOn?.length) {
-      if (!todo.dependencies.includes(dependsOn)) {
-        return false;
-      }
-    }
-    if (blocking?.length) {
-      if (todo.id !== blocking || !dependencyGraph?.blocking.get(todo.id)?.length) {
-        return false;
-      }
-    }
-    if (group?.length) {
-      if (todo.group !== group) {
-        return false;
-      }
-    }
-    return true;
+    const checks = [
+      () => matchesStatuses(todo, statuses),
+      () => matchesPriorities(todo, priorities),
+      () => matchesTag(todo, tag),
+      () => !text?.length || matchesText(todo, text),
+      () => blocked === undefined || matchesBlocked(todo, blocked, dependencyGraph),
+      () => matchesDependsOn(todo, dependsOn),
+      () => !blocking?.length || matchesBlocking(todo, blocking, dependencyGraph),
+      () => matchesGroup(todo, group),
+    ];
+    return checks.every((check) => check());
   }
 
   async set(filter: TodoFilter): Promise<void> {

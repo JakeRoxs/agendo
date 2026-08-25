@@ -33,13 +33,12 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
     .filter((todo) => todo.priority === "p1")
     .sort(compareTodos)
     .slice(0, DIGEST_LIMIT);
-  const recentlyUpdated = active
-    .filter((todo) => todo.updatedAt !== undefined)
-    .sort(
-      (left, right) =>
-        (right.updatedAt ?? 0) - (left.updatedAt ?? 0) || left.id.localeCompare(right.id),
-    )
-    .slice(0, DIGEST_LIMIT);
+  const recentlyUpdated = active.filter((todo) => todo.updatedAt !== undefined);
+  recentlyUpdated.sort(
+    (left, right) =>
+      (right.updatedAt ?? 0) - (left.updatedAt ?? 0) || left.id.localeCompare(right.id),
+  );
+  const recentlyUpdatedTop = recentlyUpdated.slice(0, DIGEST_LIMIT);
 
   const overview = [
     `- Active: **${active.length}**`,
@@ -48,14 +47,12 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
     `- Blocked: **${blocked.length}**`,
     `- Backlogged: **${todos.filter((todo) => todo.status === "backlogged").length}**`,
   ];
-  const blockedLines = blocked
-    .sort(compareTodos)
-    .slice(0, DIGEST_LIMIT)
-    .map((todo) => {
-      const dependencies = graph.blockedBy.get(todo.id) ?? [];
-      return `${formatTodo(todo)} · blocked by ${dependencies.join(", ")}`;
-    });
-  const recentLines = recentlyUpdated.map(
+  blocked.sort(compareTodos);
+  const blockedLines = blocked.slice(0, DIGEST_LIMIT).map((todo) => {
+    const dependencies = graph.blockedBy.get(todo.id) ?? [];
+    return `${formatTodo(todo)} · blocked by ${dependencies.join(", ")}`;
+  });
+  const recentLines = recentlyUpdatedTop.map(
     (todo) => `${formatTodo(todo)} · ${new Date(todo.updatedAt ?? 0).toISOString().slice(0, 10)}`,
   );
 
