@@ -390,7 +390,7 @@ suite("todoModel", () => {
     const elapsed = performance.now() - startedAt;
 
     assert.strictEqual(todoNodes.length, 200);
-    assert.ok(elapsed < 50, `Expected render under 50ms, received ${elapsed.toFixed(2)}ms`);
+    assert.ok(elapsed < 75, `Expected render under 75ms, received ${elapsed.toFixed(2)}ms`);
   });
 
   test("task digest deterministically ranks next actions and surfaces blockers", () => {

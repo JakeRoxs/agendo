@@ -263,7 +263,13 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
     item.contextValue = isBlockedFlag ? "todoItemBlocked" : "todoItem";
-    const icon = todo.epic ? "type-hierarchy" : isBlockedFlag ? "circle-slash" : "note";
+    let icon = "note";
+    if (isBlockedFlag) {
+      icon = "circle-slash";
+    }
+    if (todo.epic) {
+      icon = "type-hierarchy";
+    }
     item.iconPath = new vscode.ThemeIcon(
       icon,
       new vscode.ThemeColor(PRIORITY_COLOR[todo.priority]),
