@@ -11,6 +11,8 @@ updates:
       npm-all:
         patterns:
           - "*"
+    ignore:
+      - dependency-name: "@types/vscode"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
