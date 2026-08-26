@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -81,6 +81,12 @@
         "title": "Show Task Digest",
         "category": "Agendo",
         "icon": "$(list-selection)"
+      },
+      {
+        "command": "agendo.openBoard",
+        "title": "Open Board",
+        "category": "Agendo",
+        "icon": "$(open-preview)"
       },
       {
         "command": "agendo.filter",
@@ -232,6 +238,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "agendo.openBoard",
+          "when": "view == agendo.todos",
+          "group": "navigation@2.5"
+        },
+        {
           "command": "agendo.filter",
           "when": "view == agendo.todos",
           "group": "navigation@4"
@@ -279,13 +290,13 @@
         },
         {
           "command": "agendo.enableSkill",
-          "when": "view == agendo.todos",
-          "group": "9_skill@1"
+          "when": "view == agendo.skillStatus",
+          "group": "skill@1"
         },
         {
           "command": "agendo.updateSkill",
-          "when": "view == agendo.todos",
-          "group": "9_skill@2"
+          "when": "view == agendo.skillStatus",
+          "group": "skill@2"
         }
       ],
       "view/item/context": [

@@ -132,8 +132,10 @@ export class ConfigService {
         out`Removed .gitignore in ${rootUri.fsPath}`;
       }
     } catch (error) {
-      // Deleting a non-existent file throws; that is fine.
-      out`applyGitignore no-op or error: ${error}`;
+      // Deleting a file that is already absent is expected and not worth logging.
+      if (!(error instanceof vscode.FileSystemError && error.code === "FileNotFound")) {
+        out`Failed to apply .gitignore in ${rootUri.fsPath}: ${error}`;
+      }
     }
   }
 }

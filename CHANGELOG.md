@@ -2,6 +2,15 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.5]
+
+### Changed
+
+- Moved skill install/enable and source-update actions into the Skill panel's
+  overflow menu.
+- Added an editor-window task board with status columns, drag-and-drop movement,
+  filters, card metadata, and persisted column visibility and ordering.
+
 ## [0.1.4] - 2026-08-21
 
 ### Added

@@ -6,6 +6,7 @@ import {
 } from "./commandRegistration";
 import { Settings } from "./configuration";
 import { out, outputChannel } from "./output";
+import { BoardViewProvider } from "./todos/boardViewProvider";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
 import { LinkService } from "./todos/linkService";
@@ -28,6 +29,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const skill = new SkillManager(context.extensionUri);
   const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
   const skillStatusTreeProvider = new SkillStatusTreeProvider(skill);
+  const boardViewProvider = new BoardViewProvider(
+    repository,
+    filter,
+    status,
+    config,
+    context.workspaceState,
+  );
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
@@ -53,6 +61,7 @@ export async function activate(context: vscode.ExtensionContext) {
     repository,
     treeView,
     skillStatusTreeView,
+    boardViewProvider,
   );
 
   // Keep the on-disk config projection and gitignore in sync on activation and
@@ -80,6 +89,7 @@ export async function activate(context: vscode.ExtensionContext) {
     links,
     skill,
     treeProvider,
+    boardViewProvider,
     refreshSkillStatus: () => skillStatusTreeProvider.refresh(),
   });
 

@@ -8,6 +8,7 @@ import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
 import { activate, deactivate } from "../extension";
 import { out, outputChannel, showOutputChannel } from "../output";
+import { buildBoardSnapshot } from "../todos/boardViewProvider";
 import { ConfigService } from "../todos/configService";
 import { buildTodoDigest } from "../todos/digestService";
 import { readText } from "../todos/fileSystem";
@@ -838,6 +839,91 @@ suite("todoModel", () => {
     assert.strictEqual(installItem.description, "Bundled v1.2.0");
     assert.strictEqual(installItem.tooltip, "Select to install the bundled Agendo skill.");
     assert.strictEqual(installItem.command?.command, Command.EnableSkill);
+  });
+
+  test("board snapshot preserves status columns and applies filters", async () => {
+    const filter = new FilterService({
+      get: <T>(_key: string, fallback: T): T => fallback,
+      update: async () => undefined,
+    } as never);
+    await filter.set({ statuses: ["ready"] });
+
+    const todos: Todo[] = [
+      {
+        id: "002",
+        status: "ready",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: ["ops"],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-ready-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-ready-p2-second.md"),
+        frontmatter: { status: "ready", priority: "p2" },
+      },
+      {
+        id: "001",
+        status: "ready",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-ready-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-ready-p1-first.md"),
+        frontmatter: { status: "ready", priority: "p1" },
+      },
+      {
+        id: "003",
+        status: "complete",
+        priority: "p3",
+        title: "Done",
+        description: "done",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "complete",
+        fileName: "003-complete-p3-done.md",
+        uri: vscode.Uri.file("/tmp/003-complete-p3-done.md"),
+        frontmatter: { status: "complete", priority: "p3" },
+      },
+    ];
+    const snapshot = buildBoardSnapshot(
+      todos,
+      {
+        blockedBy: new Map([
+          ["001", []],
+          ["002", ["001"]],
+          ["003", []],
+        ]),
+        blocking: new Map(),
+      },
+      filter,
+    );
+
+    assert.deepStrictEqual(
+      snapshot.columns.map((column) => column.status),
+      ["pending", "ready", "backlogged", "complete", "cancelled"],
+    );
+    assert.deepStrictEqual(
+      snapshot.columns.find((column) => column.status === "ready")?.todos.map((todo) => todo.id),
+      ["001", "002"],
+    );
+    assert.strictEqual(
+      snapshot.columns.find((column) => column.status === "ready")?.todos[1]?.blocked,
+      true,
+    );
+    assert.strictEqual(
+      snapshot.columns.find((column) => column.status === "complete")?.todos.length,
+      0,
+    );
   });
 
   test("manifest registers the todos and skill status views", () => {

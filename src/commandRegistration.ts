@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { Command } from "./commands";
 import { Settings, set, setDefault } from "./configuration";
+import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { ConfigService } from "./todos/configService";
 import { buildTodoDigest } from "./todos/digestService";
 import type { FilterService } from "./todos/filterService";
@@ -29,6 +30,7 @@ export interface CommandServices {
   links: LinkService;
   skill: SkillManager;
   treeProvider: TodoTreeProvider;
+  boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
 }
 
@@ -43,10 +45,15 @@ export function registerCommands(
   };
 
   registerFilterCommands(register, services);
+  registerBoardCommands(register, services);
   registerTodoCommands(register, services);
   registerConfigCommands(register, services);
   registerSkillCommands(register, services);
   registerTreeCommands(register, services);
+}
+
+function registerBoardCommands(register: Register, services: CommandServices): void {
+  register(Command.OpenBoard, () => services.boardViewProvider.open());
 }
 
 export async function updateFilterContexts(filter: FilterService): Promise<void> {

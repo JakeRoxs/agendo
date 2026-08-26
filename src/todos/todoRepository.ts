@@ -143,7 +143,7 @@ export class TodoRepository implements vscode.Disposable {
         ]);
         const todo = parseTodo(fileUri, content, folder);
         if (todo) {
-          results.push({ ...todo, updatedAt: stat.mtime });
+          results.push({ ...todo, createdAt: stat.ctime, updatedAt: stat.mtime });
         }
       } catch (error) {
         out`Failed to read todo ${name}: ${error}`;

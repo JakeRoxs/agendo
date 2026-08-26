@@ -6,6 +6,7 @@
 export enum Command {
   Refresh = "agendo.refresh",
   ShowDigest = "agendo.showDigest",
+  OpenBoard = "agendo.openBoard",
   Filter = "agendo.filter",
   Search = "agendo.search",
   ClearSearch = "agendo.clearSearch",

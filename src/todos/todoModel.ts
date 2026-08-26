@@ -54,6 +54,8 @@ export interface Todo {
   uri: vscode.Uri;
   /** Last filesystem modification time, populated by the repository. */
   updatedAt?: number;
+  /** Filesystem creation time, populated by the repository. */
+  createdAt?: number;
   /** Raw parsed frontmatter, for fields not surfaced as first-class properties. */
   frontmatter: Record<string, unknown>;
 }

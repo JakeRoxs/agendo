@@ -288,6 +288,12 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     if (todo.dependencies.length) {
       tooltip.appendMarkdown(`- Depends on: ${todo.dependencies.join(", ")}\n`);
     }
+    if (todo.createdAt) {
+      tooltip.appendMarkdown(`- Created: ${new Date(todo.createdAt).toLocaleString()}\n`);
+    }
+    if (todo.updatedAt) {
+      tooltip.appendMarkdown(`- Modified: ${new Date(todo.updatedAt).toLocaleString()}\n`);
+    }
     if (incompleteDependencies.length) {
       tooltip.appendMarkdown(`\n> **Blocked by:** ${incompleteDependencies.join(", ")}\n`);
     }
