@@ -12,6 +12,7 @@ import {
   applyBoardColumnRules,
   type BoardColumn,
   type BoardTodo,
+  BoardViewProvider,
   buildBoardSnapshot,
   limitTerminalBoardColumns,
   normalizeBoardCardFieldOrder,
@@ -1081,6 +1082,124 @@ suite("todoModel", () => {
       ["001", "002"],
     );
     assert.strictEqual(ruled[0].wipLimit, 1);
+  });
+
+  test("board webview renders and persists layout messages", async () => {
+    const todo: Todo = {
+      id: "001",
+      status: "ready",
+      priority: "p2",
+      title: "Board task",
+      summary: "Board task summary.",
+      description: "board-task",
+      tags: ["board", "test"],
+      dependencies: [],
+      key: "JIRA-001",
+      children: [],
+      epic: true,
+      folder: "",
+      fileName: "001-ready-p2-board-task.md",
+      uri: vscode.Uri.file("/tmp/001-ready-p2-board-task.md"),
+      frontmatter: { status: "ready", priority: "p2" },
+      createdAt: 10,
+      updatedAt: 20,
+    };
+    const store = new Map<string, unknown>();
+    const snapshots: unknown[] = [];
+    let receiveMessage: ((message: unknown) => Promise<void>) | undefined;
+    let disposePanel: (() => void) | undefined;
+    let revealCount = 0;
+    const panel = {
+      webview: {
+        html: "",
+        onDidReceiveMessage: (listener: (message: unknown) => Promise<void>) => {
+          receiveMessage = listener;
+          return { dispose() {} };
+        },
+        postMessage: async (message: unknown) => {
+          snapshots.push(message);
+          return true;
+        },
+      },
+      reveal: () => {
+        revealCount += 1;
+      },
+      onDidDispose: (listener: () => void) => {
+        disposePanel = listener;
+        return { dispose() {} };
+      },
+    };
+    const originalCreateWebviewPanel = vscode.window.createWebviewPanel;
+    Object.defineProperty(vscode.window, "createWebviewPanel", {
+      value: () => panel,
+      configurable: true,
+    });
+
+    const repository = {
+      getTodos: () => [todo],
+      getDependencyGraph: () => ({
+        blockedBy: new Map([[todo.id, []]]),
+        blocking: new Map([[todo.id, []]]),
+      }),
+      refresh: async () => undefined,
+      onDidChange: () => ({ dispose() {} }),
+    };
+    const provider = new BoardViewProvider(
+      repository as never,
+      { matches: () => true } as never,
+      { openInPreview: false } as never,
+      { setStatus: async () => undefined, setPriority: async () => undefined } as never,
+      {
+        get: <T>(key: string, fallback: T): T =>
+          store.has(key) ? (store.get(key) as T) : fallback,
+        update: async (key: string, value: unknown) => {
+          if (value === undefined) store.delete(key);
+          else store.set(key, value);
+        },
+      } as never,
+    );
+
+    try {
+      provider.open();
+      assert.match(panel.webview.html, /Agendo task board/);
+      assert.ok(receiveMessage);
+      const send = async (message: unknown) => receiveMessage?.(message);
+      await send({ type: "ready" });
+      await send({ type: "hideStatus", status: "cancelled" });
+      await send({ type: "showStatus", status: "cancelled" });
+      await send({ type: "reorderStatuses", statuses: ["ready", "pending"] });
+      await send({ type: "setCardFieldVisibility", field: "key", visible: false });
+      await send({ type: "reorderCardFields", fields: ["key", "id"] });
+      await send({ type: "setCardDensity", density: "compact" });
+      await send({ type: "setBoardSort", sort: "priority" });
+      await send({ type: "setDescriptionPreview", descriptionPreview: "oneLine" });
+      await send({ type: "setHideEmptyColumns", enabled: true });
+      await send({ type: "setMetadataLabels", enabled: true });
+      await send({ type: "setDateFormat", dateFormat: "relative" });
+      await send({ type: "setTagLimit", tagLimit: "1" });
+      await send({ type: "setTitleWrapping", titleWrapping: "oneLine" });
+      await send({ type: "setMissingValueBehavior", missingValueBehavior: "placeholder" });
+      await send({ type: "setCardAccent", cardAccent: "status" });
+      await send({ type: "setColumnWidth", columnWidth: "wide" });
+      await send({ type: "setTerminalCardLimit", terminalCardLimit: "10" });
+      await send({ type: "setColumnSort", status: "ready", columnSort: "title" });
+      await send({ type: "setGrouping", grouping: "epic" });
+      await send({ type: "setWipLimit", status: "ready", limit: 1 });
+      await send({ type: "applyPreset", preset: "review" });
+      await send({ type: "resetBoardSettings" });
+      provider.open();
+
+      assert.ok(snapshots.length > 20);
+      assert.strictEqual(revealCount, 1);
+      assert.deepStrictEqual(store.size, 0);
+      disposePanel?.();
+      provider.dispose();
+    } finally {
+      Object.defineProperty(vscode.window, "createWebviewPanel", {
+        value: originalCreateWebviewPanel,
+        configurable: true,
+      });
+    }
   });
 
   test("manifest registers the todos and skill status views", () => {

@@ -102,6 +102,21 @@ Continue the board-local settings panel backed by workspace state. Implement res
 
 ## Work Log
 
+### 2026-08-26 - Webview coverage
+
+**By:** Kilo Code
+
+**Actions:**
+- Added a mocked webview-panel integration test that renders the real board HTML and exercises every layout preference message
+- Covered panel reuse, snapshot publication, workspace-state persistence, presets, and reset behavior
+- Ran the CI-equivalent `npm run test:coverage` command
+- Increased `boardViewProvider.ts` line coverage from 29.7% (475/1,598) to 94.1% (1,504/1,598)
+- Validated the added test with a zero-issue Sonar snippet scan
+
+**Learnings:**
+- The prior coverage gap was primarily the unexecuted multiline webview template, not untested pure board calculations
+- Opening a mocked panel exercises generated HTML accurately without excluding production code from coverage
+
 ### 2026-08-26 - Message dispatcher cleanup
 
 **By:** Kilo Code
