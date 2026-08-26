@@ -9,7 +9,11 @@ All notable changes to the Agendo extension are documented here.
 - Moved skill install/enable and source-update actions into the Skill panel's
   overflow menu.
 - Added an editor-window task board with status columns, drag-and-drop movement,
-  filters, card metadata, and persisted column visibility and ordering.
+  filters, external-key metadata, and persisted controls for column and card
+  field visibility and ordering, density, sorting, description previews, empty
+  columns, metadata labels, date formatting, tag limits, title wrapping, and
+  missing-value display, card accents, column widths, terminal-card limits,
+  presets, per-column sorting, grouping, WIP indicators, and quick actions.
 
 ## [0.1.4] - 2026-08-21
 

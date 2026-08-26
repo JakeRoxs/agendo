@@ -37,6 +37,8 @@ export interface Todo {
   title: string;
   /** Kebab-case description token from the filename. */
   description: string;
+  /** First prose paragraph after the title, when present. */
+  summary?: string;
   tags: string[];
   dependencies: string[];
   /** External tracking key, e.g. a Jira issue key. */
@@ -263,6 +265,32 @@ function extractTitle(body: string, fallback: string): string {
   return fallback;
 }
 
+function extractSummary(body: string): string | undefined {
+  const lines = body.split("\n");
+  const titleIndex = lines.findIndex((line) => line.trimStart().startsWith("#"));
+  const candidates = titleIndex >= 0 ? lines.slice(titleIndex + 1) : lines;
+  const paragraph: string[] = [];
+
+  for (const line of candidates) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      if (paragraph.length) {
+        break;
+      }
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      continue;
+    }
+    if (trimmed.startsWith("#") || /^[-*]\s/.test(trimmed)) {
+      break;
+    }
+    paragraph.push(trimmed);
+  }
+
+  return paragraph.length ? paragraph.join(" ") : undefined;
+}
+
 /**
  * Parse a todo file into a {@link Todo}. Returns `undefined` when the filename
  * does not match the naming contract.
@@ -294,6 +322,7 @@ export function parseTodo(uri: vscode.Uri, content: string, folder: string): Tod
     priority,
     title: extractTitle(body, description),
     description,
+    summary: extractSummary(body),
     tags: toStringArray(frontmatter.tags),
     dependencies: toStringArray(frontmatter.dependencies),
     key: optionalString(frontmatter.key) ?? jira,

@@ -8,7 +8,15 @@ import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
 import { activate, deactivate } from "../extension";
 import { out, outputChannel, showOutputChannel } from "../output";
-import { buildBoardSnapshot } from "../todos/boardViewProvider";
+import {
+  applyBoardColumnRules,
+  type BoardColumn,
+  type BoardTodo,
+  buildBoardSnapshot,
+  limitTerminalBoardColumns,
+  normalizeBoardCardFieldOrder,
+  sortBoardTodos,
+} from "../todos/boardViewProvider";
 import { ConfigService } from "../todos/configService";
 import { buildTodoDigest } from "../todos/digestService";
 import { readText } from "../todos/fileSystem";
@@ -101,6 +109,7 @@ suite("todoModel", () => {
     assert.strictEqual(todo?.status, "ready");
     assert.strictEqual(todo?.priority, "p2");
     assert.strictEqual(todo?.title, "Do The Thing");
+    assert.strictEqual(todo?.summary, "Body.");
     assert.deepStrictEqual(todo?.tags, ["alpha"]);
   });
 
@@ -417,7 +426,7 @@ suite("todoModel", () => {
       updatedAt,
       frontmatter: { status, priority },
     });
-    const todos = [
+    const todos: Todo[] = [
       createTodo("001", "ready", "p2", [], 100),
       createTodo("002", "pending", "p1", ["001"], 300),
       createTodo("003", "ready", "p1", [], 200),
@@ -502,12 +511,17 @@ suite("todoModel", () => {
     assert.ok(cancelledUri);
 
     assert.ok(cancelledUri !== undefined);
+    assert.strictEqual(
+      cancelledUri.fsPath,
+      path.join(rootUri.fsPath, "cancelled", "060-cancelled-p2-do-the-thing.md"),
+    );
     const cancelledData = Buffer.from(await vscode.workspace.fs.readFile(cancelledUri)).toString(
       "utf8",
     );
     assert.match(cancelledData, /status: cancelled/);
     assert.match(cancelledData, /tags: \[alpha, cancelled\]/);
     assert.match(cancelledData, /> \*\*CANCELLED\*\*/);
+    assert.match(cancelledData, /# Do The Thing/);
 
     const nextTodo: Todo = {
       ...todo,
@@ -854,11 +868,13 @@ suite("todoModel", () => {
         status: "ready",
         priority: "p2",
         title: "Second",
+        summary: "Second task summary.",
         description: "second",
         tags: ["ops"],
         dependencies: ["001"],
+        key: "JIRA-002",
         children: [],
-        epic: false,
+        epic: true,
         folder: "",
         fileName: "002-ready-p2-second.md",
         uri: vscode.Uri.file("/tmp/002-ready-p2-second.md"),
@@ -916,14 +932,155 @@ suite("todoModel", () => {
       snapshot.columns.find((column) => column.status === "ready")?.todos.map((todo) => todo.id),
       ["001", "002"],
     );
+    assert.strictEqual(snapshot.columns.find((column) => column.status === "ready")?.totalCount, 2);
     assert.strictEqual(
       snapshot.columns.find((column) => column.status === "ready")?.todos[1]?.blocked,
       true,
     );
     assert.strictEqual(
+      snapshot.columns.find((column) => column.status === "ready")?.todos[1]?.key,
+      "JIRA-002",
+    );
+    assert.strictEqual(
       snapshot.columns.find((column) => column.status === "complete")?.todos.length,
       0,
     );
+    assert.strictEqual(
+      snapshot.cardFields.find((preference) => preference.field === "key")?.visible,
+      true,
+    );
+    assert.strictEqual(
+      snapshot.cardFields.find((preference) => preference.field === "createdAt")?.visible,
+      false,
+    );
+    assert.strictEqual(snapshot.cardDensity, "comfortable");
+    assert.strictEqual(snapshot.sort, "default");
+    assert.strictEqual(snapshot.descriptionPreview, "hidden");
+    assert.strictEqual(snapshot.hideEmptyColumns, false);
+    assert.strictEqual(snapshot.showMetadataLabels, false);
+    assert.strictEqual(snapshot.dateFormat, "full");
+    assert.strictEqual(snapshot.tagLimit, "all");
+    assert.strictEqual(snapshot.titleWrapping, "twoLines");
+    assert.strictEqual(snapshot.missingValueBehavior, "omit");
+    assert.strictEqual(snapshot.cardAccent, "priority");
+    assert.strictEqual(snapshot.columnWidth, "standard");
+    assert.strictEqual(snapshot.terminalCardLimit, "all");
+    assert.deepStrictEqual(snapshot.columnSorts, {});
+    assert.strictEqual(snapshot.grouping, "none");
+    assert.deepStrictEqual(snapshot.wipLimits, {});
+    assert.strictEqual(
+      snapshot.columns.find((column) => column.status === "ready")?.todos[1]?.epic,
+      true,
+    );
+    assert.strictEqual(
+      snapshot.columns.find((column) => column.status === "ready")?.todos[1]?.summary,
+      "Second task summary.",
+    );
+  });
+
+  test("board card field order preserves preferences and restores missing fields", () => {
+    assert.deepStrictEqual(normalizeBoardCardFieldOrder(["tags", "key", "tags"]), [
+      "tags",
+      "key",
+      "id",
+      "priority",
+      "group",
+      "blocked",
+      "createdAt",
+      "updatedAt",
+    ]);
+  });
+
+  test("board card sorting uses stable id tie breakers", () => {
+    const todos: BoardTodo[] = [
+      {
+        id: "002",
+        title: "Alpha",
+        status: "ready",
+        priority: "p2",
+        tags: [],
+        epic: false,
+        blocked: false,
+        updatedAt: 20,
+      },
+      {
+        id: "001",
+        title: "Zulu",
+        status: "ready",
+        priority: "p1",
+        tags: [],
+        epic: false,
+        blocked: false,
+        updatedAt: 10,
+      },
+      {
+        id: "003",
+        title: "Bravo",
+        status: "ready",
+        priority: "p1",
+        tags: [],
+        epic: false,
+        blocked: false,
+      },
+    ];
+
+    assert.deepStrictEqual(
+      sortBoardTodos(todos, "priority").map((todo) => todo.id),
+      ["001", "003", "002"],
+    );
+    assert.deepStrictEqual(
+      sortBoardTodos(todos, "title").map((todo) => todo.id),
+      ["002", "003", "001"],
+    );
+    assert.deepStrictEqual(
+      sortBoardTodos(todos, "updatedAt").map((todo) => todo.id),
+      ["002", "001", "003"],
+    );
+  });
+
+  test("board terminal limits preserve active cards and total counts", () => {
+    const makeTodo = (id: string, status: Todo["status"]): BoardTodo => ({
+      id,
+      title: `Todo ${id}`,
+      status,
+      priority: "p2",
+      tags: [],
+      epic: false,
+      blocked: false,
+    });
+    const columns: BoardColumn[] = [
+      {
+        status: "ready",
+        label: "Ready",
+        icon: "play-circle",
+        todos: [makeTodo("001", "ready"), makeTodo("002", "ready")],
+        totalCount: 2,
+      },
+      {
+        status: "complete",
+        label: "Complete",
+        icon: "pass-filled",
+        todos: Array.from({ length: 12 }, (_, index) =>
+          makeTodo(String(index + 1).padStart(3, "0"), "complete"),
+        ),
+        totalCount: 12,
+      },
+    ];
+
+    const limited = limitTerminalBoardColumns(columns, "10");
+    assert.strictEqual(limited[0].todos.length, 2);
+    assert.strictEqual(limited[1].todos.length, 10);
+    assert.strictEqual(limited[1].totalCount, 12);
+    assert.strictEqual(limitTerminalBoardColumns(columns, "all")[1].todos.length, 12);
+
+    columns[0].todos[0].title = "Zulu";
+    columns[0].todos[1].title = "Alpha";
+    const ruled = applyBoardColumnRules(columns, "title", { ready: "id" }, { ready: 1 });
+    assert.deepStrictEqual(
+      ruled[0].todos.map((todo) => todo.id),
+      ["001", "002"],
+    );
+    assert.strictEqual(ruled[0].wipLimit, 1);
   });
 
   test("manifest registers the todos and skill status views", () => {
