@@ -425,7 +425,7 @@
     "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.10",
+    "@biomejs/biome": "^2.5.11",
     "@types/mocha": "^10.0.10",
     "@types/node": "26.x",
     "@types/vscode": "^1.103.0",
