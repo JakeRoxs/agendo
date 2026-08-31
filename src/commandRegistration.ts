@@ -2,7 +2,12 @@ import * as vscode from "vscode";
 import { Command } from "./commands";
 import { Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
-import type { ConfigService } from "./todos/configService";
+import {
+  type ConfigService,
+  VIEW_MODES,
+  type ViewMode,
+  viewModeLabel,
+} from "./todos/configService";
 import { buildTodoDigest } from "./todos/digestService";
 import type { FilterService } from "./todos/filterService";
 import type { LinkService } from "./todos/linkService";
@@ -68,7 +73,7 @@ export async function updateFilterContexts(filter: FilterService): Promise<void>
 }
 
 export async function updatePreviewContext(config: ConfigService): Promise<void> {
-  await vscode.commands.executeCommand("setContext", "agendo.previewActive", config.openInPreview);
+  await vscode.commands.executeCommand("setContext", "agendo.viewMode", config.viewMode);
 }
 
 function registerFilterCommands(register: Register, services: CommandServices): void {
@@ -80,7 +85,6 @@ function registerFilterCommands(register: Register, services: CommandServices): 
       await repository.refresh();
       const content = buildTodoDigest(repository.getTodos(), repository.getDependencyGraph());
       const document = await vscode.workspace.openTextDocument({ language: "markdown", content });
-      await vscode.window.showTextDocument(document, { preview: true });
       await vscode.commands.executeCommand("markdown.showPreview", document.uri);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to show task digest: ${error}`);
@@ -122,7 +126,7 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
     if (!todo) {
       return;
     }
-    await vscode.commands.executeCommand("markdown.showPreview", todo.uri);
+    await config.openTodo(todo.uri);
   });
 
   for (const targetStatus of TODO_STATUSES) {
@@ -257,12 +261,27 @@ function registerConfigCommands(register: Register, services: CommandServices): 
   register(Command.ToggleGitignore, async () => {
     await set(Settings.GitignoreTodos, !config.gitignored);
   });
-  register(Command.TogglePreview, async () => {
-    await set(Settings.OpenInPreview, !config.openInPreview);
-    await updatePreviewContext(config);
-    vscode.window.showInformationMessage(
-      `Agendo: Open in preview is now ${config.openInPreview ? "On" : "Off"}.`,
+  register(Command.SetViewMode, async () => {
+    const currentMode = config.viewMode;
+    const previewEditorAvailable = (await config.getPreviewEditorCommand()) !== undefined;
+    const picked = await vscode.window.showQuickPick(
+      VIEW_MODES.filter((mode) => mode !== "previewEditor" || previewEditorAvailable).map(
+        (mode) => ({
+          label: viewModeLabel(mode),
+          description: mode === currentMode ? "current" : undefined,
+          picked: mode === currentMode,
+          mode,
+        }),
+      ),
+      { placeHolder: "Choose how todos open" },
     );
+    if (picked?.mode) {
+      await set(Settings.ViewMode, picked.mode as ViewMode);
+      await updatePreviewContext(config);
+      vscode.window.showInformationMessage(
+        `Agendo: Todos now open in ${viewModeLabel(picked.mode as ViewMode)}.`,
+      );
+    }
   });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({
@@ -286,19 +305,18 @@ function registerConfigCommands(register: Register, services: CommandServices): 
     }
   });
   register(Command.SetDefaultPreview, async () => {
-    const currentValue = config.openInPreview;
+    const currentMode = config.viewMode;
     const picked = await vscode.window.showQuickPick(
-      [
-        { label: "Preview enabled (default)", description: currentValue ? "On" : "Off" },
-        { label: "Preview disabled", description: currentValue ? "On" : "Off" },
-      ],
-      {
-        prompt: "Global default for open-in-preview",
-        placeHolder: currentValue ? "On" : "Off",
-      },
+      VIEW_MODES.map((mode) => ({
+        label: viewModeLabel(mode),
+        description: mode === currentMode ? "current" : undefined,
+        picked: mode === currentMode,
+        mode,
+      })),
+      { prompt: "Global default for how todos open", placeHolder: viewModeLabel(currentMode) },
     );
-    if (picked) {
-      await setDefault(Settings.OpenInPreview, picked.label.includes("enabled"));
+    if (picked?.mode) {
+      await setDefault(Settings.ViewMode, picked.mode as ViewMode);
     }
   });
 }

@@ -14,6 +14,7 @@ export enum Settings {
   CancelledFolder = "cancelledFolder",
   BacklogFolder = "backlogFolder",
   OpenInPreview = "openInPreview",
+  ViewMode = "viewMode",
   GitignoreTodos = "gitignoreTodos",
   SkillUpdateSource = "skillUpdateSource",
 }

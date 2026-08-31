@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -120,12 +120,23 @@
       },
       {
         "command": "agendo.openPreview",
-        "title": "Open in Preview",
+        "title": "Open Todo",
         "category": "Agendo"
+      },
+      {
+        "command": "agendo.setViewMode",
+        "title": "Set View Mode...",
+        "category": "Agendo",
+        "icon": "$(open-preview)"
       },
       {
         "command": "agendo.setStatus.pending",
         "title": "Set Status: Pending",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.setStatus.in-progress",
+        "title": "Set Status: In Progress",
         "category": "Agendo"
       },
       {
@@ -174,11 +185,6 @@
         "category": "Agendo"
       },
       {
-        "command": "agendo.togglePreview",
-        "title": "Toggle Open In Preview",
-        "category": "Agendo"
-      },
-      {
         "command": "agendo.setDefault.root",
         "title": "Set Default Root Folder...",
         "category": "Agendo"
@@ -190,7 +196,7 @@
       },
       {
         "command": "agendo.setDefault.preview",
-        "title": "Set Default Preview Behavior...",
+        "title": "Set Default View Mode...",
         "category": "Agendo"
       },
       {
@@ -283,10 +289,9 @@
           "group": "2_config@5"
         },
         {
-          "command": "agendo.togglePreview",
+          "command": "agendo.setViewMode",
           "when": "view == agendo.todos",
-          "group": "2_config@6",
-          "toggled": "agendo.previewActive"
+          "group": "2_config@6"
         },
         {
           "command": "agendo.enableSkill",
@@ -321,24 +326,29 @@
           "group": "2_status@1"
         },
         {
-          "command": "agendo.setStatus.ready",
+          "command": "agendo.setStatus.in-progress",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@2"
         },
         {
-          "command": "agendo.setStatus.backlogged",
+          "command": "agendo.setStatus.ready",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@3"
         },
         {
-          "command": "agendo.setStatus.complete",
+          "command": "agendo.setStatus.backlogged",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@4"
         },
         {
-          "command": "agendo.setStatus.cancelled",
+          "command": "agendo.setStatus.complete",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@5"
+        },
+        {
+          "command": "agendo.setStatus.cancelled",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "2_status@6"
         },
         {
           "command": "agendo.setPriority",
@@ -393,7 +403,23 @@
         "agendo.openInPreview": {
           "type": "boolean",
           "default": true,
-          "description": "Open todos in preview mode using your default markdown editor. Requires 'Files: Enable Preview' enabled in VS Code settings."
+          "deprecationMessage": "Use 'agendo.viewMode' instead. This setting is kept as a fallback when viewMode is not explicitly set.",
+          "description": "Deprecated. Use 'agendo.viewMode' instead. Open todos in preview mode using your default markdown editor. Requires 'Files: Enable Preview' enabled in VS Code settings."
+        },
+        "agendo.viewMode": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "preview",
+            "previewEditor"
+          ],
+          "default": "preview",
+          "enumDescriptions": [
+            "Open todos as the source text editor.",
+            "Open todos as a rendered markdown preview.",
+            "Open todos with VS Code's newer (beta) markdown editor preview when available."
+          ],
+          "description": "How todos open when clicked: the source editor, the markdown preview, or VS Code's beta preview editor."
         },
         "agendo.gitignoreTodos": {
           "type": "boolean",

@@ -1,16 +1,23 @@
 import * as vscode from "vscode";
 import { Command } from "../commands";
-import type { ConfigService } from "./configService";
 import type { FilterService } from "./filterService";
 import { TODO_PRIORITIES, type Todo, type TodoPriority, type TodoStatus } from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
 import type { TreeStateService } from "./treeStateService";
 
 /** Display order and labels for status groups. */
-const STATUS_ORDER: TodoStatus[] = ["ready", "pending", "backlogged", "complete", "cancelled"];
+const STATUS_ORDER: TodoStatus[] = [
+  "ready",
+  "in-progress",
+  "pending",
+  "backlogged",
+  "complete",
+  "cancelled",
+];
 
 const STATUS_LABEL: Record<TodoStatus, string> = {
   ready: "Ready",
+  "in-progress": "In Progress",
   pending: "Pending",
   backlogged: "Backlogged",
   complete: "Complete",
@@ -19,6 +26,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
 
 const STATUS_ICON: Record<TodoStatus, string> = {
   ready: "play-circle",
+  "in-progress": "pulse",
   pending: "circle-outline",
   backlogged: "archive",
   complete: "pass-filled",
@@ -104,7 +112,6 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   constructor(
     private readonly repository: TodoRepository,
     private readonly filter: FilterService,
-    private readonly config: ConfigService,
     private readonly treeState: TreeStateService,
   ) {
     this.repository.onDidChange(() => this.refresh());
@@ -300,9 +307,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.tooltip = tooltip;
 
     item.command = {
-      command: this.config.openInPreview ? Command.OpenPreview : "vscode.open",
+      command: Command.OpenPreview,
       title: "Open Todo",
-      arguments: this.config.openInPreview ? [node] : [todo.uri],
+      arguments: [node],
     };
     return item;
   }

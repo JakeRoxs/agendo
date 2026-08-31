@@ -1,7 +1,6 @@
 import { randomBytes } from "node:crypto";
 import * as vscode from "vscode";
 import { Command } from "../commands";
-import type { ConfigService } from "./configService";
 import type { FilterService } from "./filterService";
 import type { StatusService } from "./statusService";
 import {
@@ -15,6 +14,7 @@ import type { DependencyGraph, TodoRepository } from "./todoRepository";
 
 const STATUS_LABEL: Record<TodoStatus, string> = {
   pending: "Pending",
+  "in-progress": "In Progress",
   ready: "Ready",
   backlogged: "Backlog",
   complete: "Complete",
@@ -23,6 +23,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
 
 const STATUS_ICON: Record<TodoStatus, string> = {
   pending: "circle-outline",
+  "in-progress": "pulse",
   ready: "play-circle",
   backlogged: "archive",
   complete: "pass-filled",
@@ -131,7 +132,7 @@ const BOARD_GROUPING_SET = new Set<BoardGrouping>(BOARD_GROUPINGS);
 const BOARD_PRESET_SET = new Set<BoardPreset>(BOARD_PRESETS);
 const TODO_STATUS_SET = new Set<TodoStatus>(TODO_STATUSES);
 const TERMINAL_STATUS_SET = new Set<TodoStatus>(TERMINAL_STATUSES);
-const WIP_STATUS_SET = new Set<TodoStatus>(["pending", "ready"]);
+const WIP_STATUS_SET = new Set<TodoStatus>(["pending", "in-progress", "ready"]);
 const TODO_PRIORITY_SET = new Set<Todo["priority"]>(TODO_PRIORITIES);
 
 export interface BoardSnapshot {
@@ -439,7 +440,6 @@ export class BoardViewProvider implements vscode.Disposable {
     private readonly repository: TodoRepository,
     private readonly filter: FilterService,
     private readonly status: StatusService,
-    private readonly config: ConfigService,
     private readonly state: vscode.Memento,
   ) {
     this.repositorySubscription = repository.onDidChange(() => this.sendSnapshot());
@@ -510,10 +510,7 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private async openTodo(todo: Todo): Promise<void> {
-    await vscode.commands.executeCommand(
-      this.config.openInPreview ? Command.OpenPreview : "vscode.open",
-      this.config.openInPreview ? { kind: "todo", todo } : todo.uri,
-    );
+    await vscode.commands.executeCommand(Command.OpenPreview, { kind: "todo", todo });
   }
 
   private async setTodoStatus(todo: Todo, status: unknown): Promise<void> {
@@ -1026,6 +1023,7 @@ export class BoardViewProvider implements vscode.Disposable {
     .card.accent-priority-p2 { border-left-color: var(--vscode-charts-yellow); }
     .card.accent-priority-p3, .card.accent-status-ready { border-left-color: var(--vscode-charts-blue); }
     .card.accent-status-pending { border-left-color: var(--vscode-descriptionForeground); }
+    .card.accent-status-in-progress { border-left-color: var(--vscode-charts-orange); }
     .card.accent-status-backlogged { border-left-color: var(--vscode-charts-purple); }
     .card.accent-status-complete { border-left-color: var(--vscode-charts-green); }
     .card.blocked { box-shadow: inset 0 0 0 1px var(--vscode-charts-red); }
@@ -1186,7 +1184,7 @@ export class BoardViewProvider implements vscode.Disposable {
       columnRulesTitle.className = "settings-section-title";
       columnRulesTitle.textContent = "Column rules";
       settings.append(columnRulesTitle);
-      for (const status of ["pending", "ready", "backlogged", "complete", "cancelled"]) {
+      for (const status of ["pending", "in-progress", "ready", "backlogged", "complete", "cancelled"]) {
         settings.append(createSelectSetting(
           status + " sort",
           snapshot.columnSorts[status] || "global",
@@ -1206,6 +1204,7 @@ export class BoardViewProvider implements vscode.Disposable {
       }
       settings.append(
         createNumberSetting("Pending WIP limit", snapshot.wipLimits.pending || 0, "pending"),
+        createNumberSetting("In Progress WIP limit", snapshot.wipLimits["in-progress"] || 0, "in-progress"),
         createNumberSetting("Ready WIP limit", snapshot.wipLimits.ready || 0, "ready"),
       );
 
@@ -1478,6 +1477,7 @@ export class BoardViewProvider implements vscode.Disposable {
       actions.append(
         createQuickSelect(todo, todo.status, [
           ["pending", "Pending"],
+          ["in-progress", "In Progress"],
           ["ready", "Ready"],
           ["backlogged", "Backlog"],
           ["complete", "Complete"],

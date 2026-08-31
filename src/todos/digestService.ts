@@ -43,6 +43,7 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
   const overview = [
     `- Active: **${active.length}**`,
     `- Ready: **${active.filter((todo) => todo.status === "ready").length}**`,
+    `- In Progress: **${active.filter((todo) => todo.status === "in-progress").length}**`,
     `- Pending: **${active.filter((todo) => todo.status === "pending").length}**`,
     `- Blocked: **${blocked.length}**`,
     `- Backlogged: **${todos.filter((todo) => todo.status === "backlogged").length}**`,
@@ -55,6 +56,20 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
   const recentLines = recentlyUpdatedTop.map(
     (todo) => `${formatTodo(todo)} · ${new Date(todo.updatedAt ?? 0).toISOString().slice(0, 10)}`,
   );
+  const resumeTodos = active
+    .filter((todo) => Boolean(todo.resumeContext?.currentState || todo.resumeContext?.nextStep))
+    .sort(compareTodos);
+  const resumeLines = resumeTodos.flatMap((todo) => {
+    const { currentState, nextStep } = todo.resumeContext ?? {};
+    const lines = [`${formatTodo(todo)}`];
+    if (currentState) {
+      lines.push(`  - **Now:** ${currentState}`);
+    }
+    if (nextStep) {
+      lines.push(`  - **Next:** ${nextStep}`);
+    }
+    return lines;
+  });
 
   return [
     "# Agendo Task Digest",
@@ -63,6 +78,7 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
     "",
     ...renderSection("Overview", overview),
     ...renderSection("Recommended Next Actions", nextActions.map(formatTodo)),
+    ...renderSection("Latest Updates & Next Steps", resumeLines),
     ...renderSection("High Priority", highPriority.map(formatTodo)),
     ...renderSection("Blocked", blockedLines),
     ...renderSection("Recently Updated", recentLines),

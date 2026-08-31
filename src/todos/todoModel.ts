@@ -3,16 +3,27 @@ import type * as vscode from "vscode";
 /**
  * Lifecycle status of a todo.
  *
- * - `pending` / `ready` are active states that live directly in the root folder.
+ * - `pending` is an active state awaiting triage (lives in the root folder).
+ * - `in-progress` is an active state for work currently being done (root folder).
+ * - `ready` is an active state for work that is likely done and being polished,
+ *   still awaiting confirmation that it is complete and functional (root folder).
  * - `backlogged` is a deprioritized-but-open state (moves to the backlog subfolder).
- * - `complete` and `cancelled` are terminal states (each has its own subfolder).
+ * - `complete` is a terminal state for work fully finished and verified.
+ * - `cancelled` is a terminal state for abandoned or superseded work.
  */
-export type TodoStatus = "pending" | "ready" | "backlogged" | "complete" | "cancelled";
+export type TodoStatus =
+  | "pending"
+  | "in-progress"
+  | "ready"
+  | "backlogged"
+  | "complete"
+  | "cancelled";
 
 export type TodoPriority = "p1" | "p2" | "p3";
 
 export const TODO_STATUSES: TodoStatus[] = [
   "pending",
+  "in-progress",
   "ready",
   "backlogged",
   "complete",
@@ -22,7 +33,7 @@ export const TODO_STATUSES: TodoStatus[] = [
 export const TODO_PRIORITIES: TodoPriority[] = ["p1", "p2", "p3"];
 
 /** Statuses that represent active, in-progress work. */
-export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "ready"];
+export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "in-progress", "ready"];
 
 /** Statuses that are terminal (finished or abandoned). */
 export const TERMINAL_STATUSES: TodoStatus[] = ["complete", "cancelled"];
@@ -39,6 +50,11 @@ export interface Todo {
   description: string;
   /** First prose paragraph after the title, when present. */
   summary?: string;
+  /**
+   * Latest-update / next-step snapshot from the Resume Context section, when
+   * present. Used to surface per-todo progress in the task digest.
+   */
+  resumeContext?: { currentState?: string; nextStep?: string };
   tags: string[];
   dependencies: string[];
   /** External tracking key, e.g. a Jira issue key. */
@@ -88,7 +104,8 @@ export function getBlockedBy(todo: Todo, allTodos: readonly Todo[]): string[] {
     .map((t) => t.id);
 }
 
-const FILENAME_RE = /^(\d{3})-(pending|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
+const FILENAME_RE =
+  /^(\d{3})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
 
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {
@@ -292,6 +309,43 @@ function extractSummary(body: string): string | undefined {
 }
 
 /**
+ * Extract the latest-update / next-step snapshot from the Resume Context
+ * section. Returns an empty object when the section is missing or unfilled.
+ */
+function extractResumeContext(
+  body: string,
+): { currentState?: string; nextStep?: string } | undefined {
+  const lines = body.split("\n");
+  let inResume = false;
+  const result: { currentState?: string; nextStep?: string } = {};
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^##\s+Resume Context\b/i.test(trimmed)) {
+      inResume = true;
+      continue;
+    }
+    if (/^##\s/.test(trimmed)) {
+      inResume = false;
+      continue;
+    }
+    if (!inResume) {
+      continue;
+    }
+    const currentState = trimmed.match(/^\*\*Current state:\*\*\s*(.*)$/i)?.[1]?.trim();
+    if (currentState) {
+      result.currentState = currentState;
+    }
+    const nextStep = trimmed.match(/^\*\*Next step:\*\*\s*(.*)$/i)?.[1]?.trim();
+    if (nextStep) {
+      result.nextStep = nextStep;
+    }
+  }
+
+  return result.currentState || result.nextStep ? result : undefined;
+}
+
+/**
  * Parse a todo file into a {@link Todo}. Returns `undefined` when the filename
  * does not match the naming contract.
  *
@@ -323,6 +377,7 @@ export function parseTodo(uri: vscode.Uri, content: string, folder: string): Tod
     title: extractTitle(body, description),
     description,
     summary: extractSummary(body),
+    resumeContext: extractResumeContext(body),
     tags: toStringArray(frontmatter.tags),
     dependencies: toStringArray(frontmatter.dependencies),
     key: optionalString(frontmatter.key) ?? jira,

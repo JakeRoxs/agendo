@@ -2,6 +2,30 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.6]
+
+### Added
+
+- `in-progress` lifecycle status between `pending` and `ready`, with tree, board,
+  command palette, and filter support.
+- Per-todo "Latest Updates & Next Steps" section in the task digest, sourced from
+  each todo's Resume Context when filled.
+
+### Changed
+
+- Clarified status semantics: `ready` now means "likely done, being tweaked, still
+  needs confirmation it works", while `complete` means fully finished and verified.
+- Updated the bundled Agendo skill to version 1.3.1 with the new status lifecycle,
+  config-aware paths, corrected ID and dependency commands, explicit filename
+  authority, and clearer optional-integration guidance.
+- Simplified the bundled todo template to use concise, neutral prompts without
+  sample findings or decisions that could leak into newly created todos.
+
+### Fixed
+
+- Task digest no longer opens both an editor and a preview — it now shows a single
+  markdown preview view.
+
 ## [0.1.5]
 
 ### Changed

@@ -27,6 +27,7 @@ import { SkillManager } from "../todos/skillManager";
 import { SkillStatusTreeProvider } from "../todos/skillStatusTreeProvider";
 import { StatusService } from "../todos/statusService";
 import {
+  ACTIVE_STATUSES,
   buildFileName,
   getBlockedBy,
   isBlocked,
@@ -34,6 +35,7 @@ import {
   parseFrontmatter,
   parseTodo,
   splitFrontmatter,
+  TERMINAL_STATUSES,
   TODO_STATUSES,
   type Todo,
 } from "../todos/todoModel";
@@ -128,6 +130,24 @@ suite("todoModel", () => {
     const untracked = parseTodo(uri, "# Track Work", "");
     assert.strictEqual(untracked?.key, undefined);
     assert.strictEqual(untracked?.jira, undefined);
+  });
+
+  test("parseTodo recognizes in-progress status and treats it as active", () => {
+    const uri = vscode.Uri.file("/tmp/060-in-progress-p2-do-the-thing.md");
+    const content = [
+      "---",
+      "status: in-progress",
+      "priority: p2",
+      'issue_id: "060"',
+      "---",
+      "",
+      "# Do The Thing",
+    ].join("\n");
+    const todo = parseTodo(uri, content, "");
+    assert.ok(todo);
+    assert.strictEqual(todo?.status, "in-progress");
+    assert.ok(ACTIVE_STATUSES.includes(todo?.status ?? ""));
+    assert.ok(!TERMINAL_STATUSES.includes(todo?.status ?? ""));
   });
 
   test("tree node IDs are stable for persisted collapse state", () => {
@@ -271,6 +291,65 @@ suite("todoModel", () => {
     assert.strictEqual(missingRoot.getSubfolderUri("backlog"), undefined);
   });
 
+  test("config service resolves view mode and opens todos via the matching command", async () => {
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    const originalExecuteCommand = vscode.commands.executeCommand;
+    const executed: string[] = [];
+
+    function mockConfig(viewMode: unknown, openInPreview: boolean) {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: () => ({
+          get: (key: string) =>
+            key === Settings.ViewMode
+              ? viewMode
+              : key === Settings.OpenInPreview
+                ? openInPreview
+                : undefined,
+          update: async () => undefined,
+          inspect: (key: string) =>
+            key === Settings.ViewMode && viewMode !== undefined
+              ? { globalValue: viewMode }
+              : undefined,
+        }),
+        configurable: true,
+      });
+    }
+    Object.defineProperty(vscode.commands, "executeCommand", {
+      value: async (command: string) => {
+        executed.push(command);
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      // Explicit viewMode wins.
+      mockConfig("editor", false);
+      assert.strictEqual(new ConfigService().viewMode, "editor");
+
+      // Falls back to openInPreview when viewMode is not explicitly set.
+      mockConfig(undefined, true);
+      assert.strictEqual(new ConfigService().viewMode, "preview");
+      mockConfig(undefined, false);
+      assert.strictEqual(new ConfigService().viewMode, "editor");
+
+      // openTodo delegates to the matching VS Code command.
+      const service = new ConfigService();
+      mockConfig("preview", true);
+      await service.openTodo(vscode.Uri.file("/tmp/t.md"));
+      assert.ok(executed.includes("markdown.showPreview"));
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.commands, "executeCommand", {
+        value: originalExecuteCommand,
+        configurable: true,
+      });
+    }
+  });
+
   test("tree provider groups visible todos by status and priority", () => {
     const todos: Todo[] = [
       {
@@ -321,18 +400,12 @@ suite("todoModel", () => {
       onDidChange: () => undefined,
     };
     const filter = { matches: () => true };
-    const config = { openInPreview: false };
     const treeState = new TreeStateService({
       get: () => [],
       update: async () => undefined,
     } as never);
 
-    const provider = new TodoTreeProvider(
-      repository as never,
-      filter as never,
-      config as never,
-      treeState,
-    );
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
 
     const topLevel = provider.getChildren();
     assert.deepStrictEqual(
@@ -347,7 +420,7 @@ suite("todoModel", () => {
     const item = provider.getTreeItem(todoNodes[0] as never);
     assert.strictEqual(item.contextValue, "todoItem");
     assert.ok(item.tooltip instanceof vscode.MarkdownString);
-    assert.strictEqual(item.command?.command, "vscode.open");
+    assert.strictEqual(item.command?.command, Command.OpenPreview);
   });
 
   test("tree provider renders 200 dependency-indexed todos without a performance regression", () => {
@@ -379,17 +452,11 @@ suite("todoModel", () => {
       onDidChange: () => undefined,
     };
     const filter = { matches: () => true };
-    const config = { openInPreview: false };
     const treeState = new TreeStateService({
       get: () => [],
       update: async () => undefined,
     } as never);
-    const provider = new TodoTreeProvider(
-      repository as never,
-      filter as never,
-      config as never,
-      treeState,
-    );
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
 
     const startedAt = performance.now();
     const statuses = provider.getChildren();
@@ -462,6 +529,87 @@ suite("todoModel", () => {
     assert.ok(!recommended.includes("002"));
     assert.match(digest, /002 · Todo 002 · blocked by 001/);
     assert.ok(recent.indexOf("002 · Todo 002") < recent.indexOf("003 · Todo 003"));
+  });
+
+  test("parseTodo extracts resume context for latest updates and next steps", () => {
+    const uri = vscode.Uri.file("/tmp/060-ready-p2-do-the-thing.md");
+    const content = [
+      "---",
+      "status: ready",
+      "priority: p2",
+      'issue_id: "060"',
+      "tags: [alpha]",
+      "---",
+      "",
+      "# Do The Thing",
+      "",
+      "Body.",
+      "",
+      "## Resume Context",
+      "",
+      "**Current state:** Implemented and verified.",
+      "",
+      "**Next step:** Review and confirm it is functional.",
+      "",
+      "## Work Log",
+      "",
+      "### 2026-08-31 - Work",
+    ].join("\n");
+    const todo = parseTodo(uri, content, "");
+    assert.ok(todo);
+    assert.deepStrictEqual(todo?.resumeContext, {
+      currentState: "Implemented and verified.",
+      nextStep: "Review and confirm it is functional.",
+    });
+
+    const empty = parseTodo(
+      vscode.Uri.file("/tmp/061-pending-p3-no-context.md"),
+      "---\nstatus: pending\npriority: p3\n---\n# No Context",
+      "",
+    );
+    assert.strictEqual(empty?.resumeContext, undefined);
+  });
+
+  test("task digest surfaces per-todo resume context when filled", () => {
+    const base: Omit<Todo, "id" | "status" | "priority" | "fileName" | "uri" | "updatedAt"> = {
+      title: "Todo",
+      description: "todo",
+      tags: [],
+      dependencies: [],
+      children: [],
+      epic: false,
+      folder: "",
+      frontmatter: {},
+    };
+    const todo: Todo = {
+      ...base,
+      id: "002",
+      status: "ready",
+      priority: "p2",
+      title: "Fix N+1 Query",
+      description: "fix-n-1",
+      folder: "",
+      fileName: "002-ready-p2-fix-n-1.md",
+      uri: vscode.Uri.file("/tmp/002-ready-p2-fix-n-1.md"),
+      updatedAt: 100,
+      resumeContext: {
+        currentState: "Implemented and verified.",
+        nextStep: "Confirm it is functional.",
+      },
+    };
+    const dependencyGraph = {
+      blockedBy: new Map<string, readonly string[]>([["002", []]]),
+      blocking: new Map<string, readonly string[]>([["002", []]]),
+    };
+
+    const digest = buildTodoDigest([todo], dependencyGraph);
+    const section = digest.slice(
+      digest.indexOf("## Latest Updates & Next Steps"),
+      digest.indexOf("## High Priority"),
+    );
+    assert.match(section, /002 · Fix N\+1 Query/);
+    assert.match(section, /\*\*Now:\*\* Implemented and verified\./);
+    assert.match(section, /\*\*Next:\*\* Confirm it is functional\./);
   });
 
   test("status service moves files and updates frontmatter when status or priority changes", async () => {
@@ -807,13 +955,21 @@ suite("todoModel", () => {
       bundledVersion: "1.2.0",
       updateAvailable: true,
     };
-    const provider = new SkillStatusTreeProvider({ getStatus: async () => status } as never);
+    const provider = new SkillStatusTreeProvider(
+      { getStatus: async () => status } as never,
+      { viewMode: "preview" } as never,
+    );
 
-    const [updateNode] = await provider.getChildren();
+    const [updateNode, viewModeNode] = await provider.getChildren();
     const updateItem = provider.getTreeItem(updateNode);
     assert.strictEqual(updateItem.label, "Skill v1.1.0");
     assert.strictEqual(updateItem.description, "v1.2.0 available");
     assert.strictEqual(updateItem.command?.command, Command.EnableSkill);
+
+    const viewModeItem = provider.getTreeItem(viewModeNode);
+    assert.strictEqual(viewModeItem.label, "View");
+    assert.strictEqual(viewModeItem.description, "Preview");
+    assert.strictEqual(viewModeItem.command?.command, Command.SetViewMode);
 
     status = { ...status, installedVersion: "1.2.0", updateAvailable: false };
     const [installedNode] = await provider.getChildren();
@@ -823,13 +979,16 @@ suite("todoModel", () => {
   });
 
   test("skill status provider renders unknown and install states", async () => {
-    const unknownProvider = new SkillStatusTreeProvider({
-      getStatus: async () => {
-        throw new Error("unreadable");
-      },
-    } as never);
+    const unknownProvider = new SkillStatusTreeProvider(
+      {
+        getStatus: async () => {
+          throw new Error("unreadable");
+        },
+      } as never,
+      { viewMode: "editor" } as never,
+    );
 
-    const [unknownNode] = await unknownProvider.getChildren();
+    const [unknownNode, viewModeNode] = await unknownProvider.getChildren();
     const unknownItem = unknownProvider.getTreeItem(unknownNode);
     assert.strictEqual(unknownItem.label, "Skill status unknown");
     assert.strictEqual(
@@ -838,15 +997,20 @@ suite("todoModel", () => {
     );
     assert.strictEqual(unknownItem.command?.command, Command.EnableSkill);
 
+    const viewModeItem = unknownProvider.getTreeItem(viewModeNode);
+    assert.strictEqual(viewModeItem.label, "View");
+    assert.strictEqual(viewModeItem.description, "Editor (source)");
+
     const installStatus = {
       installed: false,
       installedVersion: undefined,
       bundledVersion: "1.2.0",
       updateAvailable: false,
     };
-    const installProvider = new SkillStatusTreeProvider({
-      getStatus: async () => installStatus,
-    } as never);
+    const installProvider = new SkillStatusTreeProvider(
+      { getStatus: async () => installStatus } as never,
+      { viewMode: "previewEditor" } as never,
+    );
 
     const [installNode] = await installProvider.getChildren();
     const installItem = installProvider.getTreeItem(installNode);
@@ -927,7 +1091,7 @@ suite("todoModel", () => {
 
     assert.deepStrictEqual(
       snapshot.columns.map((column) => column.status),
-      ["pending", "ready", "backlogged", "complete", "cancelled"],
+      ["pending", "in-progress", "ready", "backlogged", "complete", "cancelled"],
     );
     assert.deepStrictEqual(
       snapshot.columns.find((column) => column.status === "ready")?.todos.map((todo) => todo.id),
@@ -1147,7 +1311,6 @@ suite("todoModel", () => {
     const provider = new BoardViewProvider(
       repository as never,
       { matches: () => true } as never,
-      { openInPreview: false } as never,
       { setStatus: async () => undefined, setPriority: async () => undefined } as never,
       {
         get: <T>(key: string, fallback: T): T =>
@@ -1448,6 +1611,7 @@ suite("todoModel", () => {
       value: () => ({
         get: () => undefined,
         update: async () => undefined,
+        inspect: () => undefined,
       }),
       configurable: true,
     });
@@ -1609,7 +1773,7 @@ suite("todoModel", () => {
       );
       await registrations.get(Command.ChooseRoot)?.();
       await registrations.get(Command.ToggleGitignore)?.();
-      await registrations.get(Command.TogglePreview)?.();
+      await registrations.get(Command.SetViewMode)?.();
       await registrations.get(Command.SetDefaultRoot)?.();
       await registrations.get(Command.SetDefaultPriority)?.();
       await registrations.get(Command.SetDefaultPreview)?.();
@@ -1627,7 +1791,7 @@ suite("todoModel", () => {
       assert.ok(registrations.has(Command.ExpandNode));
       assert.ok(registrations.has(Command.SetDependency));
       assert.ok(registrations.has(Command.SetGroup));
-      assert.deepStrictEqual(previewSteps, ["openTextDocument", "showTextDocument"]);
+      assert.deepStrictEqual(previewSteps, ["openTextDocument"]);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
         2,

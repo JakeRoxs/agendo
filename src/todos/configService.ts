@@ -12,6 +12,37 @@ export interface TodosConfig {
 }
 
 /**
+ * How a todo should be opened, mirroring VS Code's markdown viewing options:
+ * - `editor` — the source text editor.
+ * - `preview` — the rendered markdown preview.
+ * - `previewEditor` — VS Code's newer (beta) markdown editor preview.
+ */
+export type ViewMode = "editor" | "preview" | "previewEditor";
+
+export const VIEW_MODES: ViewMode[] = ["editor", "preview", "previewEditor"];
+
+const VIEW_MODE_LABEL: Record<ViewMode, string> = {
+  editor: "Editor (source)",
+  preview: "Preview",
+  previewEditor: "Preview editor (beta)",
+};
+
+export function isViewMode(value: unknown): value is ViewMode {
+  return typeof value === "string" && (VIEW_MODES as string[]).includes(value);
+}
+
+export function viewModeLabel(mode: ViewMode): string {
+  return VIEW_MODE_LABEL[mode] ?? mode;
+}
+
+/**
+ * Candidate command ids for the (beta) markdown preview editor. VS Code's
+ * command id is not guaranteed stable while the feature is in beta, so we
+ * probe a small list and use the first one that exists.
+ */
+const PREVIEW_EDITOR_COMMAND_CANDIDATES = ["markdown.showEditorPreview", "markdown.previewEditor"];
+
+/**
  * Bridges VS Code settings and the on-disk `.agendo-config.json` projection that
  * the Agendo skill reads. VS Code settings are the source of truth; the
  * file is a skill-readable projection of them.
@@ -42,6 +73,52 @@ export class ConfigService {
   get openInPreview(): boolean {
     const value = get<boolean>(Settings.OpenInPreview);
     return value ?? true;
+  }
+
+  /**
+   * The active view mode. Honors an explicit `viewMode` setting first;
+   * otherwise derives from the deprecated `openInPreview` flag so existing
+   * users keep their behavior.
+   */
+  get viewMode(): ViewMode {
+    const config = vscode.workspace.getConfiguration(Settings.Identifier);
+    const inspect = config.inspect<ViewMode>(Settings.ViewMode);
+    const explicit =
+      inspect?.workspaceFolderValue ?? inspect?.workspaceValue ?? inspect?.globalValue;
+    if (isViewMode(explicit)) {
+      return explicit;
+    }
+    return this.openInPreview ? "preview" : "editor";
+  }
+
+  /**
+   * Candidate command ids for VS Code's (beta) markdown preview editor. The
+   * first one that exists in the running VS Code is used; none means the
+   * feature is unavailable and callers should fall back to `preview`.
+   */
+  async getPreviewEditorCommand(): Promise<string | undefined> {
+    const commands = await vscode.commands.getCommands(true);
+    return PREVIEW_EDITOR_COMMAND_CANDIDATES.find((candidate) => commands.includes(candidate));
+  }
+
+  /**
+   * Open a todo according to the current view mode, delegating the actual
+   * rendering to VS Code's native markdown commands.
+   */
+  async openTodo(uri: vscode.Uri): Promise<void> {
+    const mode = this.viewMode;
+    if (mode === "editor") {
+      await vscode.commands.executeCommand("vscode.open", uri);
+      return;
+    }
+    if (mode === "previewEditor") {
+      const previewEditorCommand = await this.getPreviewEditorCommand();
+      if (previewEditorCommand) {
+        await vscode.commands.executeCommand(previewEditorCommand, uri);
+        return;
+      }
+    }
+    await vscode.commands.executeCommand("markdown.showPreview", uri);
   }
 
   get gitignored(): boolean {

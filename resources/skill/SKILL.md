@@ -2,7 +2,7 @@
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.2.0
+version: 1.3.1
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -14,7 +14,7 @@ The `docs/todos/` directory contains a file-based tracking system for managing c
 This skill should be used when:
 
 - Creating new todos from findings or feedback
-- Managing todo lifecycle (pending → ready → complete, plus backlogged and cancelled)
+- Managing todo lifecycle (pending → in-progress → ready → complete, plus backlogged and cancelled)
 - Triaging pending items for approval
 - Checking or managing dependencies
 - Converting PR comments or code findings into tracked work
@@ -22,10 +22,12 @@ This skill should be used when:
 
 ## Read `.agendo-config.json` first
 
-Before doing anything else, check for a `.agendo-config.json` file in the todos root
-(default `docs/todos/.agendo-config.json`). The [Agendo VS Code extension](https://github.com/JakeRoxs/agendo)
-writes this file as a projection of its settings so this skill can honor the user's chosen
-configuration. When present, it looks like:
+Before doing anything else, resolve the todos root and check for `.agendo-config.json` there. Start
+with `docs/todos/.agendo-config.json`. If it is absent and the default root does not exist, inspect
+the workspace's `agendo.root` setting or directly locate `.agendo-config.json`; a custom-root
+configuration file lives inside that custom root. The
+[Agendo VS Code extension](https://github.com/JakeRoxs/agendo) writes this file as a projection of
+its settings so this skill can honor the user's chosen configuration. When present, it looks like:
 
 ```json
 {
@@ -53,6 +55,18 @@ list-the-directory discovery strategy described throughout this document. This s
 self-contained and does **not** require the extension — the extension is a convenience/control
 layer, not a hard dependency.
 
+After resolving configuration, use these placeholders throughout this skill:
+
+- **`{root}`** — configured todos root (default `docs/todos`).
+- **`{backlog}`** — `{root}/{backlogFolder}`.
+- **`{cancelled}`** — `{root}/{cancelledFolder}`.
+- **`{complete}`** — `{root}/{completeFolder}`.
+- **`{skill_dir}`** — directory containing this `SKILL.md` file.
+
+Examples below use placeholders rather than shell variables. Replace them with resolved paths
+before running a command. `{file}` means the current todo filename stem; it is not shell brace
+expansion.
+
 ## File Naming Convention
 
 Todo files follow this naming pattern:
@@ -70,19 +84,21 @@ Todo files follow this naming pattern:
 
 **Status values:**
 
-| Status       | Meaning                           | Folder                  |
-| ------------ | --------------------------------- | ----------------------- |
-| `pending`    | Needs triage                      | root (`docs/todos/`)    |
-| `ready`      | Approved / ready to work          | root (`docs/todos/`)    |
-| `backlogged` | Deprioritized but still open      | `docs/todos/backlog/`   |
-| `complete`   | Finished successfully (terminal)  | `docs/todos/complete/`  |
-| `cancelled`  | Abandoned / superseded (terminal) | `docs/todos/cancelled/` |
+| Status        | Meaning                                                          | Folder        |
+| ------------- | ---------------------------------------------------------------- | ------------- |
+| `pending`     | Needs triage / not yet started                                    | `{root}`      |
+| `in-progress` | Actively being worked on                                          | `{root}`      |
+| `ready`       | Likely done, being tweaked/bug-fixed; needs confirmation it works | `{root}`      |
+| `backlogged`  | Deprioritized but still open                                      | `{backlog}`   |
+| `complete`    | Fully finished and verified (terminal)                            | `{complete}`  |
+| `cancelled`   | Abandoned / superseded (terminal)                                 | `{cancelled}` |
 
 **Examples:**
 
 ```
 001-pending-p1-mailer-test.md
-002-ready-p1-fix-n-plus-1.md
+002-in-progress-p1-fix-n-plus-1.md
+003-ready-p1-verify-n-plus-1-fix.md
 005-complete-p2-refactor-csv.md
 053-cancelled-p2-superseded-by-057.md
 061-backlogged-p3-nice-to-have-polish.md
@@ -90,16 +106,16 @@ Todo files follow this naming pattern:
 
 ## Folder Layout
 
-- **Active** todos (`pending` / `ready`) live **directly** in the root folder (`docs/todos/`),
-  NOT in a subfolder.
+- **Active** todos (`pending` / `in-progress` / `ready`) live **directly** in `{root}`, NOT in a
+  subfolder.
 - Each terminal/parked state has its **own sibling subfolder** under the root:
   - `complete/` — finished successfully.
   - `cancelled/` — abandoned or superseded.
   - `backlog/` — deprioritized but still open.
-- **`docs/todos/**/_.md`glob pitfall:** a recursive glob with`\*\*/` requires an intermediate
-subdirectory, so it MISSES the active todos sitting directly in the root and only matches the
-subfolders. Use a directory listing (`list_dir docs/todos`) or a flat glob (`docs/todos/_.md`)
-  for active items, and list each subfolder separately for terminal/parked items.
+- Recursive-glob behavior varies by tool: some `**/*.md` implementations include root files and
+  others do not. For deterministic discovery, list `{root}/*.md` for active items and each
+  configured state subfolder separately. When `gitignored` is `true`, use a direct directory
+  listing rather than a workspace search index.
 - Per-todo images live in `assets/{id}/` and **stay in place** even after the todo file moves to
   `complete/`, `cancelled/`, or `backlog/`. Do not move the assets when the todo moves.
 
@@ -107,15 +123,22 @@ subfolders. Use a directory listing (`list_dir docs/todos`) or a flat glob (`doc
 
 Each todo is a markdown file with YAML frontmatter and structured sections. Use the template at [todo-template.md](./assets/todo-template.md) as a starting point when creating new todos.
 
-**Required sections:**
+**Core sections emitted by the extension and required for every todo:**
 
 - **Problem Statement** - What is broken, missing, or needs improvement?
-- **Findings** - Investigation results, root cause, key discoveries
-- **Proposed Solutions** - Multiple options with pros/cons, effort, risk
-- **Recommended Action** - Clear plan (filled during triage)
 - **Acceptance Criteria** - Testable checklist items
 - **Resume Context** - Compact current state and next action for restarting work
 - **Work Log** - Chronological record with date, actions, learnings
+
+**Add when the work needs investigation or triage:**
+
+- **Findings** - Investigation results, root cause, key discoveries
+- **Proposed Solutions** - Meaningfully different options with pros/cons, effort, and risk
+- **Recommended Action** - Clear selected plan, normally filled during triage
+
+Do not manufacture multiple solutions for a straightforward task. The full template includes these
+sections as prompts, while the extension's Create Todo command intentionally emits only the core
+scaffold.
 
 **Optional sections:**
 
@@ -127,7 +150,7 @@ Each todo is a markdown file with YAML frontmatter and structured sections. Use 
 
 ```yaml
 ---
-status: ready # pending | ready | backlogged | complete | cancelled
+status: ready # pending | in-progress | ready | backlogged | complete | cancelled
 priority: p1 # p1 | p2 | p3
 issue_id: "002"
 tags: [rails, performance, database]
@@ -145,9 +168,11 @@ key: "JIRA-123"
 Do not add an empty `key`, and do not automatically include the key in the todo
 title or filename. Existing `jira:` fields are supported as a legacy alias.
 
-**Two coupled sources of truth:** the filename status token AND the frontmatter `status` must stay
-in sync, and the folder placement is **derived** from the status. When transitioning a todo, update
-all three together (filename token, frontmatter, folder).
+**Authoritative filename, synchronized mirror:** the extension derives status and priority from the
+filename tokens. Frontmatter `status` and `priority` are human-readable mirrors and must match the
+filename. Folder placement is derived from status. If filename and frontmatter disagree, the
+extension follows the filename. When transitioning a todo, update filename, frontmatter, and folder
+placement together.
 
 ## Common Workflows
 
@@ -156,22 +181,27 @@ all three together (filename token, frontmatter, folder).
 **To create a new todo from findings or feedback:**
 
 1. Determine next issue ID. **Always list the actual todos directory contents first — never trust an empty file-search result.**
-   - **CRITICAL:** The active todo files live _directly_ inside the root (e.g. `034-pending-p1-...md`). A recursive glob like `docs/todos/**/*.md` will MISS them. Use a directory listing (`list_dir docs/todos`) or a flat glob (`docs/todos/*.md`) — NOT `docs/todos/**/*.md`. An "empty"/"no files found" result is not proof the folder is empty; verify by listing the directory.
-   - The next ID is the highest existing number (across the root AND every subfolder — `complete/`, `cancelled/`, `backlog/`) + 1, zero-padded to 3 digits. IDs are global and never reused, so check ALL locations.
-   - Bash: `find docs/todos -maxdepth 2 -name '*.md' | grep -oE '[0-9]+' | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
-   - PowerShell (Windows): `(Get-ChildItem docs\todos -Recurse -Filter *.md | ForEach-Object { if ($_.Name -match '^(\d+)') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
-2. Copy template: `cp assets/todo-template.md docs/todos/{NEXT_ID}-pending-{priority}-{description}.md`
-3. Edit and fill required sections:
+   - Active todo files live directly inside `{root}`. List `{root}` and each configured state
+     subfolder explicitly so discovery is independent of recursive-glob semantics and search-index
+     exclusions.
+   - The next ID is the highest existing leading filename ID across all locations + 1,
+     zero-padded to 3 digits. IDs are global and never reused.
+   - GNU/Linux Bash: `find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
+   - PowerShell: `(Get-ChildItem "{root}" -Recurse -Filter *.md | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
+2. Copy the template from the skill directory: `cp "{skill_dir}/assets/todo-template.md" "{root}/{NEXT_ID}-pending-{priority}-{description}.md"`
+3. Edit and fill the core sections:
    - Problem Statement
-   - Findings (if from investigation)
-   - Proposed Solutions (multiple options)
    - Acceptance Criteria
    - Initialize Resume Context with the current state and first next step
    - Add initial Work Log entry
+   - Add Findings, Proposed Solutions, and Recommended Action when investigation or triage warrants
+     them
 4. Determine status: `pending` (needs triage) or `ready` (pre-approved)
 5. Add relevant tags for filtering
 6. If an external issue or work item was provided, add its identifier as the optional `key` field.
-7. **Verify the chosen ID is unique** before writing: confirm no existing file in the root or ANY subfolder (`complete/`, `cancelled/`, `backlog/`) already starts with that number. If a collision is found, bump to the next free number and keep both the filename prefix and the `issue_id` frontmatter field in sync.
+7. **Verify the chosen ID is unique** before writing: confirm no existing file in `{root}` or any
+   configured state subfolder starts with that number. If a collision is found, bump to the next
+   free number and keep both the filename prefix and `issue_id` frontmatter in sync.
 
 **When to create a todo:**
 
@@ -199,25 +229,38 @@ all three together (filename token, frontmatter, folder).
 
 **To triage pending todos:**
 
-1. List pending items: `ls docs/todos/*-pending-*.md`
+1. List pending items: `ls "{root}"/*-pending-*.md`
 2. For each todo:
    - Read Problem Statement and Findings
    - Review Proposed Solutions
    - Make decision: approve, defer (backlog), or modify priority
 3. Update approved todos:
-   - First rename the file: `mv {file}-pending-{pri}-{desc}.md {file}-ready-{pri}-{desc}.md`
-   - Then update frontmatter at the new path: `status: pending` → `status: ready`
+   - First rename the file: `mv "{root}/{file}-pending-{pri}-{desc}.md" "{root}/{file}-in-progress-{pri}-{desc}.md"`
+   - Then update frontmatter at the new path: `status: pending` → `status: in-progress`
    - Fill "Recommended Action" at the new path with a clear plan
    - Adjust priority if different from initial assessment
 4. Deferred todos either stay in `pending` status or move to `backlogged` (see below).
 
-**Use slash command:** `/triage` for interactive approval workflow
+**Optional integration:** use `/triage` for an interactive approval workflow only when that slash
+command is installed in the host environment.
+
+### Starting / Progressing Work
+
+When a triaged `in-progress` todo is actively being worked on, keep it `in-progress` and update
+its Resume Context and Work Log as you go. When implementation is believed to be done (but not yet
+confirmed as working), move it to `ready` so it can be verified:
+
+- `mv "{root}/{file}-in-progress-{pri}-{desc}.md" "{root}/{file}-ready-{pri}-{desc}.md"`
+- Update frontmatter: `status: in-progress` → `status: ready`
+
+A `ready` todo is a candidate for completion — confirm it works and meets acceptance criteria
+before moving it to `complete`.
 
 ### Backlogging a Todo
 
 **To deprioritize an open todo without cancelling it:**
 
-1. Move the file into the backlog subfolder: `mv {file}-{status}-{pri}-{desc}.md docs/todos/backlog/{file}-backlogged-{pri}-{desc}.md`
+1. Move the file into the backlog subfolder: `mv "{root}/{file}-{status}-{pri}-{desc}.md" "{backlog}/{file}-backlogged-{pri}-{desc}.md"`
 2. Set frontmatter `status:` → `backlogged`.
 3. Leave the `assets/{id}/` folder in place.
 
@@ -230,7 +273,7 @@ and counts** (see below). To reactivate, move the file back to the root and set 
 `cancelled` is a **terminal** state for work that is abandoned or superseded (as opposed to
 `complete`, which is finished successfully).
 
-1. Move the file into the cancelled subfolder: `mv {file}-{status}-{pri}-{desc}.md docs/todos/cancelled/{file}-cancelled-{pri}-{desc}.md`
+1. Move the file into the cancelled subfolder: `mv "{root}/{file}-{status}-{pri}-{desc}.md" "{cancelled}/{file}-cancelled-{pri}-{desc}.md"`
 2. Set frontmatter `status:` → `cancelled` and add a `cancelled` tag.
 3. Insert a **contextual banner** directly under the `# title`:
    - `> **CANCELLED**` — abandoned.
@@ -253,22 +296,28 @@ dependencies: []               # No blockers - can work immediately
 **To check what blocks a todo:**
 
 ```bash
-grep "^dependencies:" docs/todos/003-*.md
+grep "^dependencies:" "{root}"/003-*.md
 ```
 
 **To find what a todo blocks:**
 
 ```bash
-grep -R -l 'dependencies:.*"002"' docs/todos/
+grep -R -l 'dependencies:.*"002"' "{root}"
 ```
 
 **To verify blockers are complete before starting:**
 
 ```bash
 for dep in 001 002 003; do
-  [ -f "docs/todos/complete/${dep}-complete-*.md" ] || echo "Issue $dep not complete"
+  terminal_file=$(find "{complete}" "{cancelled}" -maxdepth 1 -type f \
+    \( -name "${dep}-complete-*.md" -o -name "${dep}-cancelled-*.md" \) -print -quit)
+  [ -n "$terminal_file" ] || echo "Issue $dep is not terminal"
 done
 ```
+
+Both `complete` and `cancelled` satisfy dependencies by design. Cancellation means the dependency
+will not be delivered, so dependent work must be reassessed rather than remain mechanically
+blocked.
 
 ### Updating Work Logs
 
@@ -277,7 +326,7 @@ done
 ```markdown
 ### YYYY-MM-DD - Session Title
 
-**By:** Claude Code / Developer Name
+**By:** Agent or developer name
 
 **Actions:**
 
@@ -338,27 +387,41 @@ metadata.
 
 ### Completing a Todo
 
+`complete` is for work that is fully finished and verified. Only move a `ready` todo here once it
+is confirmed done and functional.
+
 **To mark a todo as complete:**
 
-1. Verify all acceptance criteria checked off
-2. **Move the file first, before editing its contents**: `mv {file}-ready-{pri}-{desc}.md docs/todos/complete/{file}-complete-{pri}-{desc}.md`
-3. Now edit the file **at its new `docs/todos/complete/` path**: set frontmatter `status: ready` → `status: complete` and add the final Work Log entry
-4. Check for unblocked work: `grep -l 'dependencies:.*"002"' docs/todos/*-ready-*.md`
-5. Commit with issue reference: `feat: resolve issue 002`
+1. Verify all acceptance criteria checked off and the work is confirmed working
+2. **Move the file first, before editing its contents**: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-complete-{pri}-{desc}.md"`
+3. Edit only the file at its new `{complete}` path: set frontmatter `status: ready` →
+   `status: complete` and add the final Work Log entry.
+4. Check for newly unblocked active work: `grep -l 'dependencies:.*"002"' "{root}"/*-{pending,in-progress,ready}-*.md`
 
-> **Order matters — move before you edit.** In editors that stage AI edits for accept/reject (e.g. VS Code Copilot "Keep/Accept Changes"), editing a file and _then_ moving it causes the accepted edit to re-materialize the file at its **original** path, leaving a stale duplicate in `docs/todos/` next to the real one in `docs/todos/complete/`. Always `mv` to the target subfolder first, then make the frontmatter/work-log edits against the new path. If a stale duplicate does reappear after accepting, the moved copy is authoritative; compare the files, preserve any unique changes, and delete the stale original.
+Do not commit, push, or create a pull request unless the user explicitly requests it.
+
+> **Order matters — move before you edit.** In editors that stage AI edits for accept/reject (e.g.
+> VS Code Copilot "Keep/Accept Changes"), editing and then moving can re-materialize the original
+> file when the edit is accepted. Always move first and edit only the destination. If a stale copy
+> appears, treat the moved copy as authoritative, preserve any unique changes, and remove the stale
+> original.
 
 ## Active vs. Terminal Status Rules
 
 When answering "what's next", counting work, or picking up new tasks:
 
-- **Active** = `pending` and `ready` only. These are the states eligible for "find next work".
+- **Active** = `pending`, `in-progress`, and `ready`. These are the states eligible for
+  "find next work".
 - **`backlogged`** is open but **deprioritized** — exclude it from active / find-next-work queries
   and counts unless explicitly asked about the backlog.
 - **`complete`** and **`cancelled`** are both **terminal** — exclude both from active work. Keep them
-  distinguishable in queries and counts: `complete` = finished successfully, `cancelled` = abandoned.
+  distinguishable in queries and counts: `complete` = finished and verified, `cancelled` = abandoned.
 
 ## Integration with Development Workflows
+
+The commands in this section are optional integrations from a broader agent environment, not VS
+Code commands provided by the Agendo extension. Use them only when they are actually available;
+otherwise perform the documented file operations directly.
 
 | Trigger     | Flow                                               | Tool                 |
 | ----------- | -------------------------------------------------- | -------------------- |
@@ -374,32 +437,35 @@ When answering "what's next", counting work, or picking up new tasks:
 
 ```bash
 # List highest priority unblocked active work (excludes backlogged/complete/cancelled)
-grep -l 'dependencies: \[\]' docs/todos/*-ready-p1-*.md
+grep -l 'dependencies: \[\]' "{root}"/*-{pending,in-progress,ready}-p1-*.md
 
 # List all pending items needing triage
-ls docs/todos/*-pending-*.md
+ls "{root}"/*-pending-*.md
 
 # List backlogged items (open but deprioritized)
-ls docs/todos/backlog/*.md
+ls "{backlog}"/*.md
 
-# Find next issue ID (checks root + all subfolders)
-find docs/todos -maxdepth 2 -name '*.md' | grep -oE '[0-9]+' | sort -n | tail -1 | awk '{printf "%03d", $1+1}'
+# Find next issue ID with GNU find (checks root + all subfolders)
+find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'
 
 # Count by status
-for status in pending ready backlogged complete cancelled; do
+for status in pending in-progress ready backlogged complete cancelled; do
   case "$status" in
-    complete) path="docs/todos/complete" ;;
-    cancelled) path="docs/todos/cancelled" ;;
-    backlogged) path="docs/todos/backlog" ;;
-    *) path="docs/todos" ;;
+    complete) path="{complete}" ;;
+    cancelled) path="{cancelled}" ;;
+    backlogged) path="{backlog}" ;;
+    *) path="{root}" ;;
   esac
-  echo "$status: $(ls -1 $path/*-$status-*.md 2>/dev/null | wc -l)"
+  count=$(find "$path" -maxdepth 1 -type f -name "*-$status-*.md" | wc -l)
+  printf '%s: %s\n' "$status" "$count"
 done
 ```
 
 ## Agendo sub-agent workflow (runSubagent)
 
-This section describes how a parent agent should delegate todo ID tracking to the `agendo` agent as a sub-agent. Do not treat these as direct CLI commands; they are internal agent handoffs.
+This section applies only when the host supports `runSubagent` and has an `agendo` sub-agent
+installed. These are internal agent handoffs, not CLI or extension commands. When unavailable, use
+the file workflows above.
 
 1. From your task agent (e.g., `coding` or `review`), call `agendo` as a sub-agent to fetch todo metadata.
 
@@ -429,42 +495,41 @@ This section describes how a parent agent should delegate todo ID tracking to th
 
 ```bash
 # What blocks this todo?
-grep "^dependencies:" docs/todos/003-*.md
+grep "^dependencies:" "{root}"/003-*.md
 
 # What does this todo block?
-grep -R -l 'dependencies:.*"002"' docs/todos/
+grep -R -l 'dependencies:.*"002"' "{root}"
 ```
 
 **Searching:**
 
 ```bash
 # Search by tag
-grep -l "tags:.*rails" docs/todos/*.md
+grep -R -l "tags:.*rails" "{root}"
 
 # Search by priority
-ls docs/todos/*-p1-*.md
+find "{root}" -maxdepth 2 -type f -name '*-p1-*.md'
 
 # Full-text search
-grep -r "payment" docs/todos/
+grep -R "payment" "{root}"
 ```
 
 ## Key Distinctions
 
-**Agendo system (this skill):**
+**Agendo files (this skill):**
 
-- Markdown files in `docs/todos/` directory
+- Markdown files in the configured `{root}` directory
 - Development/project tracking
 - Standalone markdown files with YAML frontmatter
 - Used by humans and agents
 
-**Rails Todo model:**
+**Application todo entities:**
 
-- Database model in `app/models/todo.rb`
-- User-facing feature in the application
-- Active Record CRUD operations
-- Different from this file-based system
+- Models, database records, or user-facing tasks owned by the host application
+- Governed by the application's code and persistence rules
+- Unrelated unless explicitly integrated with Agendo files
 
-**TodoWrite tool:**
+**Session task-list tools such as TodoWrite:**
 
 - In-memory task tracking during agent sessions
 - Temporary tracking for single conversation

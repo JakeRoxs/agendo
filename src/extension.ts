@@ -27,13 +27,12 @@ export async function activate(context: vscode.ExtensionContext) {
   const status = new StatusService(config, repository);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
-  const treeProvider = new TodoTreeProvider(repository, filter, config, treeState);
-  const skillStatusTreeProvider = new SkillStatusTreeProvider(skill);
+  const treeProvider = new TodoTreeProvider(repository, filter, treeState);
+  const skillStatusTreeProvider = new SkillStatusTreeProvider(skill, config);
   const boardViewProvider = new BoardViewProvider(
     repository,
     filter,
     status,
-    config,
     context.workspaceState,
   );
 
@@ -74,6 +73,9 @@ export async function activate(context: vscode.ExtensionContext) {
         await config.writeConfigFile();
         await config.applyGitignore();
         await updatePreviewContext(config);
+        if (event.affectsConfiguration(Settings.ViewMode)) {
+          skillStatusTreeProvider.refresh();
+        }
         repository.startWatching();
         await repository.refresh();
       }
