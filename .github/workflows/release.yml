@@ -80,13 +80,14 @@ jobs:
             exit 1
           fi
 
+          # If a tag already exists pointing to a different commit (e.g. a prior
+          # run that failed after tagging), we re-point it to this run's commit
+          # rather than failing, so releases can be retried after a fix.
           if git rev-parse "$release_tag" >/dev/null 2>&1; then
             tag_commit=$(git rev-list -n 1 "$release_tag")
             head_commit=$(git rev-parse HEAD)
             if [[ "$tag_commit" != "$head_commit" ]]; then
-              echo "Existing tag '$release_tag' points to $tag_commit, but this run checked out $head_commit."
-              echo "Run the workflow from the tagged ref or use a new version."
-              exit 1
+              echo "Tag '$release_tag' points to $tag_commit; this run will re-point it to $head_commit."
             fi
           fi
 
@@ -128,21 +129,6 @@ jobs:
           npx --yes @vscode/vsce@3.6.2 package \
             --out "${{ steps.package.outputs.vsix }}"
 
-      - name: Create release tag
-        id: tag
-        shell: bash
-        run: |
-          TAG="${{ steps.release.outputs.tag }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists"
-          else
-            git config user.name "GitHub Actions"
-            git config user.email "actions@github.com"
-            git tag -a "$TAG" -m "Agendo $TAG"
-            git push origin "$TAG"
-            echo "Created and pushed tag $TAG"
-          fi
-
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v7
         with:
@@ -150,6 +136,20 @@ jobs:
           path: ${{ steps.package.outputs.vsix }}
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create release tag
+        id: tag
+        shell: bash
+        run: |
+          TAG="${{ steps.release.outputs.tag }}"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          # Always (re-)point the tag at this run's commit and force-push so a
+          # retry after a fix reuses the same version tag instead of failing on
+          # a stale tag.
+          git tag -f -a "$TAG" HEAD -m "Agendo $TAG"
+          git push -f origin "refs/tags/$TAG"
+          echo "Tag $TAG -> $(git rev-parse HEAD)"
 
       - name: Publish GitHub Release
         shell: bash
@@ -169,7 +169,7 @@ jobs:
           else
             notes_path="${{ steps.notes.outputs.notes_path }}"
             if [[ -n "$notes_path" && -s "$notes_path" ]]; then
-              NOTES_FLAG="--notes-from $notes_path"
+              NOTES_FLAG="--notes-file $notes_path"
             else
               NOTES_FLAG="--generate-notes"
             fi
