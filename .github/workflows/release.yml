@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   release:
-    name: Build and publish VSIX
+    name: Agendo ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

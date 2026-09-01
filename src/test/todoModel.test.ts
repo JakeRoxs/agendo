@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import * as vscode from "vscode";
+import { registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
 import { activate, deactivate } from "../extension";
@@ -469,6 +470,105 @@ suite("todoModel", () => {
 
     assert.strictEqual(todoNodes.length, 200);
     assert.ok(elapsed < 75, `Expected render under 75ms, received ${elapsed.toFixed(2)}ms`);
+  });
+
+  test("task digest blocks concurrent runs and flags the loading context", async () => {
+    const originalRegisterCommand = vscode.commands.registerCommand;
+    const originalExecuteCommand = vscode.commands.executeCommand;
+    const originalCreateStatusBarItem = vscode.window.createStatusBarItem;
+
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const previewCalls: unknown[] = [];
+    const setContextCalls: unknown[][] = [];
+    let infoMessageCount = 0;
+    const statusBar = {
+      text: "",
+      tooltip: "",
+      show: () => undefined,
+      hide: () => undefined,
+      dispose: () => undefined,
+    };
+    let resolveRefresh: () => void = () => undefined;
+    const refreshGate = new Promise<void>((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    Object.defineProperty(vscode.commands, "registerCommand", {
+      value: (command: string, callback: (...args: any[]) => any) => {
+        registrations.set(command, callback);
+        return { dispose() {} };
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.commands, "executeCommand", {
+      value: async (command: string, ...args: unknown[]) => {
+        if (command === "setContext") setContextCalls.push(args);
+        if (command === "markdown.showPreview") previewCalls.push(args);
+        return undefined;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "createStatusBarItem", {
+      value: () => statusBar,
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showInformationMessage", {
+      value: async () => {
+        infoMessageCount += 1;
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      const services = {
+        repository: {
+          refresh: () => refreshGate,
+          getTodos: () => [],
+          getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
+        },
+      } as never;
+      const context = { subscriptions: [] as vscode.Disposable[] };
+      registerCommands(context as never, services);
+
+      const showDigest = registrations.get(Command.ShowDigest);
+      assert.ok(showDigest);
+
+      // First call begins loading and blocks the context key on.
+      const first = showDigest();
+      await Promise.resolve();
+      // Second call while the first is still loading is rejected.
+      await showDigest();
+      assert.strictEqual(infoMessageCount, 1, "second call should be rejected as already loading");
+
+      // Completing the first run opens exactly one preview and clears the context.
+      resolveRefresh();
+      await first;
+
+      assert.strictEqual(previewCalls.length, 1, "only one preview should open");
+      const loadingTrue = setContextCalls.find(
+        (args) => args[0] === "agendo.digestLoading" && args[1] === true,
+      );
+      const loadingFalse = setContextCalls.find(
+        (args) => args[0] === "agendo.digestLoading" && args[1] === false,
+      );
+      assert.ok(loadingTrue, "loading context should be set");
+      assert.ok(loadingFalse, "loading context should be cleared");
+    } finally {
+      resolveRefresh();
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegisterCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.commands, "executeCommand", {
+        value: originalExecuteCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "createStatusBarItem", {
+        value: originalCreateStatusBarItem,
+        configurable: true,
+      });
+    }
   });
 
   test("task digest deterministically ranks next actions and surfaces blockers", () => {
@@ -1366,6 +1466,87 @@ suite("todoModel", () => {
     }
   });
 
+  test("board posts a busy message for the affected card on status changes", async () => {
+    const todo: Todo = {
+      id: "001",
+      status: "ready",
+      priority: "p2",
+      title: "Board task",
+      summary: "Board task summary.",
+      description: "board-task",
+      tags: [],
+      dependencies: [],
+      key: undefined,
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "001-ready-p2-board-task.md",
+      uri: vscode.Uri.file("/tmp/001-ready-p2-board-task.md"),
+      frontmatter: { status: "ready", priority: "p2" },
+    };
+    let receiveMessage: ((message: unknown) => Promise<void>) | undefined;
+    const messages: unknown[] = [];
+    const panel = {
+      webview: {
+        html: "",
+        onDidReceiveMessage: (listener: (message: unknown) => Promise<void>) => {
+          receiveMessage = listener;
+          return { dispose() {} };
+        },
+        postMessage: async (message: unknown) => {
+          messages.push(message);
+          return true;
+        },
+      },
+      reveal: () => undefined,
+      onDidDispose: () => ({ dispose() {} }),
+    };
+    const originalCreateWebviewPanel = vscode.window.createWebviewPanel;
+    Object.defineProperty(vscode.window, "createWebviewPanel", {
+      value: () => panel,
+      configurable: true,
+    });
+
+    const repository = {
+      getTodos: () => [todo],
+      getDependencyGraph: () => ({
+        blockedBy: new Map([[todo.id, []]]),
+        blocking: new Map([[todo.id, []]]),
+      }),
+      refresh: async () => undefined,
+      onDidChange: () => ({ dispose() {} }),
+    };
+    const provider = new BoardViewProvider(
+      repository as never,
+      { matches: () => true } as never,
+      { setStatus: async () => undefined, setPriority: async () => undefined } as never,
+      {
+        get: <T>(_key: string, fallback: T): T => fallback,
+        update: async () => undefined,
+      } as never,
+    );
+
+    try {
+      provider.open();
+      assert.ok(receiveMessage);
+      const send = async (message: unknown) => receiveMessage?.(message);
+      await send({ type: "ready" });
+      const before = messages.length;
+      await send({ type: "setStatus", todoId: "001", status: "complete" });
+      const busy = messages
+        .slice(before)
+        .find((message) => (message as { type?: string }).type === "busy");
+      assert.ok(busy, "a busy message should be posted before the status change");
+      assert.strictEqual((busy as { todoId: string }).todoId, "001");
+    } finally {
+      provider.dispose();
+      Object.defineProperty(vscode.window, "createWebviewPanel", {
+        value: originalCreateWebviewPanel,
+        configurable: true,
+      });
+    }
+  });
+
   test("manifest registers the todos and skill status views", () => {
     const provider = {
       getTreeItem: (item: vscode.TreeItem) => item,
@@ -1509,6 +1690,7 @@ suite("todoModel", () => {
     const registrations = new Map<string, (...args: any[]) => any>();
     const executedCommands: string[] = [];
     const previewSteps: string[] = [];
+    const previewUris: vscode.Uri[] = [];
     const errorMessages: string[] = [];
     const workspaceState = new Map<string, unknown>();
     let watcherCreationCount = 0;
@@ -1619,6 +1801,9 @@ suite("todoModel", () => {
     Object.defineProperty(vscode.commands, "executeCommand", {
       value: async (command: string, ...args: unknown[]) => {
         executedCommands.push(command);
+        if (command === "markdown.showPreview") {
+          previewUris.push(args[0] as vscode.Uri);
+        }
         if (command === "vscode.open") {
           return { command, args };
         }
@@ -1792,10 +1977,18 @@ suite("todoModel", () => {
       assert.ok(registrations.has(Command.ExpandNode));
       assert.ok(registrations.has(Command.SetDependency));
       assert.ok(registrations.has(Command.SetGroup));
-      assert.deepStrictEqual(previewSteps, ["openTextDocument"]);
+      assert.deepStrictEqual(previewSteps, []);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
         2,
+      );
+      assert.ok(
+        previewUris.some((uri) => uri.path.endsWith("agendo-task-digest.md")),
+        "task digest should preview a real file URI",
+      );
+      assert.ok(
+        previewUris.every((uri) => !uri.scheme.startsWith("untitled")),
+        "task digest must not use an untitled document",
       );
       assert.ok(executedCommands.includes("setContext"));
       assert.ok(

@@ -1,4 +1,7 @@
+import * as os from "node:os";
+import * as path from "node:path";
 import * as vscode from "vscode";
+import { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
@@ -48,12 +51,13 @@ export function registerCommands(
   const register: Register = (command, callback) => {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
   };
+  const busy = new BusyIndicator(context);
 
-  registerFilterCommands(register, services);
+  registerFilterCommands(register, services, busy);
   registerBoardCommands(register, services);
-  registerTodoCommands(register, services);
+  registerTodoCommands(register, services, busy);
   registerConfigCommands(register, services);
-  registerSkillCommands(register, services);
+  registerSkillCommands(register, services, busy);
   registerTreeCommands(register, services);
 }
 
@@ -72,18 +76,40 @@ export async function updateFilterContexts(filter: FilterService): Promise<void>
   ]);
 }
 
-function registerFilterCommands(register: Register, services: CommandServices): void {
+function registerFilterCommands(
+  register: Register,
+  services: CommandServices,
+  busy: BusyIndicator,
+): void {
   const { repository, filter, treeProvider } = services;
+  let digestLoading = false;
 
   register(Command.Refresh, () => repository.refresh());
   register(Command.ShowDigest, async () => {
+    if (digestLoading) {
+      vscode.window.showInformationMessage("Task digest is already loading.");
+      return;
+    }
+    digestLoading = true;
     try {
-      await repository.refresh();
-      const content = buildTodoDigest(repository.getTodos(), repository.getDependencyGraph());
-      const document = await vscode.workspace.openTextDocument({ language: "markdown", content });
-      await vscode.commands.executeCommand("markdown.showPreview", document.uri);
+      await busy.run(
+        "Loading task digest…",
+        async () => {
+          await repository.refresh();
+          const content = buildTodoDigest(repository.getTodos(), repository.getDependencyGraph());
+          // Write to a real temp file and preview it the same way todos do. Showing the
+          // preview on an untitled in-memory document materializes both an editor and a
+          // preview; a real file URI shows only the preview.
+          const digestUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-task-digest.md"));
+          await vscode.workspace.fs.writeFile(digestUri, Buffer.from(content, "utf8"));
+          await vscode.commands.executeCommand("markdown.showPreview", digestUri);
+        },
+        "agendo.digestLoading",
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to show task digest: ${error}`);
+    } finally {
+      digestLoading = false;
     }
   });
   register(Command.ClearFilters, async () => {
@@ -114,7 +140,11 @@ function registerFilterCommands(register: Register, services: CommandServices): 
   });
 }
 
-function registerTodoCommands(register: Register, services: CommandServices): void {
+function registerTodoCommands(
+  register: Register,
+  services: CommandServices,
+  busy: BusyIndicator,
+): void {
   const { config, repository, status, links } = services;
 
   register(Command.OpenPreview, async (arg: unknown) => {
@@ -133,11 +163,13 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
       }
       const oldFileName = todo.fileName;
       try {
-        const newUri = await status.setStatus(todo, targetStatus as TodoStatus);
-        await repository.refresh();
-        if (newUri) {
-          await links.warnOnBrokenReferences(oldFileName, newUri);
-        }
+        await busy.run("Updating todo…", async () => {
+          const result = await status.setStatus(todo, targetStatus as TodoStatus);
+          await repository.refresh();
+          if (result) {
+            await links.warnOnBrokenReferences(oldFileName, result);
+          }
+        });
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to set status: ${error}`);
       }
@@ -158,11 +190,13 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
     }
     const oldFileName = todo.fileName;
     try {
-      const newUri = await status.setPriority(todo, picked.label as TodoPriority);
-      await repository.refresh();
-      if (newUri) {
-        await links.warnOnBrokenReferences(oldFileName, newUri);
-      }
+      await busy.run("Updating todo…", async () => {
+        const result = await status.setPriority(todo, picked.label as TodoPriority);
+        await repository.refresh();
+        if (result) {
+          await links.warnOnBrokenReferences(oldFileName, result);
+        }
+      });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set priority: ${error}`);
     }
@@ -182,8 +216,10 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
       return;
     }
     try {
-      await status.setGroup(todo, value.trim() || undefined);
-      await repository.refresh();
+      await busy.run("Updating todo…", async () => {
+        await status.setGroup(todo, value.trim() || undefined);
+        await repository.refresh();
+      });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set group: ${error}`);
     }
@@ -226,11 +262,13 @@ function registerTodoCommands(register: Register, services: CommandServices): vo
     const newDependencies = picked.map((item) => item.label.split(" · ")[0]).filter(Boolean);
     const oldFileName = todo.fileName;
     try {
-      const newUri = await status.setDependencies(todo, newDependencies);
-      await repository.refresh();
-      if (newUri) {
-        await links.warnOnBrokenReferences(oldFileName, newUri);
-      }
+      await busy.run("Updating todo…", async () => {
+        const result = await status.setDependencies(todo, newDependencies);
+        await repository.refresh();
+        if (result) {
+          await links.warnOnBrokenReferences(oldFileName, result);
+        }
+      });
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set dependency: ${error}`);
     }
@@ -316,32 +354,40 @@ function registerConfigCommands(register: Register, services: CommandServices): 
   });
 }
 
-function registerSkillCommands(register: Register, services: CommandServices): void {
+function registerSkillCommands(
+  register: Register,
+  services: CommandServices,
+  busy: BusyIndicator,
+): void {
   const { skill, refreshSkillStatus } = services;
 
   register(Command.EnableSkill, async () => {
+    const status = await skill.getStatus();
+    if (status.installed && !status.updateAvailable) {
+      vscode.window.showInformationMessage(
+        `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
+      );
+      return;
+    }
     try {
-      const status = await skill.getStatus();
-      if (status.installed && !status.updateAvailable) {
-        vscode.window.showInformationMessage(
-          `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
-        );
-        return;
-      }
-      await skill.install();
+      await busy.run("Installing skill…", async () => {
+        await skill.install();
+        refreshSkillStatus();
+      });
       vscode.window.showInformationMessage(
         `Agendo skill installed (v${status.bundledVersion ?? "?"}).`,
       );
-      refreshSkillStatus();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
     }
   });
   register(Command.UpdateSkill, async () => {
     try {
-      await skill.updateFromSource();
+      await busy.run("Updating skill…", async () => {
+        await skill.updateFromSource();
+        refreshSkillStatus();
+      });
       vscode.window.showInformationMessage("Agendo skill updated from configured source.");
-      refreshSkillStatus();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }

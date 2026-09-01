@@ -60,9 +60,11 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Keep the on-disk config projection and gitignore in sync on activation and
-  // whenever relevant settings change.
+  // whenever relevant settings change. Rapid config changes (e.g. quickly
+  // toggling a setting) coalesce into a single debounced repository refresh.
   await config.writeConfigFile();
   await config.applyGitignore();
+  let refreshTimer: NodeJS.Timeout | undefined;
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration(Settings.Identifier)) {
@@ -72,7 +74,12 @@ export async function activate(context: vscode.ExtensionContext) {
           skillStatusTreeProvider.refresh();
         }
         repository.startWatching();
-        await repository.refresh();
+        if (refreshTimer) {
+          clearTimeout(refreshTimer);
+        }
+        refreshTimer = setTimeout(() => {
+          void repository.refresh();
+        }, 150);
       }
     }),
   );

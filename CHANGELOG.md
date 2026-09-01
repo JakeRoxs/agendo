@@ -2,6 +2,30 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.8]
+
+### Added
+
+- Loading indicators for slow operations:
+  - Task digest shows a status bar spinner while generating, blocks repeat clicks, and
+    disables its toolbar button until it finishes.
+  - Board cards show a busy overlay spinner when a status or priority change is in
+    progress, blocking interaction with that card until the move completes.
+  - Tree status, priority, group, and dependency changes show a status bar spinner
+    while the todo file is written and the repository refreshes.
+  - Skill install and update actions show a status bar spinner while the skill files
+    are written.
+
+### Changed
+
+- Repository refreshes triggered by rapid Agendo configuration changes are now debounced,
+  coalescing bursts of config edits into a single reload.
+
+### Fixed
+
+- Task digest no longer opens both a source editor and a preview — it now writes the
+  digest to a real temp file and previews only that, matching how todos open.
+
 ## [0.1.7]
 
 ### Added

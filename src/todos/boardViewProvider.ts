@@ -517,11 +517,13 @@ export class BoardViewProvider implements vscode.Disposable {
     if (!isTodoStatus(status)) {
       return;
     }
+    this.postBusy(todo.id);
     try {
       await this.status.setStatus(todo, status);
-      await this.repository.refresh();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to move todo: ${error}`);
+    } finally {
+      await this.repository.refresh();
     }
   }
 
@@ -529,12 +531,22 @@ export class BoardViewProvider implements vscode.Disposable {
     if (!isTodoPriority(priority)) {
       return;
     }
+    this.postBusy(todo.id);
     try {
       await this.status.setPriority(todo, priority);
-      await this.repository.refresh();
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update priority: ${error}`);
+    } finally {
+      await this.repository.refresh();
     }
+  }
+
+  /** Tell the webview a card is being processed so it can show a busy overlay. */
+  private postBusy(todoId: string): void {
+    if (!this.panel) {
+      return;
+    }
+    void this.panel.webview.postMessage({ type: "busy", todoId });
   }
 
   private async openExternalKey(todo: Todo): Promise<void> {
@@ -1019,6 +1031,11 @@ export class BoardViewProvider implements vscode.Disposable {
     .board[data-density="spacious"] .card { margin: 9px 0; padding: 12px; }
     .board[data-density="spacious"] .card-meta { margin-top: 7px; }
     .card:active { cursor: grabbing; }
+    .card { position: relative; }
+    .card-busy { align-items: center; background: color-mix(in srgb, var(--vscode-sideBar-background) 72%, transparent); border-radius: 4px; display: none; inset: 0; justify-content: center; position: absolute; }
+    .card-busy::before { animation: agendo-spin 0.7s linear infinite; border: 2px solid var(--vscode-descriptionForeground); border-radius: 50%; border-top-color: transparent; height: 18px; width: 18px; }
+    .card.busy .card-busy { display: flex; }
+    @keyframes agendo-spin { to { transform: rotate(360deg); } }
     .card.accent-priority-p1, .card.accent-status-cancelled, .card.accent-blocked { border-left-color: var(--vscode-charts-red); }
     .card.accent-priority-p2 { border-left-color: var(--vscode-charts-yellow); }
     .card.accent-priority-p3, .card.accent-status-ready { border-left-color: var(--vscode-charts-blue); }
@@ -1440,6 +1457,7 @@ export class BoardViewProvider implements vscode.Disposable {
       card.className = ["card", cardAccentClass(todo, snapshot.cardAccent), todo.blocked ? "blocked" : ""]
         .filter(Boolean)
         .join(" ");
+      card.dataset.todoId = todo.id;
       card.title = [
         todo.createdAt ? "Created " + new Date(todo.createdAt).toLocaleString() : undefined,
         todo.updatedAt ? "Modified " + new Date(todo.updatedAt).toLocaleString() : undefined,
@@ -1501,6 +1519,12 @@ export class BoardViewProvider implements vscode.Disposable {
         actions.append(ticket);
       }
       card.append(actions);
+      const busy = document.createElement("div");
+      busy.className = "card-busy";
+      busy.setAttribute("aria-label", "Processing");
+      busy.addEventListener("click", (event) => event.stopPropagation());
+      busy.addEventListener("dragstart", (event) => event.stopPropagation());
+      card.append(busy);
       return card;
     }
 
@@ -1588,6 +1612,11 @@ export class BoardViewProvider implements vscode.Disposable {
     }
 
     window.addEventListener("message", (event) => {
+      if (event.data.type === "busy") {
+        const card = board.querySelector('[data-todo-id="' + event.data.todoId + '"]');
+        if (card) card.classList.add("busy");
+        return;
+      }
       if (event.data.type === "snapshot") render(event.data.snapshot);
     });
     vscode.postMessage({ type: "ready" });
