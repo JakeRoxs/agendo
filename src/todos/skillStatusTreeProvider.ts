@@ -1,7 +1,6 @@
 import * as vscode from "vscode";
 import { Command } from "../commands";
-import type { ConfigService } from "./configService";
-import { type ViewMode, viewModeLabel } from "./configService";
+import { type ConfigService, type ViewMode, viewModeLabel } from "./configService";
 import type { SkillManager, SkillStatus } from "./skillManager";
 
 type SkillStatusNode =
@@ -83,11 +82,19 @@ export class SkillStatusTreeProvider implements vscode.TreeDataProvider<SkillSta
   private viewModeItem(node: { kind: "viewMode"; mode: ViewMode }): vscode.TreeItem {
     const item = new vscode.TreeItem("View");
     item.description = viewModeLabel(node.mode);
-    item.iconPath = new vscode.ThemeIcon(
-      node.mode === "editor" ? "edit" : node.mode === "previewEditor" ? "open-preview" : "preview",
-    );
+    item.iconPath = new vscode.ThemeIcon(this.viewModeIcon(node.mode));
     item.tooltip = "How todos open. Select to change.";
     item.command = { command: Command.SetViewMode, title: "Set View Mode" };
     return item;
+  }
+
+  private viewModeIcon(mode: ViewMode): string {
+    if (mode === "editor") {
+      return "edit";
+    }
+    if (mode === "previewEditor") {
+      return "open-preview";
+    }
+    return "preview";
   }
 }

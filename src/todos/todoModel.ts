@@ -332,11 +332,11 @@ function extractResumeContext(
     if (!inResume) {
       continue;
     }
-    const currentState = trimmed.match(/^\*\*Current state:\*\*\s*(.*)$/i)?.[1]?.trim();
+    const currentState = /^\*\*Current state:\*\*(.*)$/i.exec(trimmed)?.[1]?.trim();
     if (currentState) {
       result.currentState = currentState;
     }
-    const nextStep = trimmed.match(/^\*\*Next step:\*\*\s*(.*)$/i)?.[1]?.trim();
+    const nextStep = /^\*\*Next step:\*\*(.*)$/i.exec(trimmed)?.[1]?.trim();
     if (nextStep) {
       result.nextStep = nextStep;
     }
