@@ -4,7 +4,7 @@
   "description": "This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory.",
   "description_ja": "Agendo",
   "categories": [],
-  "version": "1.3.1",
+  "version": "1.4.0",
   "metadataVersion": 2,
   "installedVia": "agendo-extension"
 }

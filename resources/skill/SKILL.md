@@ -1,8 +1,8 @@
 ---
 name: agendo
-description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, and integrating with slash commands and code review processes.
+description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, reconciling/auditing todos against the current codebase, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.3.1
+version: 1.4.0
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -17,6 +17,7 @@ This skill should be used when:
 - Managing todo lifecycle (pending → in-progress → ready → complete, plus backlogged and cancelled)
 - Triaging pending items for approval
 - Checking or managing dependencies
+- Reconciling or auditing todos against the current codebase
 - Converting PR comments or code findings into tracked work
 - Updating work logs during todo execution
 
@@ -513,6 +514,14 @@ find "{root}" -maxdepth 2 -type f -name '*-p1-*.md'
 # Full-text search
 grep -R "payment" "{root}"
 ```
+
+## Reconciling / Auditing Todos
+
+When asked to reconcile, audit, or "clean up" todos — that is, check whether they are still
+accurate against the current codebase — follow the procedure in
+[reconcile.md](./reconcile.md). It covers deterministic integrity checks, focused evidence
+gathering, and an advisory review that proposes changes for user approval without silently
+rewriting history.
 
 ## Key Distinctions
 

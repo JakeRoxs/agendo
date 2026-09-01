@@ -2,6 +2,24 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.7]
+
+### Added
+
+- Reconciliation / audit workflow in the bundled Agendo skill. It runs deterministic
+  integrity checks (filename/frontmatter/folder sync, duplicate IDs, invalid or missing
+  dependencies, cancelled hygiene, stale references, required sections) and an optional
+  advisory semantic review, then proposes reviewable updates for approval.
+- A `resources/skill/reconcile.md` reference file carrying the full reconciliation procedure,
+  discovered via a short pointer in the skill so the main skill stays lean.
+
+### Changed
+
+- Updated the bundled Agendo skill to version 1.4.0 with the reconciliation workflow and an
+  updated description.
+- Reconciliation is advisory by design: it proposes changes but never auto-applies them,
+  reserves `complete` for verified acceptance criteria, and preserves historical work logs.
+
 ## [0.1.6]
 
 ### Added

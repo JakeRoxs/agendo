@@ -72,10 +72,6 @@ export async function updateFilterContexts(filter: FilterService): Promise<void>
   ]);
 }
 
-export async function updatePreviewContext(config: ConfigService): Promise<void> {
-  await vscode.commands.executeCommand("setContext", "agendo.viewMode", config.viewMode);
-}
-
 function registerFilterCommands(register: Register, services: CommandServices): void {
   const { repository, filter, treeProvider } = services;
 
@@ -277,7 +273,6 @@ function registerConfigCommands(register: Register, services: CommandServices): 
     );
     if (picked?.mode) {
       await set(Settings.ViewMode, picked.mode as ViewMode);
-      await updatePreviewContext(config);
       vscode.window.showInformationMessage(
         `Agendo: Todos now open in ${viewModeLabel(picked.mode as ViewMode)}.`,
       );

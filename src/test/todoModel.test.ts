@@ -922,6 +922,7 @@ suite("todoModel", () => {
       JSON.stringify({ version: "1.2.3" }),
     );
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# bundled skill");
+    await fs.writeFile(path.join(skillDir, "reconcile.md"), "# reconcile");
     await fs.writeFile(path.join(skillDir, "assets", "todo-template.md"), "# template");
 
     const originalHome = process.env.HOME;

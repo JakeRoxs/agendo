@@ -6,7 +6,7 @@ import { out } from "../output";
 import { readText } from "./fileSystem";
 
 /** Relative files that make up the bundled skill. */
-const SKILL_FILES = [".skill-meta.json", "SKILL.md", "assets/todo-template.md"];
+const SKILL_FILES = [".skill-meta.json", "SKILL.md", "reconcile.md", "assets/todo-template.md"];
 
 /** Result of comparing the bundled skill against the installed one. */
 export interface SkillStatus {
@@ -81,8 +81,8 @@ export class SkillManager {
 
   /**
    * Refresh the installed skill from the configured GitHub raw source. The
-   * source is expected to be a raw base URL under which `SKILL.md` and
-   * `assets/todo-template.md` live.
+   * source is expected to be a raw base URL under which `SKILL.md`,
+   * `reconcile.md`, and `assets/todo-template.md` live.
    */
   async updateFromSource(): Promise<void> {
     const base = (get<string>(Settings.SkillUpdateSource) || "").trim();

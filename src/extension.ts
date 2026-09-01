@@ -1,9 +1,5 @@
 import * as vscode from "vscode";
-import {
-  registerCommands,
-  updateFilterContexts,
-  updatePreviewContext,
-} from "./commandRegistration";
+import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Settings } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
@@ -72,8 +68,7 @@ export async function activate(context: vscode.ExtensionContext) {
       if (event.affectsConfiguration(Settings.Identifier)) {
         await config.writeConfigFile();
         await config.applyGitignore();
-        await updatePreviewContext(config);
-        if (event.affectsConfiguration(Settings.ViewMode)) {
+        if (event.affectsConfiguration(`${Settings.Identifier}.${Settings.ViewMode}`)) {
           skillStatusTreeProvider.refresh();
         }
         repository.startWatching();
@@ -96,7 +91,6 @@ export async function activate(context: vscode.ExtensionContext) {
   });
 
   await updateFilterContexts(filter);
-  await updatePreviewContext(config);
   repository.startWatching();
   await repository.refresh();
 }

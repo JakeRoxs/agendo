@@ -2,7 +2,7 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)
+![Version](https://img.shields.io/badge/version-0.1.7-blue.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
@@ -12,11 +12,11 @@ filter, group, prioritize, summarize, and move work through its lifecycle.
 
 Agendo treats todo items as real Markdown files in your workspace instead of hidden database records. That means:
 
-- each task remains easy to inspect and edit in plain Markdown,
-- status and priority changes keep the filename, frontmatter, and folder layout aligned,
-- the tree and board provide complementary list and visual workflows,
-- the workflow fits developer-first repositories and project notes,
-- the bundled skill can help you or a future agent pick up the work with the right context.
+- each task remains easy to inspect and edit in plain Markdown
+- status and priority changes keep the filename, frontmatter, and folder layout aligned
+- the tree and board provide complementary list and visual workflows
+- the workflow fits developer-first repositories and project notes
+- the bundled skill can help you or a future agent pick up the work with the right context
 
 ## The built-in skill: context that survives context switches
 
@@ -27,10 +27,12 @@ happen next.
 
 This is especially useful for:
 
-- switching between personal work sessions or AI agents,
-- resuming a partially completed task after a break,
-- keeping work logs and learnings attached to a task instead of lost in chat history,
-- finding the right next action without re-reading an entire repo from scratch.
+- switching between personal work sessions or AI agents
+- resuming a partially completed task after a break
+- keeping work logs and learnings attached to a task instead of lost in chat history
+- finding the right next action without re-reading an entire repo from scratch
+- reconciling todos against the current codebase to catch stale work and propose
+  reviewable updates
 
 The skill is designed to keep the task system and the project context aligned, so future work can resume from a known state instead of a blank slate.
 
@@ -48,6 +50,11 @@ The Work Log remains the detailed history, while frontmatter `dependencies` rema
 source of truth for blockers. Agendo does not require owners, assignments, or a team mode; the same
 continuity workflow serves an individual user, multiple AI sessions, and optionally shared files.
 
+The skill also includes an **advisory reconciliation workflow** for when todos may be stale
+relative to the codebase. It runs deterministic integrity checks, gathers focused evidence, and
+proposes status or wording updates for you to approve — it never moves a file or rewrites history
+on its own, and it reserves `complete` for verified acceptance criteria.
+
 ## Features
 
 - Tree view grouped by status, priority, and optional task group
@@ -63,6 +70,8 @@ continuity workflow serves an individual user, multiple AI sessions, and optiona
 - Selectable source editor, Markdown preview, or preview-editor opening modes
 - Optional `.gitignore` handling for the todo root
 - Bundled companion skill for creating and managing tasks with repo-aware context
+- Advisory reconciliation workflow that audits todos against the current codebase and
+  proposes reviewable updates
 - Individual-first Resume Context for continuing work across sessions and agents
 - Skill update support so task guidance can evolve with the project
 - Referrer / broken-link warnings when old filenames are still referenced
