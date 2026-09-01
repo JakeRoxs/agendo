@@ -2,23 +2,28 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Version](https://img.shields.io/badge/version-0.1.4-blue.svg)
+![Version](https://img.shields.io/badge/version-0.1.6-blue.svg)
 
-Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar tree view. It helps when a repo accumulates too many tasks and the file tree becomes noisy and hard to scan without a way to filter, group, and prioritize them.
+Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
+tree and an editor-window board. It keeps task state in the repository while adding fast ways to
+filter, group, prioritize, summarize, and move work through its lifecycle.
 
 ## Why Agendo
 
 Agendo treats todo items as real Markdown files in your workspace instead of hidden database records. That means:
 
 - each task remains easy to inspect and edit in plain Markdown,
-- status and priority changes stay in sync with the filename and folder layout,
-- the tree view gives fast filtering and searching across a repo,
+- status and priority changes keep the filename, frontmatter, and folder layout aligned,
+- the tree and board provide complementary list and visual workflows,
 - the workflow fits developer-first repositories and project notes,
 - the bundled skill can help you or a future agent pick up the work with the right context.
 
 ## The built-in skill: context that survives context switches
 
-Agendo is not just a todo manager. It also installs a reusable companion skill that manages and creates tasks using the same todo conventions. That matters when work gets interrupted: the skill helps you or another agent understand what is already in progress, what is planned, and what should happen next.
+Agendo is not just a todo manager. It also bundles an installable companion skill that manages and
+creates tasks using the same todo conventions. That matters when work gets interrupted: the skill
+helps you or another agent understand what is already in progress, what is planned, and what should
+happen next.
 
 This is especially useful for:
 
@@ -45,13 +50,17 @@ continuity workflow serves an individual user, multiple AI sessions, and optiona
 
 ## Features
 
-- Tree view grouped by status and priority
-- Deterministic task digest with next actions, high-priority work, blockers, and recent updates
-- Search and filtering by text, status, and priority
+- Tree view grouped by status, priority, and optional task group
+- Editor-window board with status columns, drag-and-drop transitions, filters, grouping, WIP limits,
+  and persisted layout and card preferences
+- Deterministic task digest with next actions, Resume Context updates, high-priority work, blockers,
+  and recent changes
+- Search and filtering by text, status, priority, blocked state, and group
 - Quick task creation with generated IDs and default priority
 - Status transitions that keep filenames, frontmatter, and folder placement aligned
-- Priority updates and rename support
-- Markdown preview integration for open tasks
+- Priority, dependency, and group editing
+- Blocked-state indicators and reverse dependency filtering
+- Selectable source editor, Markdown preview, or preview-editor opening modes
 - Optional `.gitignore` handling for the todo root
 - Bundled companion skill for creating and managing tasks with repo-aware context
 - Individual-first Resume Context for continuing work across sessions and agents
@@ -70,23 +79,42 @@ Examples:
 
 ```text
 001-pending-p2-write-readme.md
-060-ready-p1-fix-release-checks.md
+060-in-progress-p1-fix-release-checks.md
+061-ready-p1-verify-release-checks.md
 ```
 
 The naming convention includes:
 
 - `issue_id` — zero-padded, sequential, and unique
-- `status` — `pending`, `ready`, `backlogged`, `complete`, or `cancelled`
+- `status` — `pending`, `in-progress`, `ready`, `backlogged`, `complete`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
-Todo files may also include optional frontmatter such as:
+Lifecycle semantics:
+
+- `pending` needs triage or has not started
+- `in-progress` is actively being worked on
+- `ready` is likely done but still needs confirmation that it works
+- `backlogged` remains open but is excluded from active-work queries
+- `complete` is fully finished and verified
+- `cancelled` is abandoned or superseded
+
+Active todos live directly in the configured root. Backlogged, complete, and cancelled todos move
+to their configured state folders. The filename status and priority tokens are authoritative;
+frontmatter mirrors them for readability.
+
+Todo files may also include optional metadata:
 
 ```yaml
+tags: [release, testing]
+dependencies: ["042"]
+group: release
 key: "JIRA-123"
 ```
 
-This external tracking key is shown in the tree and used for search only when present. Legacy `jira:` frontmatter is still supported.
+Dependencies drive blocked-state reporting, groups provide lightweight organization, and external
+tracking keys are displayed and searchable when present. Legacy `jira:` frontmatter remains
+supported as an alias for `key`.
 
 ## Quick start
 
@@ -115,13 +143,13 @@ You can create tasks either from the extension UI or from the bundled skill.
 
 - Open the Agendo view in the Activity Bar
 - Use "Create Todo..."
-- Choose a status and priority
-- The extension will generate the next available ID and create a Markdown file for you
+- Enter a short kebab-case description, choose a priority, and optionally add an external key
+- The extension generates the next available ID and creates a `pending` Markdown todo
 
-You can also invoke the bundled skill from chat or an agent workflow, for example:
+You can also ask a compatible agent host to use the installed Agendo skill explicitly, for example:
 
 ```text
-/agendo Create a todo for investigating the CI failure in the release pipeline
+Use the Agendo skill to create a todo for investigating the CI failure in the release pipeline.
 ```
 
 This is especially useful when you want a follow-up task captured into the same repo-managed workflow without losing the surrounding context.
@@ -135,7 +163,7 @@ This is especially useful when you want a follow-up task captured into the same 
 | `agendo.completeFolder` | `complete` | Folder used for completed tasks |
 | `agendo.cancelledFolder` | `cancelled` | Folder used for cancelled tasks |
 | `agendo.backlogFolder` | `backlog` | Folder used for backlogged tasks |
-| `agendo.openInPreview` | `true` | Open todo files in Markdown preview |
+| `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, or `previewEditor` mode |
 | `agendo.gitignoreTodos` | `false` | Optionally add a wildcard `.gitignore` in the todo root |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
 
@@ -158,7 +186,6 @@ This is especially useful when you want a follow-up task captured into the same 
 │   ├── output.ts
 │   ├── test/
 │   └── todos/
-├── coverage/
 ├── AGENTS.md
 ├── CHANGELOG.md
 ├── LICENSE
@@ -166,8 +193,7 @@ This is especially useful when you want a follow-up task captured into the same 
 ├── biome.json
 ├── package.json
 ├── sonar-project.properties
-├── tsconfig.json
-└── reports/
+└── tsconfig.json
 ```
 
 ## Development workflow
@@ -217,14 +243,6 @@ Contributions are welcome.
 5. Keep the README and project docs updated when behavior changes.
 
 When working on the project, follow the repo’s existing conventions and keep the implementation consistent with the VS Code extension patterns already in `src/`.
-
-## Roadmap
-
-Planned improvements include:
-
-- richer board-style task views,
-- more advanced task visualization,
-- deeper workflow automation around todo lifecycle management.
 
 ## License
 
