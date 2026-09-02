@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import * as vscode from "vscode";
+import { BusyIndicator } from "../busyIndicator";
 import { registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
@@ -333,7 +334,9 @@ suite("todoModel", () => {
   test("config service resolves view mode and opens todos via the matching command", async () => {
     const originalGetConfiguration = vscode.workspace.getConfiguration;
     const originalExecuteCommand = vscode.commands.executeCommand;
+    const originalShowTextDocument = vscode.window.showTextDocument;
     const executed: string[] = [];
+    const shownTextDocs: vscode.Uri[] = [];
 
     function mockConfig(viewMode: unknown, openInPreview: boolean) {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
@@ -360,22 +363,43 @@ suite("todoModel", () => {
       },
       configurable: true,
     });
+    Object.defineProperty(vscode.window, "showTextDocument", {
+      value: async (uri: vscode.Uri) => {
+        shownTextDocs.push(uri);
+        return undefined;
+      },
+      configurable: true,
+    });
 
     try {
       // Explicit viewMode wins.
       mockConfig("editor", false);
       assert.strictEqual(new ConfigService().viewMode, "editor");
 
-      // Falls back to openInPreview when viewMode is not explicitly set.
+      // Falls back to openInPreview when viewMode is not explicitly set. A
+      // false flag historically meant "don't force preview" = VS Code default.
       mockConfig(undefined, true);
       assert.strictEqual(new ConfigService().viewMode, "preview");
       mockConfig(undefined, false);
-      assert.strictEqual(new ConfigService().viewMode, "editor");
+      assert.strictEqual(new ConfigService().viewMode, "default");
 
-      // openTodo delegates to the matching VS Code command.
       const service = new ConfigService();
+      const uri = vscode.Uri.file("/tmp/t.md");
+
+      // "default" delegates to VS Code's own open command.
+      mockConfig("default", true);
+      await service.openTodo(uri);
+      assert.ok(executed.includes("vscode.open"));
+
+      // "editor" forces the plain text editor via showTextDocument.
+      mockConfig("editor", false);
+      await service.openTodo(uri);
+      assert.strictEqual(shownTextDocs.length, 1);
+      assert.ok(shownTextDocs[0].fsPath === uri.fsPath);
+
+      // "preview" delegates to markdown.showPreview.
       mockConfig("preview", true);
-      await service.openTodo(vscode.Uri.file("/tmp/t.md"));
+      await service.openTodo(uri);
       assert.ok(executed.includes("markdown.showPreview"));
     } finally {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
@@ -384,6 +408,10 @@ suite("todoModel", () => {
       });
       Object.defineProperty(vscode.commands, "executeCommand", {
         value: originalExecuteCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showTextDocument", {
+        value: originalShowTextDocument,
         configurable: true,
       });
     }
@@ -462,6 +490,65 @@ suite("todoModel", () => {
     assert.strictEqual(item.command?.command, Command.OpenPreview);
   });
 
+  test("tree provider shows a spinner on the todo being updated", async () => {
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "ready",
+        priority: "p2",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-ready-p2-first.md",
+        uri: vscode.Uri.file("/tmp/001-ready-p2-first.md"),
+        frontmatter: { status: "ready", priority: "p2" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map<string, string[]>(),
+        blocking: new Map<string, string[]>(),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const busy = new BusyIndicator();
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState, busy);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const priorityNode = provider.getChildren(statusNode)[0] as never;
+    const todoNode = provider.getChildren(priorityNode)[0] as never;
+    const iconId = (node: never) => (provider.getTreeItem(node).iconPath as vscode.ThemeIcon)?.id;
+
+    // Idle: the normal todo icon is shown.
+    assert.strictEqual(iconId(todoNode), "note");
+
+    // Busy: the todo being updated shows a spinner icon.
+    let resolveOp: () => void = () => undefined;
+    const opGate = new Promise<void>((resolve) => {
+      resolveOp = resolve;
+    });
+    const runPromise = busy.run("Updating todo…", () => opGate, undefined, "001");
+    assert.strictEqual(iconId(todoNode), "sync~spin");
+    const busyIcon = provider.getTreeItem(todoNode).iconPath as vscode.ThemeIcon;
+    assert.ok(busyIcon.color instanceof vscode.ThemeColor);
+
+    resolveOp();
+    await runPromise;
+
+    // Idle again once the operation completes.
+    assert.strictEqual(iconId(todoNode), "note");
+  });
+
   test("tree provider renders 200 dependency-indexed todos without a performance regression", () => {
     const todos = Array.from({ length: 200 }, (_, index): Todo => {
       const id = String(index + 1).padStart(3, "0");
@@ -513,19 +600,11 @@ suite("todoModel", () => {
   test("task digest blocks concurrent runs and flags the loading context", async () => {
     const originalRegisterCommand = vscode.commands.registerCommand;
     const originalExecuteCommand = vscode.commands.executeCommand;
-    const originalCreateStatusBarItem = vscode.window.createStatusBarItem;
 
     const registrations = new Map<string, (...args: any[]) => any>();
     const previewCalls: unknown[] = [];
     const setContextCalls: unknown[][] = [];
     let infoMessageCount = 0;
-    const statusBar = {
-      text: "",
-      tooltip: "",
-      show: () => undefined,
-      hide: () => undefined,
-      dispose: () => undefined,
-    };
     let resolveRefresh: () => void = () => undefined;
     const refreshGate = new Promise<void>((resolve) => {
       resolveRefresh = resolve;
@@ -546,10 +625,6 @@ suite("todoModel", () => {
       },
       configurable: true,
     });
-    Object.defineProperty(vscode.window, "createStatusBarItem", {
-      value: () => statusBar,
-      configurable: true,
-    });
     Object.defineProperty(vscode.window, "showInformationMessage", {
       value: async () => {
         infoMessageCount += 1;
@@ -565,6 +640,7 @@ suite("todoModel", () => {
           getTodos: () => [],
           getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
         },
+        busy: new BusyIndicator(),
       } as never;
       const context = { subscriptions: [] as vscode.Disposable[] };
       registerCommands(context as never, services);
@@ -600,10 +676,6 @@ suite("todoModel", () => {
       });
       Object.defineProperty(vscode.commands, "executeCommand", {
         value: originalExecuteCommand,
-        configurable: true,
-      });
-      Object.defineProperty(vscode.window, "createStatusBarItem", {
-        value: originalCreateStatusBarItem,
         configurable: true,
       });
     }

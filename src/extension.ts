@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Settings } from "./configuration";
 import { out, outputChannel } from "./output";
@@ -23,7 +24,8 @@ export async function activate(context: vscode.ExtensionContext) {
   const status = new StatusService(config, repository);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
-  const treeProvider = new TodoTreeProvider(repository, filter, treeState);
+  const busy = new BusyIndicator();
+  const treeProvider = new TodoTreeProvider(repository, filter, treeState, busy);
   const skillStatusTreeProvider = new SkillStatusTreeProvider(skill, config);
   const boardViewProvider = new BoardViewProvider(
     repository,
@@ -92,6 +94,7 @@ export async function activate(context: vscode.ExtensionContext) {
     status,
     links,
     skill,
+    busy,
     treeProvider,
     boardViewProvider,
     refreshSkillStatus: () => skillStatusTreeProvider.refresh(),

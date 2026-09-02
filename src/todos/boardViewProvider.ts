@@ -382,6 +382,7 @@ interface BoardMessage {
   type:
     | "ready"
     | "open"
+    | "delete"
     | "setStatus"
     | "hideStatus"
     | "showStatus"
@@ -506,11 +507,25 @@ export class BoardViewProvider implements vscode.Disposable {
       case "openExternalKey":
         await this.openExternalKey(todo);
         break;
+      case "delete":
+        await this.deleteTodo(todo);
+        break;
     }
   }
 
   private async openTodo(todo: Todo): Promise<void> {
     await vscode.commands.executeCommand(Command.OpenPreview, { kind: "todo", todo });
+  }
+
+  private async deleteTodo(todo: Todo): Promise<void> {
+    this.postBusy(todo.id);
+    try {
+      await this.status.deleteTodo(todo);
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to delete todo: ${error}`);
+    } finally {
+      await this.repository.refresh();
+    }
   }
 
   private async setTodoStatus(todo: Todo, status: unknown): Promise<void> {
@@ -1507,17 +1522,28 @@ export class BoardViewProvider implements vscode.Disposable {
           ["p3", "P3"],
         ], "setPriority", "priority", "Change priority"),
       );
-      if (todo.key) {
-        const ticket = document.createElement("button");
-        ticket.type = "button";
-        ticket.textContent = "Ticket";
-        ticket.title = "Open URL or copy external key";
-        ticket.addEventListener("click", (event) => {
+       if (todo.key) {
+         const ticket = document.createElement("button");
+         ticket.type = "button";
+         ticket.textContent = "Ticket";
+         ticket.title = "Open URL or copy external key";
+         ticket.addEventListener("click", (event) => {
+           event.stopPropagation();
+           vscode.postMessage({ type: "openExternalKey", todoId: todo.id });
+         });
+         actions.append(ticket);
+       }
+       const deleteBtn = document.createElement("button");
+       deleteBtn.type = "button";
+        deleteBtn.textContent = "Delete";
+        deleteBtn.title = "Delete this todo (cannot be undone)";
+        deleteBtn.addEventListener("click", (event) => {
           event.stopPropagation();
-          vscode.postMessage({ type: "openExternalKey", todoId: todo.id });
+          if (confirm("Delete todo " + todo.id + " (" + todo.title + ")? This cannot be undone.")) {
+            vscode.postMessage({ type: "delete", todoId: todo.id });
+          }
         });
-        actions.append(ticket);
-      }
+        actions.append(deleteBtn);
       card.append(actions);
       const busy = document.createElement("div");
       busy.className = "card-busy";

@@ -248,4 +248,10 @@ export class StatusService {
 
     return `${banner}\n\n${content}`;
   }
+
+  /** Delete a todo file from disk. */
+  async deleteTodo(todo: Todo): Promise<void> {
+    await vscode.workspace.fs.delete(todo.uri, { recursive: false });
+    out`Deleted todo file ${todo.uri.fsPath}`;
+  }
 }

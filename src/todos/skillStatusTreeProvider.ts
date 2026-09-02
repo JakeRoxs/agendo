@@ -95,6 +95,9 @@ export class SkillStatusTreeProvider implements vscode.TreeDataProvider<SkillSta
     if (mode === "previewEditor") {
       return "open-preview";
     }
+    if (mode === "default") {
+      return "settings";
+    }
     return "preview";
   }
 }

@@ -77,16 +77,34 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "agendo.refresh.loading",
+        "title": "Refreshing...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "agendo.showDigest",
         "title": "Show Task Digest",
         "category": "Agendo",
         "icon": "$(list-selection)"
       },
       {
+        "command": "agendo.showDigest.loading",
+        "title": "Task digest is loading...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "agendo.openBoard",
         "title": "Open Board",
         "category": "Agendo",
         "icon": "$(open-preview)"
+      },
+      {
+        "command": "agendo.openBoard.loading",
+        "title": "Opening board...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
       },
       {
         "command": "agendo.filter",
@@ -117,6 +135,12 @@
         "title": "Create Todo...",
         "category": "Agendo",
         "icon": "$(add)"
+      },
+      {
+        "command": "agendo.createTodo.loading",
+        "title": "Creating todo...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
       },
       {
         "command": "agendo.openPreview",
@@ -175,6 +199,12 @@
         "category": "Agendo"
       },
       {
+        "command": "agendo.deleteTodo",
+        "title": "Delete Todo",
+        "category": "Agendo",
+        "icon": "$(trash)"
+      },
+      {
         "command": "agendo.chooseRoot",
         "title": "Choose Root Folder...",
         "category": "Agendo"
@@ -211,6 +241,18 @@
         "category": "Agendo"
       },
       {
+        "command": "agendo.enableSkill.loading",
+        "title": "Installing Agendo skill...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
+        "command": "agendo.updateSkill.loading",
+        "title": "Updating Agendo skill...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "agendo.collapseNode",
         "title": "Collapse",
         "category": "Agendo"
@@ -225,7 +267,12 @@
       "view/title": [
         {
           "command": "agendo.createTodo",
-          "when": "view == agendo.todos",
+          "when": "view == agendo.todos && !agendo.creatingTodo",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agendo.createTodo.loading",
+          "when": "view == agendo.todos && agendo.creatingTodo",
           "group": "navigation@1"
         },
         {
@@ -244,8 +291,18 @@
           "group": "navigation@2"
         },
         {
+          "command": "agendo.showDigest.loading",
+          "when": "view == agendo.todos && agendo.digestLoading",
+          "group": "navigation@2"
+        },
+        {
           "command": "agendo.openBoard",
-          "when": "view == agendo.todos",
+          "when": "view == agendo.todos && !agendo.openingBoard",
+          "group": "navigation@2.5"
+        },
+        {
+          "command": "agendo.openBoard.loading",
+          "when": "view == agendo.todos && agendo.openingBoard",
           "group": "navigation@2.5"
         },
         {
@@ -255,7 +312,12 @@
         },
         {
           "command": "agendo.refresh",
-          "when": "view == agendo.todos",
+          "when": "view == agendo.todos && !agendo.refreshing",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agendo.refresh.loading",
+          "when": "view == agendo.todos && agendo.refreshing",
           "group": "navigation@5"
         },
         {
@@ -295,12 +357,22 @@
         },
         {
           "command": "agendo.enableSkill",
-          "when": "view == agendo.skillStatus",
+          "when": "view == agendo.skillStatus && !agendo.skillInstalling",
           "group": "skill@1"
         },
         {
           "command": "agendo.updateSkill",
-          "when": "view == agendo.skillStatus",
+          "when": "view == agendo.skillStatus && !agendo.skillUpdating",
+          "group": "skill@2"
+        },
+        {
+          "command": "agendo.enableSkill.loading",
+          "when": "view == agendo.skillStatus && agendo.skillInstalling",
+          "group": "skill@1"
+        },
+        {
+          "command": "agendo.updateSkill.loading",
+          "when": "view == agendo.skillStatus && agendo.skillUpdating",
           "group": "skill@2"
         }
       ],
@@ -364,6 +436,11 @@
           "command": "agendo.setGroup",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "3_priority@3"
+        },
+        {
+          "command": "agendo.deleteTodo",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "4_delete@1"
         }
       ]
     },
@@ -409,17 +486,19 @@
         "agendo.viewMode": {
           "type": "string",
           "enum": [
+            "default",
             "editor",
             "preview",
             "previewEditor"
           ],
-          "default": "preview",
+          "default": "default",
           "enumDescriptions": [
-            "Open todos as the source text editor.",
+            "Open todos using VS Code's own default behavior (respects your editor associations).",
+            "Open todos in the source text editor, forcing the plain text editor even when markdown uses a custom editor.",
             "Open todos as a rendered markdown preview.",
             "Open todos with VS Code's newer (beta) markdown editor preview when available."
           ],
-          "description": "How todos open when clicked: the source editor, the markdown preview, or VS Code's beta preview editor."
+          "description": "How todos open when clicked: VS Code's default, the forced source editor, the markdown preview, or VS Code's beta preview editor."
         },
         "agendo.gitignoreTodos": {
           "type": "boolean",

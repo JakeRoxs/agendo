@@ -1,7 +1,7 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { BusyIndicator } from "./busyIndicator";
+import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
@@ -37,6 +37,7 @@ export interface CommandServices {
   status: StatusService;
   links: LinkService;
   skill: SkillManager;
+  busy: BusyIndicator;
   treeProvider: TodoTreeProvider;
   boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
@@ -51,18 +52,43 @@ export function registerCommands(
   const register: Register = (command, callback) => {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
   };
-  const busy = new BusyIndicator(context);
+  const { busy } = services;
 
+  registerLoadingCommands(register);
   registerFilterCommands(register, services, busy);
-  registerBoardCommands(register, services);
+  registerBoardCommands(register, services, busy);
   registerTodoCommands(register, services, busy);
   registerConfigCommands(register, services);
   registerSkillCommands(register, services, busy);
   registerTreeCommands(register, services);
 }
 
-function registerBoardCommands(register: Register, services: CommandServices): void {
-  register(Command.OpenBoard, () => services.boardViewProvider.open());
+/**
+ * Spinner-state commands shown in place of the real toolbar buttons while an
+ * operation runs. They are no-ops; the real button is hidden via a when clause
+ * driven by the operation's context key.
+ */
+function registerLoadingCommands(register: Register): void {
+  register(Command.ShowDigestLoading, () => undefined);
+  register(Command.EnableSkillLoading, () => undefined);
+  register(Command.UpdateSkillLoading, () => undefined);
+  register(Command.RefreshLoading, () => undefined);
+  register(Command.OpenBoardLoading, () => undefined);
+  register(Command.CreateTodoLoading, () => undefined);
+}
+
+function registerBoardCommands(
+  register: Register,
+  services: CommandServices,
+  busy: BusyIndicator,
+): void {
+  register(Command.OpenBoard, async () => {
+    await busy.run(
+      "Opening board…",
+      async () => services.boardViewProvider.open(),
+      "agendo.openingBoard",
+    );
+  });
 }
 
 export async function updateFilterContexts(filter: FilterService): Promise<void> {
@@ -84,7 +110,9 @@ function registerFilterCommands(
   const { repository, filter, treeProvider } = services;
   let digestLoading = false;
 
-  register(Command.Refresh, () => repository.refresh());
+  register(Command.Refresh, async () => {
+    await busy.run("Refreshing todos…", () => repository.refresh(), "agendo.refreshing");
+  });
   register(Command.ShowDigest, async () => {
     if (digestLoading) {
       vscode.window.showInformationMessage("Task digest is already loading.");
@@ -163,13 +191,18 @@ function registerTodoCommands(
       }
       const oldFileName = todo.fileName;
       try {
-        await busy.run("Updating todo…", async () => {
-          const result = await status.setStatus(todo, targetStatus as TodoStatus);
-          await repository.refresh();
-          if (result) {
-            await links.warnOnBrokenReferences(oldFileName, result);
-          }
-        });
+        await busy.run(
+          "Updating todo…",
+          async () => {
+            const result = await status.setStatus(todo, targetStatus as TodoStatus);
+            await repository.refresh();
+            if (result) {
+              await links.warnOnBrokenReferences(oldFileName, result);
+            }
+          },
+          undefined,
+          todo.id,
+        );
       } catch (error) {
         vscode.window.showErrorMessage(`Failed to set status: ${error}`);
       }
@@ -190,13 +223,18 @@ function registerTodoCommands(
     }
     const oldFileName = todo.fileName;
     try {
-      await busy.run("Updating todo…", async () => {
-        const result = await status.setPriority(todo, picked.label as TodoPriority);
-        await repository.refresh();
-        if (result) {
-          await links.warnOnBrokenReferences(oldFileName, result);
-        }
-      });
+      await busy.run(
+        "Updating todo…",
+        async () => {
+          const result = await status.setPriority(todo, picked.label as TodoPriority);
+          await repository.refresh();
+          if (result) {
+            await links.warnOnBrokenReferences(oldFileName, result);
+          }
+        },
+        undefined,
+        todo.id,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set priority: ${error}`);
     }
@@ -216,12 +254,45 @@ function registerTodoCommands(
       return;
     }
     try {
-      await busy.run("Updating todo…", async () => {
-        await status.setGroup(todo, value.trim() || undefined);
-        await repository.refresh();
-      });
+      await busy.run(
+        "Updating todo…",
+        async () => {
+          await status.setGroup(todo, value.trim() || undefined);
+          await repository.refresh();
+        },
+        undefined,
+        todo.id,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set group: ${error}`);
+    }
+  });
+
+  register(Command.DeleteTodo, async (arg: unknown) => {
+    const todo = resolveTodo(arg);
+    if (!todo) {
+      return;
+    }
+    const answer = await vscode.window.showWarningMessage(
+      `Delete todo ${todo.id} ("${todo.title}")? This cannot be undone.`,
+      "Delete",
+      "Cancel",
+    );
+    if (answer !== "Delete") {
+      return;
+    }
+    try {
+      await busy.run(
+        "Deleting todo…",
+        async () => {
+          await status.deleteTodo(todo);
+          await repository.refresh();
+        },
+        undefined,
+        todo.id,
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to delete todo: ${error}`);
     }
   });
 
@@ -262,20 +333,25 @@ function registerTodoCommands(
     const newDependencies = picked.map((item) => item.label.split(" · ")[0]).filter(Boolean);
     const oldFileName = todo.fileName;
     try {
-      await busy.run("Updating todo…", async () => {
-        const result = await status.setDependencies(todo, newDependencies);
-        await repository.refresh();
-        if (result) {
-          await links.warnOnBrokenReferences(oldFileName, result);
-        }
-      });
+      await busy.run(
+        "Updating todo…",
+        async () => {
+          const result = await status.setDependencies(todo, newDependencies);
+          await repository.refresh();
+          if (result) {
+            await links.warnOnBrokenReferences(oldFileName, result);
+          }
+        },
+        undefined,
+        todo.id,
+      );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to set dependency: ${error}`);
     }
   });
 
   register(Command.CreateTodo, async () => {
-    await createTodo(config, repository);
+    await createTodo(config, repository, busy);
   });
 }
 
@@ -297,16 +373,13 @@ function registerConfigCommands(register: Register, services: CommandServices): 
   });
   register(Command.SetViewMode, async () => {
     const currentMode = config.viewMode;
-    const previewEditorAvailable = (await config.getPreviewEditorCommand()) !== undefined;
     const picked = await vscode.window.showQuickPick(
-      VIEW_MODES.filter((mode) => mode !== "previewEditor" || previewEditorAvailable).map(
-        (mode) => ({
-          label: viewModeLabel(mode),
-          description: mode === currentMode ? "current" : undefined,
-          picked: mode === currentMode,
-          mode,
-        }),
-      ),
+      VIEW_MODES.map((mode) => ({
+        label: viewModeLabel(mode),
+        description: mode === currentMode ? "current" : undefined,
+        picked: mode === currentMode,
+        mode,
+      })),
       { placeHolder: "Choose how todos open" },
     );
     if (picked?.mode) {
@@ -370,10 +443,14 @@ function registerSkillCommands(
       return;
     }
     try {
-      await busy.run("Installing skill…", async () => {
-        await skill.install();
-        refreshSkillStatus();
-      });
+      await busy.run(
+        "Installing skill…",
+        async () => {
+          await skill.install();
+          refreshSkillStatus();
+        },
+        "agendo.skillInstalling",
+      );
       vscode.window.showInformationMessage(
         `Agendo skill installed (v${status.bundledVersion ?? "?"}).`,
       );
@@ -383,10 +460,14 @@ function registerSkillCommands(
   });
   register(Command.UpdateSkill, async () => {
     try {
-      await busy.run("Updating skill…", async () => {
-        await skill.updateFromSource();
-        refreshSkillStatus();
-      });
+      await busy.run(
+        "Updating skill…",
+        async () => {
+          await skill.updateFromSource();
+          refreshSkillStatus();
+        },
+        "agendo.skillUpdating",
+      );
       vscode.window.showInformationMessage("Agendo skill updated from configured source.");
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
@@ -521,7 +602,11 @@ async function runFilterPicker(
   treeProvider.refresh();
 }
 
-async function createTodo(config: ConfigService, repository: TodoRepository): Promise<void> {
+async function createTodo(
+  config: ConfigService,
+  repository: TodoRepository,
+  busy: BusyIndicator,
+): Promise<void> {
   const rootUri = config.getRootUri();
   if (!rootUri) {
     vscode.window.showErrorMessage("Open a workspace folder to create todos.");
@@ -562,9 +647,15 @@ async function createTodo(config: ConfigService, repository: TodoRepository): Pr
     .join(" ");
   const content = renderTemplate(nextId, priority, title, keyInput.trim() || undefined);
 
-  await vscode.workspace.fs.createDirectory(rootUri);
-  await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
-  await repository.refresh();
+  await busy.run(
+    "Creating todo…",
+    async () => {
+      await vscode.workspace.fs.createDirectory(rootUri);
+      await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
+      await repository.refresh();
+    },
+    "agendo.creatingTodo",
+  );
   await vscode.commands.executeCommand("vscode.open", target);
 }
 

@@ -4,8 +4,24 @@ All notable changes to the Agendo extension are documented here.
 
 ## [0.1.9]
 
+### Added
+
+- Delete todo option in the tree view context menu and on board cards (with confirmation).
+
 ### Changed
 
+- Loading feedback now appears inline in the view instead of the status bar:
+  - Toolbar buttons (task digest, skill install/update, refresh, open board, create todo)
+    switch to a spinner icon in place while loading, rather than disappearing.
+  - Tree operations (status, priority, group, and dependency updates) show a spinner on the
+    specific todo item being updated.
+- The "Set View Mode" picker now offers four distinct states with clarified behavior:
+  - **VSCode Default** (new default): uses VS Code's own default open behavior, respecting
+    your editor associations.
+  - **Editor (source)**: forces the plain text editor, bypassing editor associations.
+  - **Preview**: the rendered markdown preview.
+  - **Preview editor (beta)**: VS Code's newer integrated markdown editor preview (now uses
+    the correct `vscode.openWith` command).
 - `.agendo-config.json` is now written only when settings differ from their defaults — a fully
   default workspace keeps no config file at all. The bundled skill documents the per-field
   defaults it falls back to when the file or an individual field is absent.

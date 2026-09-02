@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import type { BusyIndicator } from "../busyIndicator";
 import { Command } from "../commands";
 import type { FilterService } from "./filterService";
 import { TODO_PRIORITIES, type Todo, type TodoPriority, type TodoStatus } from "./todoModel";
@@ -113,8 +114,10 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private readonly repository: TodoRepository,
     private readonly filter: FilterService,
     private readonly treeState: TreeStateService,
+    private readonly busy?: BusyIndicator,
   ) {
     this.repository.onDidChange(() => this.refresh());
+    this.busy?.onChange(() => this.refresh());
   }
 
   refresh(): void {
@@ -270,17 +273,24 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
     item.contextValue = isBlockedFlag ? "todoItemBlocked" : "todoItem";
-    let icon = "note";
-    if (isBlockedFlag) {
-      icon = "circle-slash";
+    if (this.busy?.isTodoBusy(todo.id)) {
+      item.iconPath = new vscode.ThemeIcon(
+        "sync~spin",
+        new vscode.ThemeColor("descriptionForeground"),
+      );
+    } else {
+      let icon = "note";
+      if (isBlockedFlag) {
+        icon = "circle-slash";
+      }
+      if (todo.epic) {
+        icon = "type-hierarchy";
+      }
+      item.iconPath = new vscode.ThemeIcon(
+        icon,
+        new vscode.ThemeColor(PRIORITY_COLOR[todo.priority]),
+      );
     }
-    if (todo.epic) {
-      icon = "type-hierarchy";
-    }
-    item.iconPath = new vscode.ThemeIcon(
-      icon,
-      new vscode.ThemeColor(PRIORITY_COLOR[todo.priority]),
-    );
 
     const tooltip = new vscode.MarkdownString();
     tooltip.appendMarkdown(`**${todo.id} · ${todo.title}**\n\n`);
