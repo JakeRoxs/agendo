@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {

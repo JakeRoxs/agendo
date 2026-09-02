@@ -2,6 +2,15 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.9]
+
+### Changed
+
+- `.agendo-config.json` is now written only when settings differ from their defaults — a fully
+  default workspace keeps no config file at all. The bundled skill documents the per-field
+  defaults it falls back to when the file or an individual field is absent.
+- Updated the bundled Agendo skill to version 1.4.1 to document the minimal config format.
+
 ## [0.1.8]
 
 ### Added

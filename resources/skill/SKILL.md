@@ -2,7 +2,7 @@
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, reconciling/auditing todos against the current codebase, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.4.0
+version: 1.4.1
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -28,15 +28,25 @@ with `docs/todos/.agendo-config.json`. If it is absent and the default root does
 the workspace's `agendo.root` setting or directly locate `.agendo-config.json`; a custom-root
 configuration file lives inside that custom root. The
 [Agendo VS Code extension](https://github.com/JakeRoxs/agendo) writes this file as a projection of
-its settings so this skill can honor the user's chosen configuration. When present, it looks like:
+its settings so this skill can honor the user's chosen configuration.
+
+**The file only exists when something differs from the defaults:** fields equal to their default
+are never written, and the file itself is removed when every setting is default. Apply these
+defaults to any missing key — or to the whole configuration when the file is absent:
+
+| Key               | Default      |
+| ----------------- | ------------ |
+| `root`            | `docs/todos` |
+| `gitignored`      | `false`      |
+| `backlogFolder`   | `backlog`    |
+| `cancelledFolder` | `cancelled`  |
+| `completeFolder`  | `complete`   |
+
+Example of a config with a single non-default setting:
 
 ```json
 {
-  "root": "docs/todos",
-  "gitignored": true,
-  "backlogFolder": "backlog",
-  "cancelledFolder": "cancelled",
-  "completeFolder": "complete"
+  "gitignored": true
 }
 ```
 

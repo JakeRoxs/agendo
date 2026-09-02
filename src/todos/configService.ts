@@ -2,13 +2,31 @@ import * as vscode from "vscode";
 import { get, Settings } from "../configuration";
 import { out } from "../output";
 
-/** Shape of the `.agendo-config.json` file the skill reads. */
+/**
+ * Default configuration values, mirrored from package.json. The skill falls
+ * back to these whenever the config file omits a field.
+ */
+export const DEFAULT_TODOS_CONFIG = {
+  root: "docs/todos",
+  gitignored: false,
+  backlogFolder: "backlog",
+  cancelledFolder: "cancelled",
+  completeFolder: "complete",
+} as const;
+
+/**
+ * Shape of the `.agendo-config.json` file the skill reads.
+ *
+ * Only fields that differ from {@link DEFAULT_TODOS_CONFIG} are written; an
+ * absent key means the default applies, keeping default configurations
+ * minimal.
+ */
 export interface TodosConfig {
-  root: string;
-  gitignored: boolean;
-  backlogFolder: string;
-  cancelledFolder: string;
-  completeFolder: string;
+  root?: string;
+  gitignored?: boolean;
+  backlogFolder?: string;
+  cancelledFolder?: string;
+  completeFolder?: string;
 }
 
 /**
@@ -50,7 +68,7 @@ const PREVIEW_EDITOR_COMMAND_CANDIDATES = ["markdown.showEditorPreview", "markdo
 export class ConfigService {
   /** Workspace-relative root folder for todos. */
   get root(): string {
-    const value = (get<string>(Settings.Root) ?? "docs/todos").replace(/\\/g, "/");
+    const value = (get<string>(Settings.Root) ?? DEFAULT_TODOS_CONFIG.root).replace(/\\/g, "/");
     return value.split("/").filter(Boolean).join("/");
   }
 
@@ -59,15 +77,15 @@ export class ConfigService {
   }
 
   get completeFolder(): string {
-    return get<string>(Settings.CompleteFolder) || "complete";
+    return get<string>(Settings.CompleteFolder) || DEFAULT_TODOS_CONFIG.completeFolder;
   }
 
   get cancelledFolder(): string {
-    return get<string>(Settings.CancelledFolder) || "cancelled";
+    return get<string>(Settings.CancelledFolder) || DEFAULT_TODOS_CONFIG.cancelledFolder;
   }
 
   get backlogFolder(): string {
-    return get<string>(Settings.BacklogFolder) || "backlog";
+    return get<string>(Settings.BacklogFolder) || DEFAULT_TODOS_CONFIG.backlogFolder;
   }
 
   get openInPreview(): boolean {
@@ -156,34 +174,59 @@ export class ConfigService {
     return vscode.Uri.joinPath(rootUri, subfolder);
   }
 
-  /** Build the {@link TodosConfig} projection from current settings. */
+  /**
+   * Build the {@link TodosConfig} projection from current settings, omitting
+   * fields that match their default so the on-disk file only carries
+   * non-default configuration.
+   */
   toTodosConfig(): TodosConfig {
-    return {
-      root: this.root,
-      gitignored: this.gitignored,
-      backlogFolder: this.backlogFolder,
-      cancelledFolder: this.cancelledFolder,
-      completeFolder: this.completeFolder,
-    };
+    const config: TodosConfig = {};
+    if (this.root !== DEFAULT_TODOS_CONFIG.root) {
+      config.root = this.root;
+    }
+    if (this.gitignored !== DEFAULT_TODOS_CONFIG.gitignored) {
+      config.gitignored = this.gitignored;
+    }
+    if (this.backlogFolder !== DEFAULT_TODOS_CONFIG.backlogFolder) {
+      config.backlogFolder = this.backlogFolder;
+    }
+    if (this.cancelledFolder !== DEFAULT_TODOS_CONFIG.cancelledFolder) {
+      config.cancelledFolder = this.cancelledFolder;
+    }
+    if (this.completeFolder !== DEFAULT_TODOS_CONFIG.completeFolder) {
+      config.completeFolder = this.completeFolder;
+    }
+    return config;
   }
 
   /**
-   * Write `.agendo-config.json` into the root folder so the skill can read the
-   * active configuration and choose a file-discovery strategy.
+   * Keep `.agendo-config.json` in the root folder in sync with the active
+   * configuration so the skill can choose a file-discovery strategy. The file
+   * is removed when every setting is at its default — the skill falls back to
+   * the same defaults when the file is absent.
    */
   async writeConfigFile(): Promise<void> {
     const rootUri = this.getRootUri();
     if (!rootUri) {
       return;
     }
+    const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
     try {
-      await vscode.workspace.fs.createDirectory(rootUri);
-      const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
-      const content = `${JSON.stringify(this.toTodosConfig(), null, 2)}\n`;
-      await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
-      out`Wrote ${target.fsPath}`;
+      const config = this.toTodosConfig();
+      if (Object.keys(config).length === 0) {
+        await vscode.workspace.fs.delete(target);
+        out`Removed ${target.fsPath} (all settings are defaults)`;
+      } else {
+        await vscode.workspace.fs.createDirectory(rootUri);
+        const content = `${JSON.stringify(config, null, 2)}\n`;
+        await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
+        out`Wrote ${target.fsPath}`;
+      }
     } catch (error) {
-      out`Failed to write .agendo-config.json: ${error}`;
+      // Deleting a file that is already absent is expected and not worth logging.
+      if (!(error instanceof vscode.FileSystemError && error.code === "FileNotFound")) {
+        out`Failed to write .agendo-config.json: ${error}`;
+      }
     }
   }
 

@@ -253,35 +253,29 @@ suite("todoModel", () => {
     }
   });
 
-  test("config service normalizes the todo root and writes the project config file", async () => {
+  test("config service normalizes the todo root and omits the config file on defaults", async () => {
     const service = new ConfigService();
     const rootUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-config-tests", "docs", "todos"));
     Object.defineProperty(service, "getRootUri", { value: () => rootUri });
+    const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
 
     await vscode.workspace.fs.createDirectory(rootUri);
+    // Simulate a stale projection left behind by a previous, non-default configuration.
+    await vscode.workspace.fs.writeFile(target, Buffer.from("{}", "utf8"));
     await service.writeConfigFile();
 
-    const bytes = await vscode.workspace.fs.readFile(
-      vscode.Uri.joinPath(rootUri, ".agendo-config.json"),
-    );
-    const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
-    assert.deepStrictEqual(config, {
-      root: "docs/todos",
-      gitignored: false,
-      backlogFolder: "backlog",
-      cancelledFolder: "cancelled",
-      completeFolder: "complete",
-    });
+    // All settings are defaults, so the projection file is removed.
+    let fileExists = true;
+    try {
+      await vscode.workspace.fs.stat(target);
+    } catch {
+      fileExists = false;
+    }
+    assert.strictEqual(fileExists, false);
 
     const root = service.root;
     assert.strictEqual(root, "docs/todos");
-    assert.deepStrictEqual(service.toTodosConfig(), {
-      root: "docs/todos",
-      gitignored: false,
-      backlogFolder: "backlog",
-      cancelledFolder: "cancelled",
-      completeFolder: "complete",
-    });
+    assert.deepStrictEqual(service.toTodosConfig(), {});
 
     const missingRoot = new ConfigService();
     Object.defineProperty(vscode.workspace, "workspaceFolders", {
@@ -290,6 +284,50 @@ suite("todoModel", () => {
     });
     assert.strictEqual(missingRoot.getRootUri(), undefined);
     assert.strictEqual(missingRoot.getSubfolderUri("backlog"), undefined);
+  });
+
+  test("config file projection writes only fields that differ from defaults", async () => {
+    const service = new ConfigService();
+    const rootUri = vscode.Uri.file(
+      path.join(os.tmpdir(), "agendo-config-tests-nonddefault", "docs", "todos"),
+    );
+    Object.defineProperty(service, "getRootUri", { value: () => rootUri });
+
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => {
+          if (key === Settings.GitignoreTodos) return true;
+          if (key === Settings.BacklogFolder) return "parked";
+          return undefined;
+        },
+        update: async () => undefined,
+      }),
+      configurable: true,
+    });
+
+    try {
+      await vscode.workspace.fs.createDirectory(rootUri);
+      await service.writeConfigFile();
+
+      const bytes = await vscode.workspace.fs.readFile(
+        vscode.Uri.joinPath(rootUri, ".agendo-config.json"),
+      );
+      const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      assert.deepStrictEqual(config, {
+        gitignored: true,
+        backlogFolder: "parked",
+      });
+      assert.deepStrictEqual(service.toTodosConfig(), {
+        gitignored: true,
+        backlogFolder: "parked",
+      });
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+    }
   });
 
   test("config service resolves view mode and opens todos via the matching command", async () => {
