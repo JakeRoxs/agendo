@@ -2,6 +2,16 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.10]
+
+### Added
+
+- Gitignore toggle is now enabled by default.
+
+### Changed
+
+- The gitignore toggle now ignores all agendo content in the todos root folder — every file including `.gitignore` is hidden from git.
+
 ## [0.1.9]
 
 ### Added

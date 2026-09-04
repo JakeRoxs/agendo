@@ -260,31 +260,52 @@ suite("todoModel", () => {
     Object.defineProperty(service, "getRootUri", { value: () => rootUri });
     const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
 
-    await vscode.workspace.fs.createDirectory(rootUri);
-    // Simulate a stale projection left behind by a previous, non-default configuration.
-    await vscode.workspace.fs.writeFile(target, Buffer.from("{}", "utf8"));
-    await service.writeConfigFile();
-
-    // All settings are defaults, so the projection file is removed.
-    let fileExists = true;
-    try {
-      await vscode.workspace.fs.stat(target);
-    } catch {
-      fileExists = false;
-    }
-    assert.strictEqual(fileExists, false);
-
-    const root = service.root;
-    assert.strictEqual(root, "docs/todos");
-    assert.deepStrictEqual(service.toTodosConfig(), {});
-
-    const missingRoot = new ConfigService();
-    Object.defineProperty(vscode.workspace, "workspaceFolders", {
-      value: undefined,
+    // Mock getConfiguration to return defaults.
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => {
+          if (key === Settings.GitignoreTodos) return true;
+          return undefined;
+        },
+        update: async () => undefined,
+        inspect: () => undefined,
+      }),
       configurable: true,
     });
-    assert.strictEqual(missingRoot.getRootUri(), undefined);
-    assert.strictEqual(missingRoot.getSubfolderUri("backlog"), undefined);
+
+    try {
+      await vscode.workspace.fs.createDirectory(rootUri);
+      // Simulate a stale projection left behind by a previous, non-default configuration.
+      await vscode.workspace.fs.writeFile(target, Buffer.from("{}", "utf8"));
+      await service.writeConfigFile();
+
+      // All settings are defaults, so the projection file is removed.
+      let fileExists = true;
+      try {
+        await vscode.workspace.fs.stat(target);
+      } catch {
+        fileExists = false;
+      }
+      assert.strictEqual(fileExists, false);
+
+      const root = service.root;
+      assert.strictEqual(root, "docs/todos");
+      assert.deepStrictEqual(service.toTodosConfig(), {});
+
+      const missingRoot = new ConfigService();
+      Object.defineProperty(vscode.workspace, "workspaceFolders", {
+        value: undefined,
+        configurable: true,
+      });
+      assert.strictEqual(missingRoot.getRootUri(), undefined);
+      assert.strictEqual(missingRoot.getSubfolderUri("backlog"), undefined);
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+    }
   });
 
   test("config file projection writes only fields that differ from defaults", async () => {
@@ -316,11 +337,9 @@ suite("todoModel", () => {
       );
       const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
       assert.deepStrictEqual(config, {
-        gitignored: true,
         backlogFolder: "parked",
       });
       assert.deepStrictEqual(service.toTodosConfig(), {
-        gitignored: true,
         backlogFolder: "parked",
       });
     } finally {
@@ -1013,9 +1032,7 @@ suite("todoModel", () => {
     await service.applyGitignore();
     const gitignoreUri = vscode.Uri.joinPath(rootUri ?? workspaceRoot, ".gitignore");
     const content = Buffer.from(await vscode.workspace.fs.readFile(gitignoreUri)).toString("utf8");
-    assert.match(content, /^\*/m);
-    assert.match(content, /!\.gitignore/);
-    assert.match(content, /!\.agendo-config\.json/);
+    assert.strictEqual(content, "*\n");
   });
 
   test("filter service matches active search and tag filters", async () => {

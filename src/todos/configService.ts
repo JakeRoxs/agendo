@@ -8,7 +8,7 @@ import { out } from "../output";
  */
 export const DEFAULT_TODOS_CONFIG = {
   root: "docs/todos",
-  gitignored: false,
+  gitignored: true,
   backlogFolder: "backlog",
   cancelledFolder: "cancelled",
   completeFolder: "complete",
@@ -227,8 +227,9 @@ export class ConfigService {
   }
 
   /**
-   * Create or remove the `*` .gitignore inside the todos root to match the
-   * `gitignoreTodos` setting.
+   * Create or remove the .gitignore inside the todos root to match the
+   * gitignoreTodos setting. Uses a blanket ignore with selective un-ignores
+   * for essential content only.
    */
   async applyGitignore(): Promise<void> {
     const rootUri = this.getRootUri();
@@ -239,8 +240,9 @@ export class ConfigService {
     try {
       if (this.gitignored) {
         await vscode.workspace.fs.createDirectory(rootUri);
-        // Keep the config file trackable even when everything else is ignored.
-        const content = "*\n!.gitignore\n!.agendo-config.json\n";
+        // Ignore everything agendo-related. The extension handles all operations
+        // without needing these files tracked.
+        const content = "*\n";
         await vscode.workspace.fs.writeFile(gitignoreUri, Buffer.from(content, "utf8"));
         out`Wrote .gitignore in ${rootUri.fsPath}`;
       } else {
