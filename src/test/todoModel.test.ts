@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import * as vscode from "vscode";
 import { BusyIndicator } from "../busyIndicator";
-import { registerCommands } from "../commandRegistration";
+import { importFromClipboard, parseIssueUrl, registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import { get, Settings, set, setDefault } from "../configuration";
 import { activate, deactivate } from "../extension";
@@ -2640,5 +2640,474 @@ suite("todoModel", () => {
       (outputChannel as { appendLine: (value: string) => void }).appendLine = originalAppendLine;
       (outputChannel as { show: () => void }).show = originalShow;
     }
+  });
+
+  test("parseIssueUrl extracts GitHub issue metadata", () => {
+    const result = parseIssueUrl("https://github.com/owner/repo/issues/123");
+    assert.deepStrictEqual(result, { title: "owner/repo#123", externalKey: "owner/repo#123" });
+  });
+
+  test("parseIssueUrl extracts GitLab issue metadata", () => {
+    const result = parseIssueUrl("https://gitlab.com/owner/repo/-/issues/456");
+    assert.deepStrictEqual(result, { title: "owner/repo#456", externalKey: "owner/repo#456" });
+  });
+
+  test("parseIssueUrl returns undefined for non-matching URLs", () => {
+    assert.strictEqual(parseIssueUrl("https://example.com/issues/789"), undefined);
+    assert.strictEqual(parseIssueUrl("not-a-url"), undefined);
+  });
+
+  test("importFromClipboard shows error when clipboard is empty", async () => {
+    const errorMessages: string[] = [];
+    const originalShowErrorMessage = vscode.window.showErrorMessage;
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: async (message: string) => {
+        errorMessages.push(message);
+        return undefined;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.env, "clipboard", {
+      value: { readText: async () => "" },
+      configurable: true,
+    });
+
+    const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
+    const repository = { getTodos: () => [] } as never;
+    await importFromClipboard(config, repository);
+    assert.deepStrictEqual(errorMessages, ["No text in clipboard to import."]);
+
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: originalShowErrorMessage,
+      configurable: true,
+    });
+  });
+
+  test("importFromClipboard shows error when no URL is in clipboard", async () => {
+    const errorMessages: string[] = [];
+    const originalShowErrorMessage = vscode.window.showErrorMessage;
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: async (message: string) => {
+        errorMessages.push(message);
+        return undefined;
+      },
+      configurable: true,
+    });
+    Object.defineProperty(vscode.env, "clipboard", {
+      value: { readText: async () => "just some text" },
+      configurable: true,
+    });
+
+    const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
+    const repository = { getTodos: () => [] } as never;
+    await importFromClipboard(config, repository);
+    assert.deepStrictEqual(errorMessages, ["No GitHub/GitLab issue URL found in clipboard."]);
+
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: originalShowErrorMessage,
+      configurable: true,
+    });
+  });
+
+  test("importFromClipboard creates a todo from a GitHub URL", async () => {
+    const writtenFiles: { uri: vscode.Uri; data: Uint8Array }[] = [];
+    const originalFs = vscode.workspace.fs;
+    const originalShowInputBox = vscode.window.showInputBox;
+    Object.defineProperty(vscode.workspace, "fs", {
+      value: {
+        ...originalFs,
+        writeFile: async (uri: vscode.Uri, data: Uint8Array) => {
+          writtenFiles.push({ uri, data });
+        },
+      } as never,
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showInputBox", {
+      value: async () => "Imported Title",
+      configurable: true,
+    });
+    Object.defineProperty(vscode.env, "clipboard", {
+      value: { readText: async () => "https://github.com/owner/repo/issues/99" },
+      configurable: true,
+    });
+
+    const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
+    const repository = { getTodos: () => [] } as never;
+    await importFromClipboard(config, repository);
+    assert.strictEqual(writtenFiles.length, 1);
+    assert.ok(writtenFiles[0].uri.fsPath.endsWith("001-pending-p2-imported-title.md"));
+    const content = Buffer.from(writtenFiles[0].data).toString("utf8");
+    assert.ok(content.includes("status: pending"));
+    assert.ok(content.includes('issue_id: "001"'));
+    assert.ok(content.includes("key: owner/repo#99"));
+    assert.ok(content.includes("Imported Title"));
+
+    Object.defineProperty(vscode.workspace, "fs", {
+      value: originalFs,
+      configurable: true,
+    });
+    Object.defineProperty(vscode.window, "showInputBox", {
+      value: originalShowInputBox,
+      configurable: true,
+    });
+  });
+
+  test("tree provider renders group nodes when todos have groups", () => {
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        group: "auth",
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-first.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: [],
+        group: "auth",
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p2-second.md"),
+        frontmatter: { status: "pending", priority: "p2" },
+      },
+      {
+        id: "003",
+        status: "pending",
+        priority: "p1",
+        title: "Third",
+        description: "third",
+        tags: [],
+        dependencies: [],
+        group: "",
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "003-pending-p1-third.md",
+        uri: vscode.Uri.file("/tmp/003-pending-p1-third.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map<string, string[]>(),
+        blocking: new Map<string, string[]>(),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const children = provider.getChildren(statusNode) as never[];
+    const groupNode = children.find((n) => (n as { kind: string }).kind === "group");
+    const priorityNode = children.find((n) => (n as { kind: string }).kind === "priority");
+    assert.ok(groupNode);
+    assert.ok(priorityNode);
+    assert.strictEqual((groupNode as { group: string }).group, "auth");
+    assert.strictEqual((priorityNode as { priority: string }).priority, "p1");
+  });
+
+  test("tree provider renders priority nodes when todos have no groups", () => {
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "ready",
+        priority: "p1",
+        title: "First",
+        description: "first",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-ready-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-ready-p1-first.md"),
+        frontmatter: { status: "ready", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "ready",
+        priority: "p2",
+        title: "Second",
+        description: "second",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-ready-p2-second.md",
+        uri: vscode.Uri.file("/tmp/002-ready-p2-second.md"),
+        frontmatter: { status: "ready", priority: "p2" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map<string, string[]>(),
+        blocking: new Map<string, string[]>(),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const children = provider.getChildren(statusNode) as never[];
+    assert.strictEqual(children.length, 2);
+    assert.strictEqual((children[0] as { kind: string }).kind, "priority");
+    assert.strictEqual((children[1] as { kind: string }).kind, "priority");
+  });
+
+  test("tree provider renders dependency nodes when showDependencyNodes is enabled", async () => {
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => (key === Settings.ShowDependencyNodes ? true : undefined),
+        update: async () => undefined,
+        inspect: () => undefined,
+      }),
+      configurable: true,
+    });
+
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "Blocker",
+        description: "blocker",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-blocker.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-blocker.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p1",
+        title: "Dependent",
+        description: "dependent",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p1-dependent.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p1-dependent.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map([["002", ["001"]]]),
+        blocking: new Map([["001", ["002"]]]),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const priorityNode = provider.getChildren(statusNode)[0] as never;
+    const children = provider.getChildren(priorityNode) as never[];
+    const showDeps = get<boolean>(Settings.ShowDependencyNodes);
+    const depNode = children.find((n) => (n as { kind: string }).kind === "dependency");
+    assert.ok(
+      depNode,
+      `showDeps=${showDeps} children=${children.length} kinds=${children.map((n) => (n as { kind: string }).kind).join(",")}`,
+    );
+    assert.strictEqual((depNode as { todo: Todo }).todo.id, "001");
+    assert.strictEqual((depNode as { dependents: Todo[] }).dependents.length, 1);
+
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: originalGetConfiguration,
+      configurable: true,
+    });
+  });
+
+  test("tree provider renders flat todos when showDependencyNodes is disabled", async () => {
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => (key === Settings.ShowDependencyNodes ? false : undefined),
+        update: async () => undefined,
+        inspect: () => undefined,
+      }),
+      configurable: true,
+    });
+
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "Blocker",
+        description: "blocker",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-blocker.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-blocker.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p1",
+        title: "Dependent",
+        description: "dependent",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p1-dependent.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p1-dependent.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map([["002", ["001"]]]),
+        blocking: new Map([["001", ["002"]]]),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const priorityNode = provider.getChildren(statusNode)[0] as never;
+    const children = provider.getChildren(priorityNode) as never[];
+    const showDeps = get<boolean>(Settings.ShowDependencyNodes);
+    assert.strictEqual(
+      children.length,
+      2,
+      `showDeps=${showDeps} kinds=${children.map((n) => (n as { kind: string }).kind).join(",")}`,
+    );
+    assert.strictEqual((children[0] as { kind: string }).kind, "todo");
+    assert.strictEqual((children[1] as { kind: string }).kind, "todo");
+
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: originalGetConfiguration,
+      configurable: true,
+    });
+  });
+
+  test("tree provider dependency item has resourceUri for opening", async () => {
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => (key === Settings.ShowDependencyNodes ? true : undefined),
+        update: async () => undefined,
+        inspect: () => undefined,
+      }),
+      configurable: true,
+    });
+
+    const todos: Todo[] = [
+      {
+        id: "001",
+        status: "pending",
+        priority: "p1",
+        title: "Blocker",
+        description: "blocker",
+        tags: [],
+        dependencies: [],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "001-pending-p1-blocker.md",
+        uri: vscode.Uri.file("/tmp/001-pending-p1-blocker.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+      {
+        id: "002",
+        status: "pending",
+        priority: "p1",
+        title: "Dependent",
+        description: "dependent",
+        tags: [],
+        dependencies: ["001"],
+        children: [],
+        epic: false,
+        folder: "",
+        fileName: "002-pending-p1-dependent.md",
+        uri: vscode.Uri.file("/tmp/002-pending-p1-dependent.md"),
+        frontmatter: { status: "pending", priority: "p1" },
+      },
+    ];
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({
+        blockedBy: new Map([["002", ["001"]]]),
+        blocking: new Map([["001", ["002"]]]),
+      }),
+      onDidChange: () => undefined,
+    };
+    const filter = { matches: () => true };
+    const treeState = new TreeStateService({
+      get: () => [],
+      update: async () => undefined,
+    } as never);
+    const provider = new TodoTreeProvider(repository as never, filter as never, treeState);
+
+    const statusNode = provider.getChildren()[0] as never;
+    const priorityNode = provider.getChildren(statusNode)[0] as never;
+    const children = provider.getChildren(priorityNode) as never[];
+    const showDeps = get<boolean>(Settings.ShowDependencyNodes);
+    const depNode = children.find((n) => (n as { kind: string }).kind === "dependency") as never;
+    const item = provider.getTreeItem(depNode);
+    assert.ok(
+      item.resourceUri,
+      `showDeps=${showDeps} depNode=${(depNode as { kind: string } | undefined)?.kind} children=${children.length} kinds=${children.map((n) => (n as { kind: string }).kind).join(",")}`,
+    );
+    assert.strictEqual(item.resourceUri.fsPath, "/tmp/001-pending-p1-blocker.md");
+
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: originalGetConfiguration,
+      configurable: true,
+    });
   });
 });
