@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -509,6 +509,11 @@
           "type": "string",
           "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill",
           "description": "Raw base URL used by 'Update Agendo Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
+        },
+        "agendo.showDependencyNodes": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, blocked todos appear as collapsible dependency nodes under their blockers in the tree view instead of in their priority group."
         }
       }
     }

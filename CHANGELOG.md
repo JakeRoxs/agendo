@@ -2,6 +2,18 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.11]
+
+### Added
+
+- `agendo.showDependencyNodes` setting (default `false`): when enabled, blocked todos appear as
+  collapsible dependency nodes under their blockers in the tree view.
+
+### Fixed
+
+- Bumped bundled Agendo skill to version 1.4.2 — the `.skill-meta.json` version was stale at 1.4.1,
+  causing the extension to report the wrong bundled version.
+
 ## [0.1.10]
 
 ### Added

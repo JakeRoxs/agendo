@@ -499,7 +499,7 @@ function registerTreeCommands(register: Register, services: CommandServices): vo
   });
 }
 
-function resolveTodo(arg: unknown): Todo | undefined {
+export function resolveTodo(arg: unknown): Todo | undefined {
   if (arg && typeof arg === "object" && "kind" in arg) {
     const node = arg as TreeNode;
     if (node.kind === "todo") {
@@ -613,9 +613,10 @@ async function runFilterPicker(
  * Returns an object with parsed fields, or undefined if the URL doesn't match
  * known patterns.
  */
-function parseIssueUrl(url: string): { title: string; externalKey?: string } | undefined {
+export function parseIssueUrl(url: string): { title: string; externalKey?: string } | undefined {
   // GitHub: github.com/owner/repo/issues/123
-  const githubMatch = url.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i);
+  const githubRegex = /github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i;
+  const githubMatch = githubRegex.exec(url);
   if (githubMatch) {
     const [, owner, repo, num] = githubMatch;
     return {
@@ -625,7 +626,8 @@ function parseIssueUrl(url: string): { title: string; externalKey?: string } | u
   }
 
   // GitLab: gitlab.com/owner/repo/-/issues/123
-  const gitlabMatch = url.match(/gitlab\.com\/([^/]+)\/([^/]+)\/-\/issues\/(\d+)/i);
+  const gitlabRegex = /gitlab\.com\/([^/]+)\/([^/]+)\/-\/issues\/(\d+)/i;
+  const gitlabMatch = gitlabRegex.exec(url);
   if (gitlabMatch) {
     const [, owner, repo, num] = gitlabMatch;
     return {
@@ -640,7 +642,7 @@ function parseIssueUrl(url: string): { title: string; externalKey?: string } | u
 /**
  * Command to create a todo from a GitHub/GitLab issue URL in the clipboard.
  */
-async function importFromClipboard(
+export async function importFromClipboard(
   config: ConfigService,
   repository: TodoRepository,
 ): Promise<void> {
@@ -651,7 +653,8 @@ async function importFromClipboard(
   }
 
   // Try to find a GitHub/GitLab URL in the clipboard
-  const urlMatch = clipboardText.match(/https?:\/\/(github|gitlab)\.com\/[^\s]+\/issues\/\d+/i);
+  const urlRegex = /https?:\/\/(github|gitlab)\.com\/[^\s]+\/issues\/\d+/i;
+  const urlMatch = urlRegex.exec(clipboardText);
   if (!urlMatch) {
     vscode.window.showErrorMessage("No GitHub/GitLab issue URL found in clipboard.");
     return;
@@ -684,10 +687,7 @@ async function importFromClipboard(
 
   // Get the next available ID
   const todos = repository.getTodos();
-  const maxId = todos.reduce((max, t) => {
-    const num = parseInt(t.id, 10);
-    return num > max ? num : max;
-  }, 0);
+  const maxId = todos.reduce((max, t) => Math.max(Number.parseInt(t.id, 10), max), 0);
   const newId = String(maxId + 1).padStart(3, "0");
 
   // Build the todo content
@@ -749,7 +749,7 @@ TODO
   }
 }
 
-async function createTodo(
+export async function createTodo(
   config: ConfigService,
   repository: TodoRepository,
   busy: BusyIndicator,
@@ -806,7 +806,12 @@ async function createTodo(
   await vscode.commands.executeCommand("vscode.open", target);
 }
 
-function renderTemplate(id: string, priority: TodoPriority, title: string, key?: string): string {
+export function renderTemplate(
+  id: string,
+  priority: TodoPriority,
+  title: string,
+  key?: string,
+): string {
   return [
     "---",
     "status: pending",
