@@ -2,7 +2,7 @@
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, reconciling/auditing todos against the current codebase, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.4.1
+version: 1.4.2
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -37,7 +37,7 @@ defaults to any missing key — or to the whole configuration when the file is a
 | Key               | Default      |
 | ----------------- | ------------ |
 | `root`            | `docs/todos` |
-| `gitignored`      | `false`      |
+| `gitignored`      | `true`       |
 | `backlogFolder`   | `backlog`    |
 | `cancelledFolder` | `cancelled`  |
 | `completeFolder`  | `complete`   |

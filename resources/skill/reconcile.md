@@ -48,12 +48,26 @@ These checks catch structural problems and run entirely on file contents and fol
 - **Structure**
   - Required core sections are present: Problem Statement, Acceptance Criteria, Resume Context,
     Work Log.
+  - Non-trivial todos (title length > 10 chars or body length > 100 chars) should have Resume Context.
 - **Cancelled hygiene**
   - `cancelled` todos carry the `cancelled` tag and the `> **CANCELLED**` (or
     `> **CANCELLED / SUPERSEDED by [NNN]**`) banner under the title.
   - `superseded_by` frontmatter, when present, points to a real todo.
+  - Orphaned `superseded_by` references are flagged (the referenced todo does not exist).
+- **Dependency consistency**
+  - Every ID in `dependencies:` points to a real todo that exists.
+  - A todo with dependencies is correctly flagged as blocked when any dependency is not yet
+    terminal (`complete` or `cancelled`).
+  - If a dependency is `cancelled`, flag it: the dependency will not be delivered, so dependent work
+    must be reassessed rather than left mechanically blocked.
+  - Todos with incomplete dependencies should show a blocked indicator in their description.
+- **Tag hygiene**
+  - Tags are kebab-case (lowercase, hyphens, no spaces).
+  - No duplicate tags within a single todo.
+  - Tags are consistent across related todos (e.g., same feature uses same tag).
 - **Stale references**
   - No other todo still references an old filename after a rename/move.
+  - No dead links to other todos (references to todos that no longer exist).
 
 ## Pass 2 — Semantic review (the reconciliation value-add)
 
@@ -76,28 +90,42 @@ Then evaluate:
 
 ## Presenting recommendations
 
-Present findings as a concise report grouped by todo. For each recommendation:
+Present findings as a concise report grouped by todo. For each recommendation, use a structured
+format that includes the todo ID, current status, recommendation, evidence, and confidence:
+
+```
+## Reconciliation Report
+
+### [ID] · [title] — [current status] → [recommended status] (confidence: high/medium/low)
+- **What**: [brief description of recommendation]
+- **Evidence**:
+  - [file:path] — [one-line reason]
+  - [file:path] — [one-line reason]
+- **Acceptance criteria**: [X/Y satisfied] (when status change recommended)
+- **Missing verification**: [what is still needed, if any]
+- **Action**: [approve / defer / investigate further]
+```
+
+For each recommendation:
 
 - The todo ID and current status.
 - What is recommended (a status change, a wording/Resume Context edit, or a structural fix).
 - The evidence: file paths and, where useful, line references and a one-line reason.
 - Per-acceptance-criterion assessments when a status change is recommended.
-- Confidence, and any verification that is still needed.
+- Confidence level (high: evidence is complete and unambiguous; medium: evidence suggests a conclusion but gaps exist; low: evidence is sparse or conflicting).
+- Any verification that is still needed.
 
 Example:
 
 ```
-- 020 · currently ready → recommend complete (high confidence)
-  - Acceptance criteria: 3/3 satisfied
-  - Evidence:
-    - src/commandRegistration.ts:240-285 — status actions grouped as specified
-    - src/test/todoModel.test.ts:45 — regression coverage in place
-  - Missing verification: runtime behavior not manually confirmed
-
-- 021 · currently ready → keep ready (medium confidence)
-  - Acceptance criteria: 2/3 satisfied
-  - Evidence: src/todos/skillStatusTreeProvider.ts:41 — view mode node implemented
-  - Missing verification: preview-editor mode not yet available in this VS Code build
+### 020 · Dependency visualization — ready → complete (confidence: high)
+- **What**: All acceptance criteria satisfied; implementation verified.
+- **Evidence**:
+  - src/todos/todoTreeProvider.ts:49-74 — DependencyNode type and rendering implemented
+  - src/test/todoModel.test.ts:615 — Regression coverage added
+- **Acceptance criteria**: 5/5 satisfied
+- **Missing verification**: runtime behavior in VS Code not manually confirmed
+- **Action**: approve status change to complete
 ```
 
 Ask the user to approve each change. Apply only what is approved, using the Agendo lifecycle.

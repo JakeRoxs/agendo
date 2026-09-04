@@ -7,10 +7,20 @@ All notable changes to the Agendo extension are documented here.
 ### Added
 
 - Gitignore toggle is now enabled by default.
+- Dependency visualization in the tree view: blocked todos are indented under their blockers,
+  making dependency chains visually clear.
+- Import from clipboard command (`agendo.importFromClipboard`) that parses GitHub/GitLab issue
+  URLs and creates todos with populated title, external key, and source reference.
+- Extended reconciliation checks in the Agendo skill: Resume Context presence, orphaned
+  `superseded_by` references, tag hygiene, dead link detection, and dependency consistency.
+- Structured recommendation format for reconciliation output with confidence levels and
+  evidence citations.
 
 ### Changed
 
 - The gitignore toggle now ignores all agendo content in the todos root folder — every file including `.gitignore` is hidden from git.
+- Updated the bundled Agendo skill to version 1.4.2.
+- Performance test updated to account for dependency node grouping in the tree.
 
 ## [0.1.9]
 

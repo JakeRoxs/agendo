@@ -38,4 +38,6 @@ export enum Command {
   UpdateSkillLoading = "agendo.updateSkill.loading",
   CollapseNode = "agendo.collapseNode",
   ExpandNode = "agendo.expandNode",
+  ImportFromClipboard = "agendo.importFromClipboard",
+  ImportFromClipboardLoading = "agendo.importFromClipboard.loading",
 }

@@ -612,7 +612,12 @@ suite("todoModel", () => {
     }
     const elapsed = performance.now() - startedAt;
 
-    assert.strictEqual(todoNodes.length, 200);
+    const todoCount = todoNodes.reduce(
+      (acc, n) =>
+        acc + (n.kind === "todo" ? 1 : (n as { dependents: unknown[] }).dependents.length + 1),
+      0,
+    );
+    assert.strictEqual(todoCount, 200);
     assert.ok(elapsed < 75, `Expected render under 75ms, received ${elapsed.toFixed(2)}ms`);
   });
 

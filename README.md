@@ -174,7 +174,7 @@ This is especially useful when you want a follow-up task captured into the same 
 | `agendo.cancelledFolder` | `cancelled` | Folder used for cancelled tasks |
 | `agendo.backlogFolder` | `backlog` | Folder used for backlogged tasks |
 | `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, or `previewEditor` mode |
-| `agendo.gitignoreTodos` | `false` | Optionally add a wildcard `.gitignore` in the todo root |
+| `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
 
 ## Project structure

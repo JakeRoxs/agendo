@@ -75,6 +75,7 @@ function registerLoadingCommands(register: Register): void {
   register(Command.RefreshLoading, () => undefined);
   register(Command.OpenBoardLoading, () => undefined);
   register(Command.CreateTodoLoading, () => undefined);
+  register(Command.ImportFromClipboardLoading, () => undefined);
 }
 
 function registerBoardCommands(
@@ -353,6 +354,10 @@ function registerTodoCommands(
   register(Command.CreateTodo, async () => {
     await createTodo(config, repository, busy);
   });
+
+  register(Command.ImportFromClipboard, async () => {
+    await importFromClipboard(config, repository);
+  });
 }
 
 function registerConfigCommands(register: Register, services: CommandServices): void {
@@ -600,6 +605,148 @@ async function runFilterPicker(
   });
   await updateFilterContexts(filter);
   treeProvider.refresh();
+}
+
+/**
+ * Parse a GitHub or GitLab issue/PR URL to extract useful metadata.
+ *
+ * Returns an object with parsed fields, or undefined if the URL doesn't match
+ * known patterns.
+ */
+function parseIssueUrl(url: string): { title: string; externalKey?: string } | undefined {
+  // GitHub: github.com/owner/repo/issues/123
+  const githubMatch = url.match(/github\.com\/([^/]+)\/([^/]+)\/issues\/(\d+)/i);
+  if (githubMatch) {
+    const [, owner, repo, num] = githubMatch;
+    return {
+      title: `${owner}/${repo}#${num}`,
+      externalKey: `${owner}/${repo}#${num}`,
+    };
+  }
+
+  // GitLab: gitlab.com/owner/repo/-/issues/123
+  const gitlabMatch = url.match(/gitlab\.com\/([^/]+)\/([^/]+)\/-\/issues\/(\d+)/i);
+  if (gitlabMatch) {
+    const [, owner, repo, num] = gitlabMatch;
+    return {
+      title: `${owner}/${repo}#${num}`,
+      externalKey: `${owner}/${repo}#${num}`,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * Command to create a todo from a GitHub/GitLab issue URL in the clipboard.
+ */
+async function importFromClipboard(
+  config: ConfigService,
+  repository: TodoRepository,
+): Promise<void> {
+  const clipboardText = await vscode.env.clipboard.readText();
+  if (!clipboardText) {
+    vscode.window.showErrorMessage("No text in clipboard to import.");
+    return;
+  }
+
+  // Try to find a GitHub/GitLab URL in the clipboard
+  const urlMatch = clipboardText.match(/https?:\/\/(github|gitlab)\.com\/[^\s]+\/issues\/\d+/i);
+  if (!urlMatch) {
+    vscode.window.showErrorMessage("No GitHub/GitLab issue URL found in clipboard.");
+    return;
+  }
+
+  const url = urlMatch[0];
+  const parsed = parseIssueUrl(url);
+  if (!parsed) {
+    vscode.window.showErrorMessage("Could not parse issue URL.");
+    return;
+  }
+
+  // Get user input for title and tags
+  const title =
+    (await vscode.window.showInputBox({
+      prompt: "Enter todo title (or use URL as title)",
+      value: parsed.title,
+      placeHolder: "Todo title",
+    })) ?? parsed.title;
+
+  const tagsInput =
+    (await vscode.window.showInputBox({
+      prompt: "Enter tags (comma-separated, optional)",
+      placeHolder: "e.g., bug, urgent",
+    })) ?? "";
+  const tags = tagsInput
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  // Get the next available ID
+  const todos = repository.getTodos();
+  const maxId = todos.reduce((max, t) => {
+    const num = parseInt(t.id, 10);
+    return num > max ? num : max;
+  }, 0);
+  const newId = String(maxId + 1).padStart(3, "0");
+
+  // Build the todo content
+  const now = new Date().toISOString();
+  const content = `---
+status: pending
+priority: p2
+issue_id: "${newId}"
+tags: [${tags.join(", ")}]
+dependencies: []
+key: ${parsed.externalKey ?? url}
+---
+
+# ${title}
+
+## Problem Statement
+
+Imported from ${url}.
+
+**Why it matters:** TODO
+
+## Proposed Solutions
+
+TODO
+
+## Acceptance Criteria
+
+- [ ] TODO
+
+## Resume Context
+
+**Current state:** Awaiting triage.
+
+**Next step:** Review and triage the imported todo.
+
+## Work Log
+
+- ${now.slice(0, 10)} — Created from ${url}
+`;
+
+  // Write the todo file
+  const rootUri = config.getRootUri();
+  if (!rootUri) {
+    vscode.window.showErrorMessage("No todos root configured.");
+    return;
+  }
+
+  const fileName = buildFileName(newId, "pending", "p2", title);
+  const fileUri = vscode.Uri.joinPath(rootUri, fileName);
+
+  try {
+    await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
+    repository.refresh();
+    vscode.window.showInformationMessage(
+      `Created todo ${newId} from ${parsed.externalKey ?? url}.`,
+    );
+  } catch (err) {
+    vscode.window.showErrorMessage(`Failed to create todo: ${err}`);
+  }
 }
 
 async function createTodo(
