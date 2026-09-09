@@ -240,9 +240,12 @@ export class ConfigService {
     try {
       if (this.gitignored) {
         await vscode.workspace.fs.createDirectory(rootUri);
-        // Ignore everything agendo-related. The extension handles all operations
-        // without needing these files tracked.
-        const content = "*\n";
+        // Ignore everything except the .gitignore itself and the config
+        // projection. The config must stay visible to git-aware search tools
+        // and the Agendo skill (a blanket ignore would hide it from search
+        // indexes and break config discovery), and committable so teams
+        // share the same root/folder configuration.
+        const content = "*\n!.gitignore\n!.agendo-config.json\n";
         await vscode.workspace.fs.writeFile(gitignoreUri, Buffer.from(content, "utf8"));
         out`Wrote .gitignore in ${rootUri.fsPath}`;
       } else {

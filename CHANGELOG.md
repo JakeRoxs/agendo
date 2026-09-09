@@ -2,6 +2,18 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.12]
+
+### Fixed
+
+- The todos root `.gitignore` no longer ignores `.agendo-config.json` (or itself), so the config
+  stays visible to git-aware search tools and committable for team consistency — previously a
+  blanket `*` ignore hid the config from file searches and caused skills/agents to miss it and
+  start duplicate todo series from issue 001
+- Bumped bundled Agendo skill to version 1.4.3 — config discovery now requires direct
+  filesystem reads (never search/glob), and new todos include a duplicate-root guard that
+  scans the workspace for an existing todo directory before creating one
+
 ## [0.1.11]
 
 ### Added

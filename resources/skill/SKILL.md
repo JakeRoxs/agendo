@@ -2,7 +2,7 @@
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, reconciling/auditing todos against the current codebase, and integrating with slash commands and code review processes.
 disable-model-invocation: true
-version: 1.4.2
+version: 1.4.3
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -23,12 +23,24 @@ This skill should be used when:
 
 ## Read `.agendo-config.json` first
 
-Before doing anything else, resolve the todos root and check for `.agendo-config.json` there. Start
-with `docs/todos/.agendo-config.json`. If it is absent and the default root does not exist, inspect
-the workspace's `agendo.root` setting or directly locate `.agendo-config.json`; a custom-root
-configuration file lives inside that custom root. The
+Before doing anything else, resolve the todos root and check for `.agendo-config.json` there. The
 [Agendo VS Code extension](https://github.com/JakeRoxs/agendo) writes this file as a projection of
 its settings so this skill can honor the user's chosen configuration.
+
+**Always locate the config with direct filesystem reads, never with workspace search or glob.**
+The todos root is gitignored by default, and search indexes and glob tools exclude ignored
+files — a search that finds nothing proves only that search cannot see the file, not that the
+file is absent. Check candidate locations by reading the file directly from disk
+(`Read` tool, `cat`, `Get-Content`), in this order:
+
+1. `docs/todos/.agendo-config.json` (the default root)
+2. The root named by the workspace's `agendo.root` setting (e.g. in `.vscode/settings.json`) —
+   a custom-root configuration file lives inside that custom root
+3. Any directory that already contains todo files matching `[0-9][0-9][0-9]-*.md` (see the
+   duplicate-root guard in "Creating a New Todo")
+
+Only after a direct read of the default root fails and no custom root is configured may you
+conclude the config is absent.
 
 **The file only exists when something differs from the defaults:** fields equal to their default
 are never written, and the file itself is removed when every setting is default. Apply these
@@ -195,8 +207,14 @@ placement together.
    - Active todo files live directly inside `{root}`. List `{root}` and each configured state
      subfolder explicitly so discovery is independent of recursive-glob semantics and search-index
      exclusions.
-   - The next ID is the highest existing leading filename ID across all locations + 1,
-     zero-padded to 3 digits. IDs are global and never reused.
+    - The next ID is the highest existing leading filename ID across all locations + 1,
+      zero-padded to 3 digits. IDs are global and never reused.
+    - **Duplicate-root guard:** before creating `{root}` or any todo files, if the resolved root
+      does not exist or is empty, scan the workspace for existing todo files elsewhere
+      (e.g. `find . \( -name node_modules -o -name out -o -name coverage -o -name dist \) -prune -o -type f -name '[0-9][0-9][0-9]-*-*.md' -print`).
+      If todo files already exist in a different directory, that directory is almost certainly
+      the real todos root — use it (or confirm with the user) instead of starting a new series.
+      Never start at `001` when higher IDs already exist elsewhere in the workspace.
    - GNU/Linux Bash: `find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
    - PowerShell: `(Get-ChildItem "{root}" -Recurse -Filter *.md | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
 2. Copy the template from the skill directory: `cp "{skill_dir}/assets/todo-template.md" "{root}/{NEXT_ID}-pending-{priority}-{description}.md"`

@@ -1037,7 +1037,7 @@ suite("todoModel", () => {
     await service.applyGitignore();
     const gitignoreUri = vscode.Uri.joinPath(rootUri ?? workspaceRoot, ".gitignore");
     const content = Buffer.from(await vscode.workspace.fs.readFile(gitignoreUri)).toString("utf8");
-    assert.strictEqual(content, "*\n");
+    assert.strictEqual(content, "*\n!.gitignore\n!.agendo-config.json\n");
   });
 
   test("filter service matches active search and tag filters", async () => {
