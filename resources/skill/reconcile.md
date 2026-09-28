@@ -19,13 +19,71 @@ move-before-edit rule. Resolve the `.agendo-config.json` file first, exactly as 
   lifecycle (rename → move → then edit the destination). This is the same rule SKILL.md applies to
   every status change.
 - **`complete` only with verified acceptance criteria.** Recommend `complete` only when every
-  acceptance criterion is checked and the work is confirmed working.
+  acceptance criterion is demonstrably satisfied and the work is confirmed working. If the boxes
+  are stale, include checking them in the proposed update before the status transition.
 - **`ready` when implemented but unconfirmed.** Recommend `ready` when the implementation appears
   done but has not been confirmed to work.
-- **Backlog and cancel are user decisions.** Never recommend `backlogged` (a prioritization choice)
-  or `cancelled` without an explicit, stated reason from the user.
+- **Backlog is a user decision; cancellation requires evidence.** Never recommend `backlogged`
+  without a user-stated prioritization decision. Recommend `cancelled` only with an explicit,
+  evidence-backed reason such as a named replacement, superseding implementation, or abandoned
+  requirement; applying either transition still requires user approval.
 - **Preserve history.** Never rewrite Work Log entries or historical wording to "modernize" them.
   Append a reconciliation entry instead.
+
+## Scope and default behavior
+
+Once the Agendo skill has been explicitly invoked, treat an unscoped request such as "reconcile my
+todos," "review all todos," or "clean up my todos" as a request to review the **whole todo
+repository**. The user should not need to name every todo or repeatedly request the next batch.
+
+- Fully review every non-terminal todo: `pending`, `in-progress`, `ready`, and `backlogged`.
+- Inventory `complete` and `cancelled` todos so they can provide dependency, replacement, and
+  supersession evidence, but do not semantically re-review terminal history unless an integrity
+  problem or an explicit user request points to it.
+- A narrower request (one ID, active todos only, backlog only, a group, or an explicit ID range)
+  limits the semantic review to that scope while retaining terminal todos as supporting evidence.
+- A whole-repository request continues through all required batches automatically. Do not stop to
+  ask the user to request each next batch; ask for approval only after presenting the consolidated
+  recommendations, unless missing information genuinely blocks the review.
+
+## Inventory and batching
+
+Before reviewing code, build one stable inventory from the resolved configuration:
+
+1. Directly list active files in `{root}` and files in `{backlog}`, `{complete}`, and `{cancelled}`.
+   Follow the config discovery and `gitignored` rules in SKILL.md; never infer absence from an empty
+   workspace search result.
+2. Record each todo's ID, status, priority, path, dependencies, and `superseded_by` value.
+3. Sort the semantic-review queue by numeric issue ID. Freeze that ordered ID manifest for the run
+   so moves or newly created todos do not cause skipped or duplicate reviews.
+4. Run the deterministic checks below across the complete inventory before semantic batches begin.
+
+Review the full queue in one pass when context permits. If focused code evidence for every todo
+would exceed the available context, split the frozen manifest into the largest practical contiguous
+batches. Batch boundaries are an execution detail, not a user burden.
+
+After each batch, retain a compact checkpoint:
+
+```text
+Scope: all non-terminal todos
+Manifest: [028, 029, 030, 031, 032]
+Reviewed: [028, 029]
+Remaining: [030, 031, 032]
+Recommendations: complete=[...]; cancelled/superseded=[...]; unchanged=[...]; investigate=[...]
+```
+
+The next batch must use `Remaining` from the checkpoint rather than rediscovering files. At the end,
+verify that `Reviewed` and `Remaining` partition the original manifest, `Remaining` is empty, and
+each manifest ID was reviewed exactly once. Then merge the batch findings into one report grouped
+by outcome, with one subsection per todo:
+
+- Recommend `complete`
+- Recommend `cancelled` / superseded
+- Keep current status
+- Needs investigation
+
+Do not create an `archive` status or folder. In this workflow, "archive old todos" means reconciling
+stale non-terminal records and proposing the existing `complete` or `cancelled` lifecycle transition.
 
 ## Pass 1 — Deterministic integrity checks (no model required)
 
@@ -81,6 +139,10 @@ Then evaluate:
 - Is the Resume Context `Current state` / `Next step` still accurate?
 - Is any wording now stale relative to current naming, APIs, or architecture?
 
+For a supersession recommendation, identify the replacement todo, implementation, or decision that
+made the older todo obsolete. When another todo is the replacement, recommend both the cancellation
+banner and `superseded_by: "NNN"`; never infer that relationship from age or title similarity alone.
+
 ## Presenting recommendations
 
 Present findings as a concise report grouped by todo. For each recommendation, use a structured
@@ -115,20 +177,24 @@ Example:
 - **What**: All acceptance criteria satisfied; implementation verified.
 - **Evidence**:
   - src/todos/todoTreeProvider.ts:49-74 — DependencyNode type and rendering implemented
-  - src/test/todoModel.test.ts:615 — Regression coverage added
+  - src/test/todoModel.test.ts:615 — Regression coverage passes
+  - Manual extension-host verification — dependency nodes render and navigate correctly
 - **Acceptance criteria**: 5/5 satisfied
-- **Missing verification**: runtime behavior in VS Code not manually confirmed
+- **Missing verification**: None
 - **Action**: approve status change to complete
 
 ### 032 · Todo templates — pending (confidence: medium)
 - **What**: Resume Context `Next step` references a completed prerequisite; update to reflect current state.
 - **Evidence**:
-  - docs/todos/031-backlog-p3-archive-old-todos.md — Status is `complete`; 032 lists it as a pending dependency
+  - {complete}/031-complete-p3-prerequisite.md — Status is `complete`; 032 lists it as a pending dependency
 - **Recommended edit**: Update Resume Context `Next step` from "wait for 031" to "begin template design"
 - **Action**: approve wording update
 ```
 
 Ask the user to approve each change. Apply only what is approved, using the Agendo lifecycle.
+
+For a batched whole-repository review, present this report once after all batches are complete. Do
+not ask for approval batch by batch unless the user explicitly requests incremental application.
 
 If evidence is insufficient, say so plainly rather than guessing — list what is missing instead of
 inventing a conclusion.

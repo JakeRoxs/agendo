@@ -56,6 +56,21 @@ relative to the codebase. It runs deterministic integrity checks, gathers focuse
 proposes status or wording updates for you to approve — it never moves a file or rewrites history
 on its own, and it reserves `complete` for verified acceptance criteria.
 
+Invoke the skill to review the entire todo repository with one command:
+
+```text
+/agendo review all todos
+```
+
+If the agent host does not expose installed skills as slash commands, explicitly select or invoke
+the Agendo skill and pass `review all todos`.
+
+The skill inventories every configured state folder and reviews all non-terminal todos, including
+the backlog. When the repository is too large for one focused pass, it automatically continues in
+stable issue-ID batches, tracks reviewed and remaining IDs, and returns one consolidated report for
+approval. It uses the existing `complete` and `cancelled` states rather than creating a separate
+archive folder.
+
 ## Features
 
 - Tree view grouped by status, priority, and optional task group

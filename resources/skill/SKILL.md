@@ -61,7 +61,7 @@ Example of a config with a single non-default setting:
 
 ```json
 {
-  "gitignored": true
+  "gitignored": false
 }
 ```
 
@@ -90,8 +90,8 @@ After resolving configuration, use these placeholders throughout this skill:
 - **`{skill_dir}`** — directory containing this `SKILL.md` file.
 
 Examples below use placeholders rather than shell variables. Replace them with resolved paths
-before running a command. `{file}` means the current todo filename stem; it is not shell brace
-expansion.
+before running a command. `{file}` means the current todo filename stem and `{issue_id}` means its
+three-digit ID; neither is shell brace expansion.
 
 ## File Naming Convention
 
@@ -228,7 +228,9 @@ placement together.
    - Add initial Work Log entry
    - Add Findings, Proposed Solutions, and Recommended Action when investigation or triage warrants
      them
-4. Determine status: `pending` (needs triage) or `ready` (pre-approved)
+4. Determine status: `pending` (needs triage) or `ready` (explicitly pre-approved). When creating a
+   `ready` todo, use `ready` in both the destination filename and frontmatter from the outset; do not
+   create a `pending` filename with `status: ready`.
 5. Add relevant tags for filtering
 6. If an external issue or work item was provided, add its identifier as the optional `key` field.
 7. **Verify the chosen ID is unique** before writing: confirm no existing file in `{root}` or any
@@ -428,7 +430,7 @@ is confirmed done and functional.
 2. **Move the file first, before editing its contents**: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-complete-{pri}-{desc}.md"`
 3. Edit only the file at its new `{complete}` path: set frontmatter `status: ready` →
    `status: complete` and add the final Work Log entry.
-4. Check for newly unblocked active work: `grep -l 'dependencies:.*"002"' "{root}"/*-{pending,in-progress,ready}-*.md`
+4. Check for newly unblocked active work: `grep -l 'dependencies:.*"{issue_id}"' "{root}"/*-{pending,in-progress,ready}-*.md`
 
 Do not commit, push, or create a pull request unless the user explicitly requests it.
 
@@ -548,11 +550,15 @@ grep -R "payment" "{root}"
 
 ## Reconciling / Auditing Todos
 
-When asked to reconcile, audit, or "clean up" todos — that is, check whether they are still
-accurate against the current codebase — follow the procedure in
+When this skill is explicitly invoked to reconcile, audit, or "clean up" todos — that is, check
+whether they are still accurate against the current codebase — follow the procedure in
 [reconcile.md](./reconcile.md). It covers deterministic integrity checks, focused evidence
 gathering, and an advisory review that proposes changes for user approval without silently
-rewriting history.
+rewriting history. Because automatic model invocation is disabled for this skill, invoke
+`/agendo review all todos` in hosts that expose user-invocable skills. In other compatible hosts,
+explicitly select or invoke the Agendo skill and pass `review all todos`. Once invoked, an unscoped
+reconciliation reviews every non-terminal todo, automatically continues in stable ID-ordered
+batches when needed, and presents one consolidated report for approval.
 
 ## Key Distinctions
 

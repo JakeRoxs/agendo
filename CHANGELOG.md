@@ -18,6 +18,9 @@ All notable changes to the Agendo extension are documented here.
   frontmatter fields for consistency with other bundled skills
 - Reconciliation skill now includes a multi-type recommendation example (status change and
   wording update) and the todo template marks optional sections with inline removal guidance
+- Once explicitly invoked, an unscoped reconciliation request now reviews all non-terminal todos,
+  automatically continues through stable issue-ID batches when needed, and consolidates completion,
+  supersession, unchanged, and investigation recommendations for approval
 
 ## [0.1.12]
 

@@ -1,7 +1,7 @@
 {
   "name": "agendo",
   "source": "compound-engineering",
-  "description": "This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory.",
+  "description": "Manage Agendo file-based todos, including lifecycle, dependencies, triage, work logs, and repository reconciliation.",
   "description_ja": "Agendo",
   "categories": [],
   "version": "1.4.4",
