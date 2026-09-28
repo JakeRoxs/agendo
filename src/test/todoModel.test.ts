@@ -308,6 +308,46 @@ suite("todoModel", () => {
     }
   });
 
+  test("config projection is skipped for unused todo roots", async () => {
+    const service = new ConfigService();
+    const rootUri = vscode.Uri.file(
+      path.join(os.tmpdir(), "agendo-config-tests-unused", "docs", "todos"),
+    );
+    Object.defineProperty(service, "getRootUri", { value: () => rootUri });
+
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => {
+          if (key === Settings.GitignoreTodos) return true;
+          if (key === Settings.BacklogFolder) return "parked";
+          return undefined;
+        },
+        update: async () => undefined,
+      }),
+      configurable: true,
+    });
+
+    try {
+      await fs.rm(path.dirname(path.dirname(rootUri.fsPath)), { recursive: true, force: true });
+      await service.writeConfigFile();
+      await service.applyGitignore();
+
+      let rootExists = true;
+      try {
+        await vscode.workspace.fs.stat(rootUri);
+      } catch {
+        rootExists = false;
+      }
+      assert.strictEqual(rootExists, false);
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+    }
+  });
+
   test("config file projection writes only fields that differ from defaults", async () => {
     const service = new ConfigService();
     const rootUri = vscode.Uri.file(
@@ -330,7 +370,7 @@ suite("todoModel", () => {
 
     try {
       await vscode.workspace.fs.createDirectory(rootUri);
-      await service.writeConfigFile();
+      await service.writeConfigFile({ force: true });
 
       const bytes = await vscode.workspace.fs.readFile(
         vscode.Uri.joinPath(rootUri, ".agendo-config.json"),
@@ -1034,7 +1074,7 @@ suite("todoModel", () => {
       path.join(workspaceRoot.fsPath, "docs", "todos", "backlog"),
     );
 
-    await service.applyGitignore();
+    await service.applyGitignore({ force: true });
     const gitignoreUri = vscode.Uri.joinPath(rootUri ?? workspaceRoot, ".gitignore");
     const content = Buffer.from(await vscode.workspace.fs.readFile(gitignoreUri)).toString("utf8");
     assert.strictEqual(content, "*\n!.gitignore\n!.agendo-config.json\n");

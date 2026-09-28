@@ -29,6 +29,10 @@ export interface TodosConfig {
   completeFolder?: string;
 }
 
+interface ProjectionOptions {
+  force?: boolean;
+}
+
 /**
  * How a todo should be opened:
  * - `default` — VS Code's own default behavior (respects editor associations).
@@ -60,6 +64,8 @@ export function viewModeLabel(mode: ViewMode): string {
  * The viewType for VS Code's integrated markdown editor preview.
  */
 const PREVIEW_EDITOR_VIEW_TYPE = "vscode.markdown.preview.editor";
+const TODO_FILE_PATTERN =
+  /^\d{3}-(pending|in-progress|ready|backlogged|complete|cancelled)-p[123]-[^/]+\.md$/;
 
 /**
  * Bridges VS Code settings and the on-disk `.agendo-config.json` projection that
@@ -195,19 +201,66 @@ export class ConfigService {
     return config;
   }
 
+  private async exists(uri: vscode.Uri): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch (error) {
+      if (error instanceof vscode.FileSystemError && error.code === "FileNotFound") {
+        return false;
+      }
+      throw error;
+    }
+  }
+
+  private async hasTodoFiles(rootUri: vscode.Uri): Promise<boolean> {
+    const subfolders = ["", this.completeFolder, this.cancelledFolder, this.backlogFolder];
+    for (const subfolder of subfolders) {
+      const uri = subfolder ? vscode.Uri.joinPath(rootUri, subfolder) : rootUri;
+      let entries: [string, vscode.FileType][];
+      try {
+        entries = await vscode.workspace.fs.readDirectory(uri);
+      } catch (error) {
+        if (error instanceof vscode.FileSystemError && error.code === "FileNotFound") {
+          continue;
+        }
+        throw error;
+      }
+      if (
+        entries.some(
+          ([name, type]) => type === vscode.FileType.File && TODO_FILE_PATTERN.test(name),
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private async shouldWriteProjection(rootUri: vscode.Uri): Promise<boolean> {
+    return (
+      (await this.exists(vscode.Uri.joinPath(rootUri, ".agendo-config.json"))) ||
+      (await this.exists(vscode.Uri.joinPath(rootUri, ".gitignore"))) ||
+      (await this.hasTodoFiles(rootUri))
+    );
+  }
+
   /**
    * Keep `.agendo-config.json` in the root folder in sync with the active
    * configuration so the skill can choose a file-discovery strategy. The file
    * is removed when every setting is at its default — the skill falls back to
    * the same defaults when the file is absent.
    */
-  async writeConfigFile(): Promise<void> {
+  async writeConfigFile(options: ProjectionOptions = {}): Promise<void> {
     const rootUri = this.getRootUri();
     if (!rootUri) {
       return;
     }
     const target = vscode.Uri.joinPath(rootUri, ".agendo-config.json");
     try {
+      if (!options.force && !(await this.shouldWriteProjection(rootUri))) {
+        return;
+      }
       const config = this.toTodosConfig();
       if (Object.keys(config).length === 0) {
         await vscode.workspace.fs.delete(target);
@@ -231,13 +284,16 @@ export class ConfigService {
    * gitignoreTodos setting. Uses a blanket ignore with selective un-ignores
    * for essential content only.
    */
-  async applyGitignore(): Promise<void> {
+  async applyGitignore(options: ProjectionOptions = {}): Promise<void> {
     const rootUri = this.getRootUri();
     if (!rootUri) {
       return;
     }
     const gitignoreUri = vscode.Uri.joinPath(rootUri, ".gitignore");
     try {
+      if (!options.force && !(await this.shouldWriteProjection(rootUri))) {
+        return;
+      }
       if (this.gitignored) {
         await vscode.workspace.fs.createDirectory(rootUri);
         // Ignore everything except the .gitignore itself and the config

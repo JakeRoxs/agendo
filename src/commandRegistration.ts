@@ -739,7 +739,10 @@ TODO
   const fileUri = vscode.Uri.joinPath(rootUri, fileName);
 
   try {
+    await vscode.workspace.fs.createDirectory(rootUri);
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
+    await config.writeConfigFile?.({ force: true });
+    await config.applyGitignore?.({ force: true });
     repository.refresh();
     vscode.window.showInformationMessage(
       `Created todo ${newId} from ${parsed.externalKey ?? url}.`,
@@ -799,6 +802,8 @@ export async function createTodo(
     async () => {
       await vscode.workspace.fs.createDirectory(rootUri);
       await vscode.workspace.fs.writeFile(target, Buffer.from(content, "utf8"));
+      await config.writeConfigFile?.({ force: true });
+      await config.applyGitignore?.({ force: true });
       await repository.refresh();
     },
     "agendo.creatingTodo",

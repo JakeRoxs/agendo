@@ -48,19 +48,12 @@ These checks catch structural problems and run entirely on file contents and fol
 - **Structure**
   - Required core sections are present: Problem Statement, Acceptance Criteria, Resume Context,
     Work Log.
-  - Non-trivial todos (title length > 10 chars or body length > 100 chars) should have Resume Context.
+  - Todos with substantive work should have Resume Context; skip only for trivial, self-evident items.
 - **Cancelled hygiene**
   - `cancelled` todos carry the `cancelled` tag and the `> **CANCELLED**` (or
     `> **CANCELLED / SUPERSEDED by [NNN]**`) banner under the title.
   - `superseded_by` frontmatter, when present, points to a real todo.
   - Orphaned `superseded_by` references are flagged (the referenced todo does not exist).
-- **Dependency consistency**
-  - Every ID in `dependencies:` points to a real todo that exists.
-  - A todo with dependencies is correctly flagged as blocked when any dependency is not yet
-    terminal (`complete` or `cancelled`).
-  - If a dependency is `cancelled`, flag it: the dependency will not be delivered, so dependent work
-    must be reassessed rather than left mechanically blocked.
-  - Todos with incomplete dependencies should show a blocked indicator in their description.
 - **Tag hygiene**
   - Tags are kebab-case (lowercase, hyphens, no spaces).
   - No duplicate tags within a single todo.
@@ -126,6 +119,13 @@ Example:
 - **Acceptance criteria**: 5/5 satisfied
 - **Missing verification**: runtime behavior in VS Code not manually confirmed
 - **Action**: approve status change to complete
+
+### 032 · Todo templates — pending (confidence: medium)
+- **What**: Resume Context `Next step` references a completed prerequisite; update to reflect current state.
+- **Evidence**:
+  - docs/todos/031-backlog-p3-archive-old-todos.md — Status is `complete`; 032 lists it as a pending dependency
+- **Recommended edit**: Update Resume Context `Next step` from "wait for 031" to "begin template design"
+- **Action**: approve wording update
 ```
 
 Ask the user to approve each change. Apply only what is approved, using the Agendo lifecycle.

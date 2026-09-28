@@ -1,8 +1,11 @@
 ---
 name: agendo
 description: This skill should be used when managing the file-based todo tracking system in the docs/todos/ directory. It provides workflows for creating todos, managing status and dependencies, conducting triage, reconciling/auditing todos against the current codebase, and integrating with slash commands and code review processes.
+argument-hint: "[todo operation]"
+category: tracking
+user-invocable: true
 disable-model-invocation: true
-version: 1.4.3
+version: 1.4.4
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -216,7 +219,7 @@ placement together.
       the real todos root — use it (or confirm with the user) instead of starting a new series.
       Never start at `001` when higher IDs already exist elsewhere in the workspace.
    - GNU/Linux Bash: `find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
-   - PowerShell: `(Get-ChildItem "{root}" -Recurse -Filter *.md | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
+    - PowerShell: `$files = @(); Get-ChildItem "{root}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; Get-ChildItem "{backlog}", "{complete}", "{cancelled}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; ($files | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
 2. Copy the template from the skill directory: `cp "{skill_dir}/assets/todo-template.md" "{root}/{NEXT_ID}-pending-{priority}-{description}.md"`
 3. Edit and fill the core sections:
    - Problem Statement

@@ -2,6 +2,23 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.13]
+
+### Fixed
+
+- Agendo no longer creates the todos root, `.agendo-config.json`, or `.gitignore` merely because
+  the extension was activated or its settings changed. These files are initialized when the first
+  todo is created or imported, while existing Agendo projects continue to receive config updates
+
+### Changed
+
+- Bumped bundled Agendo skill to version 1.4.4 — removed duplicate dependency-check section from
+  reconciliation workflow, replaced arbitrary length thresholds with qualitative guidance, fixed
+  PowerShell ID-detection command to avoid recursive directory traversal, and added missing skill
+  frontmatter fields for consistency with other bundled skills
+- Reconciliation skill now includes a multi-type recommendation example (status change and
+  wording update) and the todo template marks optional sections with inline removal guidance
+
 ## [0.1.12]
 
 ### Fixed

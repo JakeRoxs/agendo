@@ -14,14 +14,17 @@ Concise summary of the work.
 
 Describe what is broken, missing, or worth improving and why it matters.
 
+<!-- Optional: remove this section if no investigation is needed -->
+
 ## Findings
 
-Record verified investigation results, root cause, and relevant file references. Remove this section
-when no investigation is needed.
+Record verified investigation results, root cause, and relevant file references.
+
+<!-- Optional: remove this section for straightforward work -->
 
 ## Proposed Solutions
 
-Include only meaningfully different options. Remove this section for straightforward work.
+Include only meaningfully different options.
 
 ### Option 1: Solution Name
 
@@ -54,15 +57,17 @@ Include only meaningfully different options. Remove this section for straightfor
 State the selected approach and concrete implementation plan. Leave blank until triage when a
 decision is still pending.
 
+<!-- Optional: remove this section when unnecessary -->
+
 ## Technical Details
 
-List affected files, related components, data changes, or architectural constraints. Remove this
-section when unnecessary.
+List affected files, related components, data changes, or architectural constraints.
+
+<!-- Optional: remove this section when there are no resources -->
 
 ## Resources
 
-Add links to issues, pull requests, errors, documentation, or prior art. Remove this section when
-there are no resources.
+Add links to issues, pull requests, errors, documentation, or prior art.
 
 ## Acceptance Criteria
 
@@ -95,7 +100,8 @@ Keep this section short and current. It should describe where work stands now, n
 
 ---
 
+<!-- Optional: remove this section when unnecessary -->
+
 ## Notes
 
 Add context or decisions not captured elsewhere. Keep blockers in frontmatter `dependencies`.
-Remove this section when unnecessary.
