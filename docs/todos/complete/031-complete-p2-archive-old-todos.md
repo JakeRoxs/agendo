@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "031"
 tags: [vscode, extension, automation, cleanup]
@@ -150,14 +150,12 @@ existing move-before-edit lifecycle rules.
 
 ## Resume Context
 
-**Current state:** Whole-repository scope, stable ID-ordered batching, exactly-once checkpoints, and
-consolidated approval reporting are implemented and validated. README and changelog updates are
-complete, the unreleased bundled skill remains at version 1.4.4, and the todo is ready for runtime
-confirmation.
+**Current state:** Whole-repository reconciliation, stable ID-ordered batching, exactly-once
+checkpoints, and consolidated approval reporting are implemented, validated, and confirmed working
+in an agent host. The unreleased bundled skill remains at version 1.4.4.
 
-**Next step:** Install or update the bundled skill in an agent host, run
-`/agendo review all todos`, and confirm it reviews the complete non-terminal manifest before
-presenting one approval report.
+**Next step:** None. Revisit only if real-world use exposes missed todos, duplicate batch processing,
+or unclear recommendations.
 
 ## Work Log
 
@@ -254,3 +252,18 @@ presenting one approval report.
   approval-gated
 - Prettier reports existing Markdown style differences across the skill, template, and README;
   avoiding a full-file reformat keeps this refinement patch focused
+
+### 2026-09-28 - Runtime Confirmed and Completed
+
+**By:** User and Kilo Code
+
+**Actions:**
+
+- Recorded the user's confirmation that the repository-wide reconciliation workflow worked well
+- Moved todo 031 from `ready` to `complete`
+- Updated the final Resume Context to reflect verified completion
+
+**Learnings:**
+
+- The explicit skill invocation and automatic batching workflow are effective enough for the
+  current release
