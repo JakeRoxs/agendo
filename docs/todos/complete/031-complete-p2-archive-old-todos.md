@@ -234,8 +234,7 @@ or unclear recommendations.
 
 **Actions:**
 
-- Clarified that reconciliation uses `/agendo review all todos` because automatic model invocation
-  is disabled, with explicit skill selection as the host-agnostic fallback
+- Clarified the reconciliation trigger as an unscoped "review all todos" request
 - Corrected the config example so it contains an actual non-default value
 - Clarified creation-time filename/frontmatter synchronization and the completion dependency query
 - Reconciled completion and cancellation safety rules with stale-work and supersession detection
@@ -262,6 +261,8 @@ or unclear recommendations.
 - Recorded the user's confirmation that the repository-wide reconciliation workflow worked well
 - Moved todo 031 from `ready` to `complete`
 - Updated the final Resume Context to reflect verified completion
+- Enabled automatic model invocation for the skill (removed `disable-model-invocation`)
+- Bumped the bundled skill to version 1.4.5 for the upcoming 0.1.14 extension release
 
 **Learnings:**
 

@@ -32,9 +32,9 @@ move-before-edit rule. Resolve the `.agendo-config.json` file first, exactly as 
 
 ## Scope and default behavior
 
-Once the Agendo skill has been explicitly invoked, treat an unscoped request such as "reconcile my
-todos," "review all todos," or "clean up my todos" as a request to review the **whole todo
-repository**. The user should not need to name every todo or repeatedly request the next batch.
+Treat an unscoped request such as "reconcile my todos," "review all todos," or "clean up my todos"
+as a request to review the **whole todo repository**. The user should not need to name every todo
+or repeatedly request the next batch.
 
 - Fully review every non-terminal todo: `pending`, `in-progress`, `ready`, and `backlogged`.
 - Inventory `complete` and `cancelled` todos so they can provide dependency, replacement, and

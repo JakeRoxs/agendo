@@ -3,7 +3,7 @@
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Version](https://img.shields.io/badge/version-0.1.13-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.4.4-orange.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.4.5-orange.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
@@ -56,14 +56,17 @@ relative to the codebase. It runs deterministic integrity checks, gathers focuse
 proposes status or wording updates for you to approve — it never moves a file or rewrites history
 on its own, and it reserves `complete` for verified acceptance criteria.
 
-Invoke the skill to review the entire todo repository with one command:
+Ask an agent with the Agendo skill to review the entire todo repository with one prompt:
+
+```text
+Use the Agendo skill to review all todos and identify work that is already complete or superseded.
+```
+
+Or invoke the skill directly if your agent host exposes user-invocable skills:
 
 ```text
 /agendo review all todos
 ```
-
-If the agent host does not expose installed skills as slash commands, explicitly select or invoke
-the Agendo skill and pass `review all todos`.
 
 The skill inventories every configured state folder and reviews all non-terminal todos, including
 the backlog. When the repository is too large for one focused pass, it automatically continues in

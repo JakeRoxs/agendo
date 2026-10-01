@@ -4,8 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-disable-model-invocation: true
-version: 1.4.4
+version: 1.4.5
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -550,14 +549,12 @@ grep -R "payment" "{root}"
 
 ## Reconciling / Auditing Todos
 
-When this skill is explicitly invoked to reconcile, audit, or "clean up" todos — that is, check
-whether they are still accurate against the current codebase — follow the procedure in
+When asked to reconcile, audit, or "clean up" todos — that is, check whether they are still
+accurate against the current codebase — follow the procedure in
 [reconcile.md](./reconcile.md). It covers deterministic integrity checks, focused evidence
 gathering, and an advisory review that proposes changes for user approval without silently
-rewriting history. Because automatic model invocation is disabled for this skill, invoke
-`/agendo review all todos` in hosts that expose user-invocable skills. In other compatible hosts,
-explicitly select or invoke the Agendo skill and pass `review all todos`. Once invoked, an unscoped
-reconciliation reviews every non-terminal todo, automatically continues in stable ID-ordered
+rewriting history. An unscoped request such as "review all todos" triggers a whole-repository
+reconciliation that reviews every non-terminal todo, automatically continues in stable ID-ordered
 batches when needed, and presents one consolidated report for approval.
 
 ## Key Distinctions

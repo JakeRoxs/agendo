@@ -2,6 +2,13 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.14]
+
+### Changed
+
+- Bumped bundled Agendo skill to version 1.4.5 — enabled automatic model invocation so agents can
+  discover and invoke the skill without manual selection
+
 ## [0.1.13]
 
 ### Fixed
@@ -21,6 +28,8 @@ All notable changes to the Agendo extension are documented here.
 - Once explicitly invoked, an unscoped reconciliation request now reviews all non-terminal todos,
   automatically continues through stable issue-ID batches when needed, and consolidates completion,
   supersession, unchanged, and investigation recommendations for approval
+- Enabled automatic model invocation for the Agendo skill so it can be discovered and invoked by
+  agents when managing or reconciling todos
 
 ## [0.1.12]
 
