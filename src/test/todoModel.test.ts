@@ -1195,6 +1195,7 @@ suite("todoModel", () => {
     );
     await fs.writeFile(path.join(skillDir, "SKILL.md"), "# bundled skill");
     await fs.writeFile(path.join(skillDir, "reconcile.md"), "# reconcile");
+    await fs.writeFile(path.join(skillDir, "subagent-workflow.md"), "# subagent workflow");
     await fs.writeFile(path.join(skillDir, "assets", "todo-template.md"), "# template");
 
     const originalHome = process.env.HOME;
@@ -1237,7 +1238,7 @@ suite("todoModel", () => {
     const updateItem = provider.getTreeItem(updateNode);
     assert.strictEqual(updateItem.label, "Skill v1.1.0");
     assert.strictEqual(updateItem.description, "v1.2.0 available");
-    assert.strictEqual(updateItem.command?.command, Command.EnableSkill);
+    assert.strictEqual(updateItem.command?.command, Command.UpdateSkill);
 
     const viewModeItem = provider.getTreeItem(viewModeNode);
     assert.strictEqual(viewModeItem.label, "View");
