@@ -6,7 +6,13 @@ import { out } from "../output";
 import { readText } from "./fileSystem";
 
 /** Relative files that make up the bundled skill. */
-const SKILL_FILES = [".skill-meta.json", "SKILL.md", "reconcile.md", "subagent-workflow.md", "assets/todo-template.md"];
+const SKILL_FILES = [
+  ".skill-meta.json",
+  "SKILL.md",
+  "reconcile.md",
+  "subagent-workflow.md",
+  "assets/todo-template.md",
+];
 
 /** Result of comparing the bundled skill against the installed one. */
 export interface SkillStatus {
