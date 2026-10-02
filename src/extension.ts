@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
-import { Settings } from "./configuration";
+import { Command } from "./commands";
+import { get, Settings } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
 import { ConfigService } from "./todos/configService";
@@ -103,6 +104,25 @@ export async function activate(context: vscode.ExtensionContext) {
   await updateFilterContexts(filter);
   repository.startWatching();
   await repository.refresh();
+
+  // Auto-check for skill updates if enabled
+  if (get(Settings.SkillUpdateCheck)) {
+    try {
+      const skillStatus = await skill.getStatus();
+      if (skillStatus.updateAvailable) {
+        const updateButton = "Update Skill";
+        const result = await vscode.window.showInformationMessage(
+          `Agendo skill update available: v${skillStatus.installedVersion} → v${skillStatus.bundledVersion}`,
+          updateButton,
+        );
+        if (result === updateButton) {
+          vscode.commands.executeCommand(Command.EnableSkill);
+        }
+      }
+    } catch {
+      // Non-critical: don't block activation on update check failures
+    }
+  }
 }
 
 export function deactivate() {

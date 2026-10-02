@@ -2,6 +2,21 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.15]
+
+### Added
+
+- Automatic skill update check on extension activation — when enabled, Agendo checks for a newer
+  skill version at startup and shows a notification with an "Update Skill" button if one is
+  available
+- `agendo.skillUpdateCheck` setting (default `true`) — toggle automatic skill update checks in
+  user settings
+- "Toggle Agendo Skill Update Check" command in the skill status view menu and command palette
+
+### Changed
+
+- Skill status icon now uses `sync` icon when an update is available (previously `cloud-download`)
+
 ## [0.1.14]
 
 ### Added

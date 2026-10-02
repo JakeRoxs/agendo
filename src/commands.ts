@@ -34,6 +34,7 @@ export enum Command {
   SetDefaultPreview = "agendo.setDefault.preview",
   EnableSkill = "agendo.enableSkill",
   UpdateSkill = "agendo.updateSkill",
+  ToggleSkillUpdateCheck = "agendo.toggleSkillUpdateCheck",
   EnableSkillLoading = "agendo.enableSkill.loading",
   UpdateSkillLoading = "agendo.updateSkill.loading",
   CollapseNode = "agendo.collapseNode",

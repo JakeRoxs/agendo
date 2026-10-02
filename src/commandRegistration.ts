@@ -494,6 +494,17 @@ function registerSkillCommands(
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }
   });
+  register(Command.ToggleSkillUpdateCheck, async () => {
+    const config = vscode.workspace.getConfiguration(Settings.Identifier);
+    const enabled = config.get<boolean>(Settings.SkillUpdateCheck, true);
+    const newEnabled = !enabled;
+    await config.update(Settings.SkillUpdateCheck, newEnabled, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(
+      newEnabled
+        ? "Agendo skill update check enabled. Will notify on activation when a newer skill version is available."
+        : "Agendo skill update check disabled.",
+    );
+  });
 }
 
 function registerTreeCommands(register: Register, services: CommandServices): void {

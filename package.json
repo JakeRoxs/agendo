@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -253,6 +253,12 @@
         "icon": "$(sync~spin)"
       },
       {
+        "command": "agendo.toggleSkillUpdateCheck",
+        "title": "Toggle Agendo Skill Update Check",
+        "category": "Agendo",
+        "icon": "$(bell)"
+      },
+      {
         "command": "agendo.collapseNode",
         "title": "Collapse",
         "category": "Agendo"
@@ -374,6 +380,11 @@
           "command": "agendo.updateSkill.loading",
           "when": "view == agendo.skillStatus && agendo.skillUpdating",
           "group": "skill@2"
+        },
+        {
+          "command": "agendo.toggleSkillUpdateCheck",
+          "when": "view == agendo.skillStatus",
+          "group": "skill@3"
         }
       ],
       "view/item/context": [
@@ -514,6 +525,11 @@
           "type": "boolean",
           "default": false,
           "description": "When enabled, blocked todos appear as collapsible dependency nodes under their blockers in the tree view instead of in their priority group."
+        },
+        "agendo.skillUpdateCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, automatically check for Agendo skill updates on extension activation and notify when a newer version is available."
         }
       }
     }

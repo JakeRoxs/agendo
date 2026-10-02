@@ -17,6 +17,7 @@ export enum Settings {
   ViewMode = "viewMode",
   GitignoreTodos = "gitignoreTodos",
   SkillUpdateSource = "skillUpdateSource",
+  SkillUpdateCheck = "skillUpdateCheck",
   ShowDependencyNodes = "showDependencyNodes",
 }
 

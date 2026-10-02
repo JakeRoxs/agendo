@@ -58,8 +58,8 @@ export class SkillStatusTreeProvider implements vscode.TreeDataProvider<SkillSta
     if (status.updateAvailable) {
       const item = new vscode.TreeItem(`Skill v${status.installedVersion ?? "?"}${versionLabel}`);
       item.description = `v${status.bundledVersion ?? "?"} available`;
-      item.iconPath = new vscode.ThemeIcon("cloud-download");
-      item.tooltip = "Select to update the Agendo skill from source.";
+      item.iconPath = new vscode.ThemeIcon("sync");
+      item.tooltip = "Update available. Select to update the Agendo skill from source.";
       item.command = {
         command: status.installed ? Command.UpdateSkill : Command.EnableSkill,
         title: "Update Agendo Skill",
