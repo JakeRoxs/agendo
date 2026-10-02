@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.4.5
+version: 1.4.6
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -31,9 +31,8 @@ its settings so this skill can honor the user's chosen configuration.
 
 **Always locate the config with direct filesystem reads, never with workspace search or glob.**
 The todos root is gitignored by default, and search indexes and glob tools exclude ignored
-files — a search that finds nothing proves only that search cannot see the file, not that the
-file is absent. Check candidate locations by reading the file directly from disk
-(`Read` tool, `cat`, `Get-Content`), in this order:
+files. Check candidate locations by reading the file directly (`Read` tool, `cat`,
+`Get-Content`), in this order:
 
 1. `docs/todos/.agendo-config.json` (the default root)
 2. The root named by the workspace's `agendo.root` setting (e.g. in `.vscode/settings.json`) —
@@ -68,10 +67,8 @@ Honor it as follows:
 
 - **`root`** — use this as the base path for every operation below instead of the default `docs/todos`.
 - **`gitignored`** — pick a file-discovery strategy:
-  - `false` (folder is tracked): workspace glob/search is safe (still avoid the `**/` pitfall below).
-  - `true` (folder is git-ignored): **do not rely on workspace glob/search** — ignored files are
-    often excluded from results. List the directory directly instead
-    (`list_dir`, `Get-ChildItem`, `ls`, `find`).
+  - `false` (folder is tracked): workspace glob/search is safe.
+  - `true` (folder is git-ignored): list the directory directly (`list_dir`, `Get-ChildItem`, `ls`, `find`) — search indexes exclude ignored files.
 - **`backlogFolder` / `cancelledFolder` / `completeFolder`** — use these subfolder names for the
   corresponding terminal/parked states.
 
@@ -236,22 +233,13 @@ placement together.
    configured state subfolder starts with that number. If a collision is found, bump to the next
    free number and keep both the filename prefix and `issue_id` frontmatter in sync.
 
-**When to create a todo:**
+**Todo vs. immediate action:**
 
-- Requires more than 15-20 minutes of work
-- Needs research, planning, or multiple approaches considered
-- Has dependencies on other work
-- Requires explicit approval or prioritization
-- Part of larger feature or refactor
-- Technical debt needing documentation
+Create a todo when work exceeds ~15 minutes, requires research or planning, has dependencies,
+needs approval/prioritization, is part of a larger feature, or documents technical debt.
 
-**When to act immediately instead:**
-
-- Issue is trivial (< 15 minutes)
-- Complete context available now
-- No planning needed
-- User explicitly requests immediate action
-- Simple bug fix with obvious solution
+Act immediately instead for trivial fixes (<15 min) with complete context, no planning needed,
+and an obvious solution — or when the user explicitly requests immediate action.
 
 ### Triaging Pending Items
 
@@ -375,12 +363,7 @@ blocked.
 - Key insights for future work
 ```
 
-Work logs serve as:
-
-- Historical record of investigation
-- Documentation of approaches attempted
-- Durable context across personal work sessions and agents
-- Context for future similar work
+Work logs provide historical record, durable context across sessions/agents, and reference for future similar work.
 
 ### Resuming and Pausing Work
 
@@ -433,11 +416,7 @@ is confirmed done and functional.
 
 Do not commit, push, or create a pull request unless the user explicitly requests it.
 
-> **Order matters — move before you edit.** In editors that stage AI edits for accept/reject (e.g.
-> VS Code Copilot "Keep/Accept Changes"), editing and then moving can re-materialize the original
-> file when the edit is accepted. Always move first and edit only the destination. If a stale copy
-> appears, treat the moved copy as authoritative, preserve any unique changes, and remove the stale
-> original.
+> Remember: **move before edit** for every lifecycle transition (see [Triaging Pending Items](#triaging-pending-items)).
 
 ## Active vs. Terminal Status Rules
 
@@ -452,17 +431,9 @@ When answering "what's next", counting work, or picking up new tasks:
 
 ## Integration with Development Workflows
 
-The commands in this section are optional integrations from a broader agent environment, not VS
-Code commands provided by the Agendo extension. Use them only when they are actually available;
-otherwise perform the documented file operations directly.
-
-| Trigger     | Flow                                               | Tool                 |
-| ----------- | -------------------------------------------------- | -------------------- |
-| Code review | `/workflows:review` → Findings → `/triage` → Todos | Review agent + skill |
-| PR comments | `/resolve_pr_parallel` → Individual fixes → Todos  | gh CLI + skill       |
-| Code TODOs  | `/resolve_todo_parallel` → Fixes + Complex todos   | Agent + skill        |
-| Planning    | Brainstorm → Create todo → Work → Complete         | Skill                |
-| Feedback    | Discussion → Create todo → Triage → Work           | Skill + slash        |
+Optional host integrations (code review → triage → todos, PR comment resolution, planning) use the
+same file operations documented above. Use `/triage` and similar slash commands only when installed
+in the host environment.
 
 ## Quick Reference Commands
 
@@ -496,43 +467,11 @@ done
 
 ## Agendo sub-agent workflow (runSubagent)
 
-This section applies only when the host supports `runSubagent` and has an `agendo` sub-agent
-installed. These are internal agent handoffs, not CLI or extension commands. When unavailable, use
-the file workflows above.
+When the host supports `runSubagent` with an `agendo` sub-agent installed, see
+[subagent-workflow.md](./subagent-workflow.md) for the delegation protocol. Otherwise use the file
+workflows above.
 
-1. From your task agent (e.g., `coding` or `review`), call `agendo` as a sub-agent to fetch todo metadata.
-
-   - parent prompt example:
-     `runSubagent({ agentName: "agendo", prompt: "show status 021" })`
-   - verify `status`, `priority`, `dependencies`, Resume Context, and the latest Work Log entry.
-
-2. (Optional) Signal in-progress status via sub-agent call:
-
-   - `runSubagent({ agentName: "agendo", prompt: "update 021 status in-progress" })`
-
-3. Append work log entries incrementally through the sub-agent interface:
-
-   - `runSubagent({ agentName: "agendo", prompt: "append 021 work log: added server-side protobuf handling, 2026-03-29, tests added" })`
-
-4. Keep work log entries structured (date, author, actions, tests, results, learnings).
-
-   - Include branch/PR references and commands run (`ctest`, `dotnet test`, etc.).
-
-5. Resolve and complete through sub-agent call:
-   - first move/rename the todo from `ready` to `complete`, before any final content edit
-   - then call `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed; the todo has already moved to its complete path, so edit only that path" })`
-
-> This workflow is intended to be used by a parent skill/agent orchestrating code tasks; `agendo` is invoked as a child skill for data updates and audit-safe state changes.
-
-**Dependency management:**
-
-```bash
-# What blocks this todo?
-grep "^dependencies:" "{root}"/003-*.md
-
-# What does this todo block?
-grep -R -l 'dependencies:.*"002"' "{root}"
-```
+**Dependency management:** (see [Quick Reference Commands](#quick-reference-commands))
 
 **Searching:**
 
@@ -559,22 +498,6 @@ batches when needed, and presents one consolidated report for approval.
 
 ## Key Distinctions
 
-**Agendo files (this skill):**
-
-- Markdown files in the configured `{root}` directory
-- Development/project tracking
-- Standalone markdown files with YAML frontmatter
-- Used by humans and agents
-
-**Application todo entities:**
-
-- Models, database records, or user-facing tasks owned by the host application
-- Governed by the application's code and persistence rules
-- Unrelated unless explicitly integrated with Agendo files
-
-**Session task-list tools such as TodoWrite:**
-
-- In-memory task tracking during agent sessions
-- Temporary tracking for single conversation
-- Not persisted to disk
-- Different from both systems above
+Agendo files are standalone markdown in `{root}` for project tracking. They are distinct from
+application todo entities (database records owned by the host app) and session task-list tools like
+TodoWrite (in-memory, non-persistent).

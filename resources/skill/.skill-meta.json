@@ -4,7 +4,7 @@
   "description": "Manage Agendo file-based todos, including lifecycle, dependencies, triage, work logs, and repository reconciliation.",
   "description_ja": "Agendo",
   "categories": [],
-  "version": "1.4.5",
+  "version": "1.4.6",
   "metadataVersion": 2,
   "installedVia": "agendo-extension"
 }

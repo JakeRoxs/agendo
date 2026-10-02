@@ -448,6 +448,7 @@ function registerSkillCommands(
       return;
     }
     try {
+      const previousVersion = status.installedVersion;
       await busy.run(
         "Installing skill…",
         async () => {
@@ -456,15 +457,21 @@ function registerSkillCommands(
         },
         "agendo.skillInstalling",
       );
-      vscode.window.showInformationMessage(
-        `Agendo skill installed (v${status.bundledVersion ?? "?"}).`,
-      );
+      const newVersion = status.bundledVersion ?? "?";
+      if (previousVersion) {
+        vscode.window.showInformationMessage(
+          `Agendo skill updated from v${previousVersion} to v${newVersion} (Extension).`,
+        );
+      } else {
+        vscode.window.showInformationMessage(`Agendo skill installed (v${newVersion} Extension).`);
+      }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
     }
   });
   register(Command.UpdateSkill, async () => {
     try {
+      const previousStatus = await skill.getStatus();
       await busy.run(
         "Updating skill…",
         async () => {
@@ -473,7 +480,16 @@ function registerSkillCommands(
         },
         "agendo.skillUpdating",
       );
-      vscode.window.showInformationMessage("Agendo skill updated from configured source.");
+      const newStatus = await skill.getStatus();
+      if (previousStatus.installedVersion && newStatus.installedVersion) {
+        vscode.window.showInformationMessage(
+          `Agendo skill updated from v${previousStatus.installedVersion} to v${newStatus.installedVersion} (Source).`,
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `Agendo skill updated from configured source (v${newStatus.installedVersion ?? "?"} Source).`,
+        );
+      }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }

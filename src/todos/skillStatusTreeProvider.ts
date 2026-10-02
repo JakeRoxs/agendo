@@ -53,21 +53,28 @@ export class SkillStatusTreeProvider implements vscode.TreeDataProvider<SkillSta
       return item;
     }
 
+    const versionLabel = status.fromSource ? " (Source)" : "";
+
     if (status.updateAvailable) {
-      const item = new vscode.TreeItem(`Skill v${status.installedVersion ?? "?"}`);
+      const item = new vscode.TreeItem(`Skill v${status.installedVersion ?? "?"}${versionLabel}`);
       item.description = `v${status.bundledVersion ?? "?"} available`;
       item.iconPath = new vscode.ThemeIcon("cloud-download");
-      item.tooltip = "Select to install the bundled Agendo skill update.";
-      item.command = { command: Command.EnableSkill, title: "Update Agendo Skill" };
+      item.tooltip = "Select to update the Agendo skill from source.";
+      item.command = {
+        command: status.installed ? Command.UpdateSkill : Command.EnableSkill,
+        title: "Update Agendo Skill",
+      };
       return item;
     }
 
     if (status.installed) {
-      const item = new vscode.TreeItem(`Skill v${status.installedVersion ?? "?"}`);
+      const item = new vscode.TreeItem(`Skill v${status.installedVersion ?? "?"}${versionLabel}`);
       item.description = "Installed";
       item.iconPath = new vscode.ThemeIcon("pass-filled");
-      item.tooltip = "The installed Agendo skill matches the bundled version.";
-      item.command = { command: Command.EnableSkill, title: "Check Agendo Skill" };
+      item.tooltip = status.fromSource
+        ? "The Agendo skill was updated from source and differs from the bundled version."
+        : "The installed Agendo skill matches the bundled version.";
+      item.command = { command: Command.UpdateSkill, title: "Update Agendo Skill" };
       return item;
     }
 

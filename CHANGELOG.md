@@ -4,8 +4,18 @@ All notable changes to the Agendo extension are documented here.
 
 ## [0.1.14]
 
+### Added
+
+- Skill install/update notifications now display the version upgraded from and to
+- Skill status panel displays whether the installed skill is from the extension or updated from source
+- Clicking an installed skill in the status panel now prefers updating from source
+
 ### Changed
 
+- Bumped bundled Agendo skill to version 1.4.6 — reduced prompt size by consolidating redundant
+  instructions, externalizing the optional runSubagent workflow to a separate file, and trimming
+  speculative integration documentation; all critical lifecycle and configuration instructions
+  preserved
 - Bumped bundled Agendo skill to version 1.4.5 — enabled automatic model invocation so agents can
   discover and invoke the skill without manual selection
 
