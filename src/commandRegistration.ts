@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
-import { Settings, set, setDefault } from "./configuration";
+import { get, Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import {
   type ConfigService,
@@ -393,6 +393,15 @@ function registerConfigCommands(register: Register, services: CommandServices): 
         `Agendo: Todos now open in ${viewModeLabel(picked.mode as ViewMode)}.`,
       );
     }
+  });
+  register(Command.ToggleSortDate, async () => {
+    const current = get<boolean>(Settings.SortByDate);
+    await set(Settings.SortByDate, !current);
+    vscode.window.showInformationMessage(
+      !current
+        ? "Agendo: Todos now sorted by last modified date (most recent first)."
+        : "Agendo: Todos now sorted by issue ID.",
+    );
   });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({

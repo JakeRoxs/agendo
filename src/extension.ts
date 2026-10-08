@@ -103,7 +103,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   await updateFilterContexts(filter);
   repository.startWatching();
+
+  // Show loading state during initial repository scan
+  treeProvider.setLoading(true);
+  await vscode.commands.executeCommand("setContext", "agendo.loading", true);
   await repository.refresh();
+  treeProvider.markLoaded();
+  await vscode.commands.executeCommand("setContext", "agendo.loading", false);
 
   // Auto-check for skill updates if enabled
   if (get(Settings.SkillUpdateCheck)) {

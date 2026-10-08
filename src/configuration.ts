@@ -18,6 +18,7 @@ export enum Settings {
   GitignoreTodos = "gitignoreTodos",
   SkillUpdateSource = "skillUpdateSource",
   SkillUpdateCheck = "skillUpdateCheck",
+  SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
 }
 

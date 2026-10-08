@@ -35,6 +35,7 @@ export enum Command {
   EnableSkill = "agendo.enableSkill",
   UpdateSkill = "agendo.updateSkill",
   ToggleSkillUpdateCheck = "agendo.toggleSkillUpdateCheck",
+  ToggleSortDate = "agendo.toggleSortDate",
   EnableSkillLoading = "agendo.enableSkill.loading",
   UpdateSkillLoading = "agendo.updateSkill.loading",
   CollapseNode = "agendo.collapseNode",
