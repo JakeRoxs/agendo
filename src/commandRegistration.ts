@@ -3,7 +3,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
-import { Settings, set, setDefault } from "./configuration";
+import { get, Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import {
   type ConfigService,
@@ -394,6 +394,15 @@ function registerConfigCommands(register: Register, services: CommandServices): 
       );
     }
   });
+  register(Command.ToggleSortDate, async () => {
+    const current = get<boolean>(Settings.SortByDate);
+    await set(Settings.SortByDate, !current);
+    vscode.window.showInformationMessage(
+      !current
+        ? "Agendo: Todos now sorted by last modified date (most recent first)."
+        : "Agendo: Todos now sorted by issue ID.",
+    );
+  });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({
       prompt: "Global default for todos root folder",
@@ -493,6 +502,17 @@ function registerSkillCommands(
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
     }
+  });
+  register(Command.ToggleSkillUpdateCheck, async () => {
+    const config = vscode.workspace.getConfiguration(Settings.Identifier);
+    const enabled = config.get<boolean>(Settings.SkillUpdateCheck, true);
+    const newEnabled = !enabled;
+    await config.update(Settings.SkillUpdateCheck, newEnabled, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(
+      newEnabled
+        ? "Agendo skill update check enabled. Will notify on activation when a newer skill version is available."
+        : "Agendo skill update check disabled.",
+    );
   });
 }
 

@@ -2,6 +2,26 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.15]
+
+### Added
+
+- Automatic skill update check on extension activation — when enabled, Agendo checks for a newer
+  skill version at startup and shows a notification with an "Update Skill" button if one is
+  available
+- `agendo.skillUpdateCheck` setting (default `true`) — toggle automatic skill update checks in
+  user settings
+- "Toggle Agendo Skill Update Check" command in the skill status view menu and command palette
+- `agendo.sortByDate` setting (default `false`) — sort todos by last modified date (most recent
+  first) instead of issue ID
+- "Toggle Sort by Date Modified" command in the todos view menu and command palette
+
+### Changed
+
+- Skill status icon now uses `sync` icon when an update is available (previously `cloud-download`)
+- Todos view now shows "Loading todos…" during initial repository scan instead of briefly
+  displaying "No todos found" while todos are being loaded
+
 ## [0.1.14]
 
 ### Added

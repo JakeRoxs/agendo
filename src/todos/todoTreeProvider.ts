@@ -47,6 +47,21 @@ const PRIORITY_COLOR: Record<TodoPriority, string> = {
   p3: "charts.blue",
 };
 
+/** Sort todos by the active sort setting (date or ID). */
+function sortTodos(todos: Todo[]): Todo[] {
+  if (get<boolean>(Settings.SortByDate)) {
+    return [...todos].sort((a, b) => {
+      const aTime = a.updatedAt ?? 0;
+      const bTime = b.updatedAt ?? 0;
+      if (bTime !== aTime) {
+        return bTime - aTime; // Most recent first
+      }
+      return a.id.localeCompare(b.id); // Stable tie-break by ID
+    });
+  }
+  return [...todos].sort((a, b) => a.id.localeCompare(b.id));
+}
+
 interface DependencyNode {
   kind: "dependency";
   todo: Todo;
@@ -120,6 +135,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
+  private loading = false;
+  private hasLoaded = false;
+
   constructor(
     private readonly repository: TodoRepository,
     private readonly filter: FilterService,
@@ -128,6 +146,20 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   ) {
     this.repository.onDidChange(() => this.refresh());
     this.busy?.onChange(() => this.refresh());
+  }
+
+  setLoading(loading: boolean): void {
+    this.loading = loading;
+    this.refresh();
+  }
+
+  isInitialLoading(): boolean {
+    return this.loading && !this.hasLoaded;
+  }
+
+  markLoaded(): void {
+    this.hasLoaded = true;
+    this.loading = false;
   }
 
   refresh(): void {
@@ -172,9 +204,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       kind: "group",
       status: status as TodoStatus,
       group,
-      todos: grouped
-        .filter((t) => t.group === group)
-        .sort((a: Todo, b: Todo) => a.id.localeCompare(b.id)),
+      todos: sortTodos(grouped.filter((t) => t.group === group)),
     }));
     const priorityResults: PriorityNode[] = TODO_PRIORITIES.filter((priority) =>
       ungrouped.some((t) => t.priority === priority),
@@ -182,9 +212,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       kind: "priority",
       status: status as TodoStatus,
       priority,
-      todos: ungrouped
-        .filter((t) => t.priority === priority)
-        .sort((a: Todo, b: Todo) => a.id.localeCompare(b.id)),
+      todos: sortTodos(ungrouped.filter((t) => t.priority === priority)),
     }));
     return [...groupResults, ...priorityResults];
   }
@@ -195,9 +223,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         kind: "priority",
         status: status as TodoStatus,
         priority,
-        todos: todos
-          .filter((t) => t.priority === priority)
-          .sort((a: Todo, b: Todo) => a.id.localeCompare(b.id)),
+        todos: sortTodos(todos.filter((t) => t.priority === priority)),
       }),
     );
   }
@@ -226,7 +252,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         result.push({
           kind: "dependency",
           todo: blocker,
-          dependents: [...dependents].sort((a: Todo, b: Todo) => a.id.localeCompare(b.id)),
+          dependents: sortTodos(dependents),
         });
         processedIds.add(blocker.id);
       }

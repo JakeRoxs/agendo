@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -55,18 +55,23 @@
     "viewsWelcome": [
       {
         "view": "agendo.todos",
+        "contents": "Loading todos…",
+        "when": "agendo.loading"
+      },
+      {
+        "view": "agendo.todos",
         "contents": "No todos match the current search.\n[Clear Search](command:agendo.clearSearch)",
-        "when": "agendo.searchActive"
+        "when": "!agendo.loading && agendo.searchActive"
       },
       {
         "view": "agendo.todos",
         "contents": "No todos match the current filters.\n[Clear Filters](command:agendo.clearFilters)",
-        "when": "agendo.filterActive && !agendo.searchActive"
+        "when": "!agendo.loading && agendo.filterActive && !agendo.searchActive"
       },
       {
         "view": "agendo.todos",
         "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)",
-        "when": "!agendo.filterActive"
+        "when": "!agendo.loading && !agendo.filterActive"
       }
     ],
     "commands": [
@@ -253,6 +258,18 @@
         "icon": "$(sync~spin)"
       },
       {
+        "command": "agendo.toggleSkillUpdateCheck",
+        "title": "Toggle Agendo Skill Update Check",
+        "category": "Agendo",
+        "icon": "$(bell)"
+      },
+      {
+        "command": "agendo.toggleSortDate",
+        "title": "Toggle Sort by Date Modified",
+        "category": "Agendo",
+        "icon": "$(calendar)"
+      },
+      {
         "command": "agendo.collapseNode",
         "title": "Collapse",
         "category": "Agendo"
@@ -356,6 +373,11 @@
           "group": "2_config@6"
         },
         {
+          "command": "agendo.toggleSortDate",
+          "when": "view == agendo.todos",
+          "group": "2_config@7"
+        },
+        {
           "command": "agendo.enableSkill",
           "when": "view == agendo.skillStatus && !agendo.skillInstalling",
           "group": "skill@1"
@@ -374,6 +396,11 @@
           "command": "agendo.updateSkill.loading",
           "when": "view == agendo.skillStatus && agendo.skillUpdating",
           "group": "skill@2"
+        },
+        {
+          "command": "agendo.toggleSkillUpdateCheck",
+          "when": "view == agendo.skillStatus",
+          "group": "skill@3"
         }
       ],
       "view/item/context": [
@@ -514,6 +541,16 @@
           "type": "boolean",
           "default": false,
           "description": "When enabled, blocked todos appear as collapsible dependency nodes under their blockers in the tree view instead of in their priority group."
+        },
+        "agendo.skillUpdateCheck": {
+          "type": "boolean",
+          "default": true,
+          "description": "When enabled, automatically check for Agendo skill updates on extension activation and notify when a newer version is available."
+        },
+        "agendo.sortByDate": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, sort todos within each priority group by last modified date (most recent first) instead of by issue ID."
         }
       }
     }
