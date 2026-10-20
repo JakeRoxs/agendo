@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
@@ -5,6 +6,8 @@ import { Command } from "./commands";
 import { get, Settings } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
+import { CanvasManager } from "./todos/canvasManager";
+import { CanvasViewer } from "./todos/canvasViewer";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
 import { LinkService } from "./todos/linkService";
@@ -25,9 +28,26 @@ export async function activate(context: vscode.ExtensionContext) {
   const status = new StatusService(config, repository);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
+  const canvas = new CanvasManager(context.extensionUri);
+  const canvasViewer = new CanvasViewer(context.extensionUri);
+  context.subscriptions.push(canvasViewer);
+  config.setCanvasOpener(async (uri) => {
+    const todoId = /^(\d{3,})-/.exec(basename(uri.fsPath))?.[1];
+    const root = config.getWorkspaceFolder()?.uri.fsPath;
+    if (!todoId || !root) {
+      return false;
+    }
+    try {
+      await canvasViewer.open(root, todoId);
+      return true;
+    } catch (error) {
+      out`Could not open the work-session canvas: ${error}`;
+      return false;
+    }
+  });
   const busy = new BusyIndicator();
   const treeProvider = new TodoTreeProvider(repository, filter, treeState, busy);
-  const skillStatusTreeProvider = new SkillStatusTreeProvider(skill, config);
+  const skillStatusTreeProvider = new SkillStatusTreeProvider(skill, config, canvas);
   const boardViewProvider = new BoardViewProvider(
     repository,
     filter,
@@ -95,6 +115,7 @@ export async function activate(context: vscode.ExtensionContext) {
     status,
     links,
     skill,
+    canvas,
     busy,
     treeProvider,
     boardViewProvider,
@@ -111,23 +132,36 @@ export async function activate(context: vscode.ExtensionContext) {
   treeProvider.markLoaded();
   await vscode.commands.executeCommand("setContext", "agendo.loading", false);
 
-  // Auto-check for skill updates if enabled
+  // Keep an already-installed work-session canvas in step with the bundled version
+  try {
+    await canvas.updateIfInstalled();
+  } catch {
+    // Non-critical: don't block activation on canvas refresh failures
+  }
+
+  // Auto-check for skill updates. Not awaited: the prompt only resolves when the
+  // user dismisses it, and activation must finish first or the views never load.
   if (get(Settings.SkillUpdateCheck)) {
-    try {
-      const skillStatus = await skill.getStatus();
-      if (skillStatus.updateAvailable) {
-        const updateButton = "Update Skill";
-        const result = await vscode.window.showInformationMessage(
-          `Agendo skill update available: v${skillStatus.installedVersion} → v${skillStatus.bundledVersion}`,
-          updateButton,
-        );
-        if (result === updateButton) {
-          vscode.commands.executeCommand(Command.EnableSkill);
-        }
-      }
-    } catch {
-      // Non-critical: don't block activation on update check failures
+    void promptForSkillUpdate(skill);
+  }
+}
+
+async function promptForSkillUpdate(skill: SkillManager): Promise<void> {
+  try {
+    const skillStatus = await skill.getStatus();
+    if (!skillStatus.updateAvailable) {
+      return;
     }
+    const updateButton = "Update Skill";
+    const result = await vscode.window.showInformationMessage(
+      `Agendo skill update available: v${skillStatus.installedVersion} → v${skillStatus.bundledVersion}`,
+      updateButton,
+    );
+    if (result === updateButton) {
+      await vscode.commands.executeCommand(Command.EnableSkill);
+    }
+  } catch {
+    // Non-critical: don't surface update check failures
   }
 }
 

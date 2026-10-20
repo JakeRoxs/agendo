@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
+import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
 import { BusyIndicator } from "../busyIndicator";
 import { importFromClipboard, parseIssueUrl, registerCommands } from "../commandRegistration";
@@ -20,6 +21,7 @@ import {
   normalizeBoardCardFieldOrder,
   sortBoardTodos,
 } from "../todos/boardViewProvider";
+import { CanvasManager } from "../todos/canvasManager";
 import { ConfigService } from "../todos/configService";
 import { buildTodoDigest } from "../todos/digestService";
 import { readText } from "../todos/fileSystem";
@@ -460,6 +462,20 @@ suite("todoModel", () => {
       mockConfig("preview", true);
       await service.openTodo(uri);
       assert.ok(executed.includes("markdown.showPreview"));
+
+      // "canvas" uses the opener, and falls back to the editor when it declines.
+      mockConfig("canvas", false);
+      const opened: string[] = [];
+      service.setCanvasOpener(async (u) => {
+        opened.push(u.fsPath);
+        return true;
+      });
+      await service.openTodo(uri);
+      assert.deepStrictEqual(opened, [uri.fsPath]);
+      assert.strictEqual(shownTextDocs.length, 1);
+      service.setCanvasOpener(async () => false);
+      await service.openTodo(uri);
+      assert.strictEqual(shownTextDocs.length, 2);
     } finally {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
         value: originalGetConfiguration,
@@ -1229,16 +1245,31 @@ suite("todoModel", () => {
       bundledVersion: "1.2.0",
       updateAvailable: true,
     };
+    let canvasStatus = {
+      installed: true,
+      installedVersion: "0.1.0",
+      bundledVersion: "0.2.0",
+      updateAvailable: true,
+    };
     const provider = new SkillStatusTreeProvider(
       { getStatus: async () => status } as never,
       { viewMode: "preview" } as never,
+      { getStatus: async () => canvasStatus } as never,
     );
 
-    const [updateNode, viewModeNode] = await provider.getChildren();
+    const [updateNode, canvasNode, viewModeNode] = await provider.getChildren();
     const updateItem = provider.getTreeItem(updateNode);
     assert.strictEqual(updateItem.label, "Skill v1.1.0");
-    assert.strictEqual(updateItem.description, "v1.2.0 available");
-    assert.strictEqual(updateItem.command?.command, Command.UpdateSkill);
+    assert.strictEqual(updateItem.description, "Bundled v1.2.0 available");
+    assert.strictEqual(updateItem.command?.command, Command.EnableSkill);
+
+    const canvasItem = provider.getTreeItem(canvasNode);
+    assert.strictEqual(canvasItem.label, "Canvas v0.1.0");
+    assert.strictEqual(canvasItem.description, "Bundled v0.2.0 available");
+    assert.strictEqual(canvasItem.command?.command, Command.InstallCanvas);
+    canvasStatus = { ...canvasStatus, installed: false, installedVersion: undefined as never };
+    const missingCanvas = provider.getTreeItem((await provider.getChildren())[1]);
+    assert.strictEqual(missingCanvas.label, "Install work-session canvas");
 
     const viewModeItem = provider.getTreeItem(viewModeNode);
     assert.strictEqual(viewModeItem.label, "View");
@@ -1252,6 +1283,73 @@ suite("todoModel", () => {
     assert.strictEqual(installedItem.description, "Installed");
   });
 
+  test("bundled canvas ships a readable version and every installed file", async () => {
+    const root = path.resolve(__dirname, "..", "..");
+    const status = await new CanvasManager(vscode.Uri.file(root)).getStatus();
+    assert.match(status.bundledVersion ?? "", /^\d+\.\d+\.\d+$/);
+    const dir = path.join(root, "resources", "canvas", "agendo-work-session");
+    for (const name of ["extension.mjs", "server.mjs", "assets/page.js", "assets/page.css"]) {
+      assert.ok((await fs.stat(path.join(dir, name))).size > 0, `${name} is empty`);
+    }
+  });
+
+  test("canvas changes status like the extension and lays out sections by status", async () => {
+    const dir = path.resolve(__dirname, "..", "..", "resources", "canvas", "agendo-work-session");
+    const load = new Function("s", "return import(s)") as (s: string) => Promise<any>;
+    const todos = await load(pathToFileURL(path.join(dir, "todos.mjs")).href);
+    const page = await load(pathToFileURL(path.join(dir, "page.mjs")).href);
+
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-canvas-"));
+    try {
+      const todosDir = path.join(root, "docs", "todos");
+      await fs.mkdir(todosDir, { recursive: true });
+      const file = path.join(todosDir, "001-pending-p2-sample.md");
+      await fs.writeFile(
+        file,
+        '---\nstatus: pending\npriority: p2\nissue_id: "001"\ntags: [a]\n---\n\n# Sample\n\n## Problem Statement\n\nBroken.\n\n## Findings\n\nWhy.\n\n## Acceptance Criteria\n\n- [ ] One\n',
+      );
+
+      const pending = page.renderCanvas(todos.loadTodo("001", root), null, null, {});
+      assert.ok(pending.indexOf('id="description"') < pending.indexOf('id="criteria"'));
+      assert.doesNotMatch(pending, /id="criteria" data-section="criteria" open/);
+      assert.ok(pending.includes('id="triage"'));
+      assert.ok(!pending.includes("data-edit"));
+      assert.ok(
+        page
+          .renderCanvas(todos.loadTodo("001", root), null, null, { edit: true })
+          .includes("data-edit"),
+      );
+
+      todos.setTodoStatus("001", "in-progress", root);
+      const active = page.renderCanvas(todos.loadTodo("001", root), null, null, {});
+      assert.match(active, /id="criteria" data-section="criteria" open/);
+
+      todos.setTodoStatus("001", "cancelled", root);
+      const cancelled = path.join(todosDir, "cancelled", "001-cancelled-p2-sample.md");
+      const text = await fs.readFile(cancelled, "utf8");
+      assert.match(text, /status: cancelled/);
+      assert.match(text, /tags: \[a, cancelled\]/);
+      assert.match(text, /> \*\*CANCELLED\*\*/);
+      await assert.rejects(fs.stat(file));
+
+      todos.setTodoStatus("001", "pending", root);
+      const reopened = await fs.readFile(file, "utf8");
+      assert.match(reopened, /status: pending/);
+      assert.doesNotMatch(reopened, /CANCELLED\*\*/);
+      assert.throws(() => todos.setTodoStatus("001", "bogus", root));
+
+      await fs.writeFile(
+        path.join(todosDir, ".agendo-config.json"),
+        JSON.stringify({ completeFolder: "done" }),
+      );
+      todos.setTodoStatus("001", "complete", root);
+      await fs.stat(path.join(todosDir, "done", "001-complete-p2-sample.md"));
+      assert.strictEqual(todos.loadTodo("001", root).status, "complete");
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("skill status provider renders unknown and install states", async () => {
     const unknownProvider = new SkillStatusTreeProvider(
       {
@@ -1260,9 +1358,14 @@ suite("todoModel", () => {
         },
       } as never,
       { viewMode: "editor" } as never,
+      {
+        getStatus: async () => {
+          throw new Error("unreadable");
+        },
+      } as never,
     );
 
-    const [unknownNode, viewModeNode] = await unknownProvider.getChildren();
+    const [unknownNode, unknownCanvasNode, viewModeNode] = await unknownProvider.getChildren();
     const unknownItem = unknownProvider.getTreeItem(unknownNode);
     assert.strictEqual(unknownItem.label, "Skill status unknown");
     assert.strictEqual(
@@ -1271,6 +1374,10 @@ suite("todoModel", () => {
     );
     assert.strictEqual(unknownItem.command?.command, Command.EnableSkill);
 
+    assert.strictEqual(
+      unknownProvider.getTreeItem(unknownCanvasNode).label,
+      "Canvas status unknown",
+    );
     const viewModeItem = unknownProvider.getTreeItem(viewModeNode);
     assert.strictEqual(viewModeItem.label, "View");
     assert.strictEqual(viewModeItem.description, "Editor (source)");
@@ -1284,6 +1391,7 @@ suite("todoModel", () => {
     const installProvider = new SkillStatusTreeProvider(
       { getStatus: async () => installStatus } as never,
       { viewMode: "previewEditor" } as never,
+      { getStatus: async () => ({ installed: false, updateAvailable: false }) } as never,
     );
 
     const [installNode] = await installProvider.getChildren();
@@ -2000,6 +2108,36 @@ suite("todoModel", () => {
         ),
         subscriptions: [] as vscode.Disposable[],
       };
+      const canvasFixture = path.join(
+        os.tmpdir(),
+        "agendo-extension-tests",
+        "extension",
+        "resources",
+        "canvas",
+        "agendo-work-session",
+      );
+      await fs.mkdir(path.join(canvasFixture, "assets"), { recursive: true });
+      for (const name of [
+        ".canvas-meta.json",
+        "extension.mjs",
+        "server.mjs",
+        "todos.mjs",
+        "page.mjs",
+        "markdown.mjs",
+        "errors.mjs",
+        "assets/page.css",
+        "assets/page.js",
+      ]) {
+        await fs.writeFile(
+          path.join(canvasFixture, name),
+          name.endsWith(".json") ? '{"version":"0.1.0"}' : "",
+        );
+      }
+      const originalCopilotHome = process.env.COPILOT_HOME;
+      process.env.COPILOT_HOME = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-copilot-home-"));
+      // The skill commands write under the home directory, so keep them away from the real one.
+      const originalHome = process.env.HOME;
+      process.env.HOME = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-home-"));
       await activate(context as never);
       assert.strictEqual(watcherCreationCount, 1);
       assert.deepStrictEqual(treeViewIds, ["agendo.todos", "agendo.skillStatus"]);
@@ -2141,6 +2279,12 @@ suite("todoModel", () => {
       await registrations.get(Command.CollapseNode)?.({ id: "status:ready" });
       await registrations.get(Command.ExpandNode)?.({ id: "status:ready" });
       deactivate();
+      process.env.HOME = originalHome;
+      if (originalCopilotHome === undefined) {
+        delete process.env.COPILOT_HOME;
+      } else {
+        process.env.COPILOT_HOME = originalCopilotHome;
+      }
 
       assert.ok(registrations.has(Command.Refresh));
       assert.ok(registrations.has(Command.ShowDigest));

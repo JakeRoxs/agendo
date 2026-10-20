@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.4.6
+version: 1.4.8
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -268,7 +268,25 @@ command is installed in the host environment.
 ### Starting / Progressing Work
 
 When a triaged `in-progress` todo is actively being worked on, keep it `in-progress` and update
-its Resume Context and Work Log as you go. When implementation is believed to be done (but not yet
+its Resume Context and Work Log as you go.
+
+**Open the work-session canvas for the active todo.** When you start or resume work on a todo and
+the host lists the `agendo-work-session` canvas (installed by the Agendo extension into
+`~/.copilot/extensions/agendo-work-session/`, or present as a project extension), open it for that todo:
+
+- Call `open_canvas` with `canvasId: "agendo-work-session"`, `input: { "todoId": "{issue_id}" }`
+  (the three-digit ID as a string), and the fixed `instanceId` `agendo-work-session`. Always reuse
+  that one `instanceId`: it is a single shared panel, so reopening retargets the existing tab
+  instead of opening a new one. The panel keeps a back/forward history and a recent-todos strip,
+  and its dependency links navigate within the panel.
+- Do this once when you start or switch to a todo, not on every edit; the page reloads itself when
+  the todo file changes.
+- The canvas reads the same markdown file, so rename and edit the todo as usual. Checking a
+  criterion in the canvas, or with its `mark_criterion_met` action, updates the todo file.
+- Skip this silently if the canvas is unavailable. It is a convenience, never a requirement, and
+  the file workflows in this document work without it.
+
+When implementation is believed to be done (but not yet
 confirmed as working), move it to `ready` so it can be verified:
 
 - `mv "{root}/{file}-in-progress-{pri}-{desc}.md" "{root}/{file}-ready-{pri}-{desc}.md"`
@@ -389,7 +407,8 @@ Work logs provide historical record, durable context across sessions/agents, and
 3. Read the latest Work Log entry for recent actions, results, and learnings.
 4. Verify dependencies against the current todo repository and inspect relevant code before changing it.
 5. Continue from the documented next step, adjusting it if the repository has changed.
-
+6. If the `agendo-work-session` canvas is available, open it for the todo (see
+   [Starting / Progressing Work](#starting--progressing-work)).
 **Before pausing or handing execution to another agent:**
 
 1. Update `Current state` to describe what is true now, not a session history.

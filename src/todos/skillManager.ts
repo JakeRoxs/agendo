@@ -115,7 +115,7 @@ export class SkillManager {
 }
 
 /** Compare two dotted version strings; returns >0 when `a` is newer than `b`. */
-function compareVersions(a?: string, b?: string): number {
+export function compareVersions(a?: string, b?: string): number {
   if (!a) {
     return b ? -1 : 0;
   }

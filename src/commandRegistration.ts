@@ -5,6 +5,7 @@ import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
+import type { CanvasManager } from "./todos/canvasManager";
 import {
   type ConfigService,
   VIEW_MODES,
@@ -37,6 +38,7 @@ export interface CommandServices {
   status: StatusService;
   links: LinkService;
   skill: SkillManager;
+  canvas: CanvasManager;
   busy: BusyIndicator;
   treeProvider: TodoTreeProvider;
   boardViewProvider: BoardViewProvider;
@@ -71,6 +73,7 @@ export function registerCommands(
 function registerLoadingCommands(register: Register): void {
   register(Command.ShowDigestLoading, () => undefined);
   register(Command.EnableSkillLoading, () => undefined);
+  register(Command.InstallCanvasLoading, () => undefined);
   register(Command.UpdateSkillLoading, () => undefined);
   register(Command.RefreshLoading, () => undefined);
   register(Command.OpenBoardLoading, () => undefined);
@@ -182,6 +185,13 @@ function registerTodoCommands(
       return;
     }
     await config.openTodo(todo.uri);
+  });
+
+  register(Command.OpenCanvas, async (arg: unknown) => {
+    const todo = resolveTodo(arg) ?? resolveBoardTodo(arg, repository.getTodos());
+    if (todo) {
+      await config.openInCanvas(todo.uri);
+    }
   });
 
   for (const targetStatus of TODO_STATUSES) {
@@ -446,11 +456,19 @@ function registerSkillCommands(
   services: CommandServices,
   busy: BusyIndicator,
 ): void {
-  const { skill, refreshSkillStatus } = services;
+  const { skill, canvas, refreshSkillStatus } = services;
 
   register(Command.EnableSkill, async () => {
     const status = await skill.getStatus();
     if (status.installed && !status.updateAvailable) {
+      const canvasStatus = await canvas.getStatus();
+      if (!canvasStatus.installed || canvasStatus.updateAvailable) {
+        await canvas.install();
+        vscode.window.showInformationMessage(
+          `Agendo skill already installed (v${status.installedVersion ?? "?"}). Installed the work-session canvas (v${canvasStatus.bundledVersion ?? "?"}).`,
+        );
+        return;
+      }
       vscode.window.showInformationMessage(
         `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
       );
@@ -462,6 +480,7 @@ function registerSkillCommands(
         "Installing skill…",
         async () => {
           await skill.install();
+          await canvas.install();
           refreshSkillStatus();
         },
         "agendo.skillInstalling",
@@ -476,6 +495,27 @@ function registerSkillCommands(
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
+    }
+  });
+  register(Command.InstallCanvas, async () => {
+    try {
+      const previous = await canvas.getStatus();
+      await busy.run(
+        "Installing canvas…",
+        async () => {
+          await canvas.install();
+          refreshSkillStatus();
+        },
+        "agendo.canvasInstalling",
+      );
+      const version = (await canvas.getStatus()).bundledVersion ?? "?";
+      vscode.window.showInformationMessage(
+        previous.installedVersion
+          ? `Agendo work-session canvas updated from v${previous.installedVersion} to v${version}.`
+          : `Agendo work-session canvas installed (v${version}).`,
+      );
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to install canvas: ${error}`);
     }
   });
   register(Command.UpdateSkill, async () => {
@@ -533,6 +573,12 @@ function registerTreeCommands(register: Register, services: CommandServices): vo
       treeProvider.refresh();
     }
   });
+}
+
+/** Board cards pass the `data-vscode-context` object of the right-clicked card. */
+function resolveBoardTodo(arg: unknown, todos: readonly Todo[]): Todo | undefined {
+  const todoId = (arg as { todoId?: unknown } | undefined)?.todoId;
+  return typeof todoId === "string" ? todos.find((todo) => todo.id === todoId) : undefined;
 }
 
 export function resolveTodo(arg: unknown): Todo | undefined {

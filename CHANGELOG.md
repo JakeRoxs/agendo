@@ -2,6 +2,36 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.1.16]
+
+### Added
+
+- **Open in Work Session Canvas** right-click action on todos in the tree and on board cards, available in any view mode
+- Separate work-session canvas row in the Skill panel plus an **Install/Update Work Session Canvas** command, so the canvas installs and updates independently of the skill
+- New `canvas` value for `agendo.viewMode`: opening a todo shows the work-session dashboard in a VS Code tab, served by the bundled canvas server (falls back to the text editor on failure)
+- Work-session canvas shows the todo description (intro text and Problem Statement) under Acceptance Criteria, and every section is collapsible, with collapse state remembered per todo rather than across todos
+- Work-session canvas adapts to status (for example `pending` leads with the description and triage sections and collapses Acceptance Criteria), has a status badge that doubles as the picker and renames and moves the todo file like the extension does, and a small pencil edit button (top right) in the VS Code tab that opens the todo markdown beside it. It honors `agendo.root` and the custom state folder names in `.agendo-config.json`. The history bar skips the current todo in its pills and colors the dropdown by status
+- Bundled `agendo-work-session` Copilot canvas (v0.1.0, versioned independently of the extension and
+  the skill through `.canvas-meta.json`) — an interactive dashboard for the active todo showing
+  its title, status, priority, acceptance criteria (clickable), resume context, and work log, with
+  a confetti celebration when a todo completes. Installing the skill now also installs the canvas
+  at user level in `~/.copilot/extensions/agendo-work-session/` (honoring `COPILOT_HOME`), so it works in
+  every workspace; an installed canvas is refreshed on activation only when the bundled version is
+  newer, and a project-level `.github/extensions/` copy is migrated away
+- Canvas navigation history (back, forward, a recent-todos dropdown, and status-accented recent chips with distinct status colors) so a single shared `agendo-work-session` panel can follow the active todo
+- Canvas dependency panel (collapsible, opening automatically only when something is open, and hiding "Blocks" on finished todos) showing what blocks a todo and what it blocks, with live status, satisfied/unresolved/cancelled/circular markers, click-through navigation, and `get_dependencies` / `get_dependents` actions
+
+### Changed
+
+- Bumped bundled Agendo skill to version 1.4.8 — agents now open the shared `agendo-work-session` canvas (always with the fixed `instanceId` `agendo-work-session`)
+  for the active todo when starting or resuming work, when the host provides it; the step is
+  optional and skipped silently if the canvas is unavailable
+
+### Fixed
+
+- The skill status row now installs the bundled skill when the extension carries a newer version (it used to run "Update from Source", which fetches from GitHub and could not deliver the bundled version) and reads "Bundled vX available"
+- The skill-update prompt no longer blocks extension activation; previously the tree views kept loading until the notification was dismissed
+
 ## [0.1.15]
 
 ### Added

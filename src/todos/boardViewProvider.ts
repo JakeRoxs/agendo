@@ -1473,6 +1473,11 @@ export class BoardViewProvider implements vscode.Disposable {
         .filter(Boolean)
         .join(" ");
       card.dataset.todoId = todo.id;
+      card.dataset.vscodeContext = JSON.stringify({
+        webviewSection: "todoCard",
+        todoId: todo.id,
+        preventDefaultContextMenuItems: true,
+      });
       card.title = [
         todo.createdAt ? "Created " + new Date(todo.createdAt).toLocaleString() : undefined,
         todo.updatedAt ? "Modified " + new Date(todo.updatedAt).toLocaleString() : undefined,

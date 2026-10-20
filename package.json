@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -151,6 +151,23 @@
         "command": "agendo.openPreview",
         "title": "Open Todo",
         "category": "Agendo"
+      },
+      {
+        "command": "agendo.openCanvas",
+        "title": "Open in Work Session Canvas",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.installCanvas",
+        "title": "Install/Update Work Session Canvas",
+        "category": "Agendo",
+        "icon": "$(dashboard)"
+      },
+      {
+        "command": "agendo.installCanvas.loading",
+        "title": "Installing work-session canvas...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
       },
       {
         "command": "agendo.setViewMode",
@@ -383,6 +400,16 @@
           "group": "skill@1"
         },
         {
+          "command": "agendo.installCanvas",
+          "when": "view == agendo.skillStatus && !agendo.canvasInstalling",
+          "group": "skill@3"
+        },
+        {
+          "command": "agendo.installCanvas.loading",
+          "when": "view == agendo.skillStatus && agendo.canvasInstalling",
+          "group": "skill@3"
+        },
+        {
           "command": "agendo.updateSkill",
           "when": "view == agendo.skillStatus && !agendo.skillUpdating",
           "group": "skill@2"
@@ -403,6 +430,19 @@
           "group": "skill@3"
         }
       ],
+      "commandPalette": [
+        {
+          "command": "agendo.openCanvas",
+          "when": "false"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "agendo.openCanvas",
+          "when": "webviewId == 'agendo.board' && webviewSection == 'todoCard'",
+          "group": "1_open@1"
+        }
+      ],
       "view/item/context": [
         {
           "command": "agendo.collapseNode",
@@ -418,6 +458,11 @@
           "command": "agendo.openPreview",
           "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "1_open@1"
+        },
+        {
+          "command": "agendo.openCanvas",
+          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "1_open@2"
         },
         {
           "command": "agendo.setStatus.pending",
@@ -516,16 +561,18 @@
             "default",
             "editor",
             "preview",
-            "previewEditor"
+            "previewEditor",
+            "canvas"
           ],
           "default": "default",
           "enumDescriptions": [
             "Open todos using VS Code's own default behavior (respects your editor associations).",
             "Open todos in the source text editor, forcing the plain text editor even when markdown uses a custom editor.",
             "Open todos as a rendered markdown preview.",
-            "Open todos with VS Code's newer (beta) markdown editor preview when available."
+            "Open todos with VS Code's newer (beta) markdown editor preview when available.",
+            "Open todos in the Agendo work-session canvas: an interactive dashboard with clickable acceptance criteria, dependencies, and history."
           ],
-          "description": "How todos open when clicked: VS Code's default, the forced source editor, the markdown preview, or VS Code's beta preview editor."
+          "description": "How todos open when clicked: VS Code's default, the forced source editor, the markdown preview, VS Code's beta preview editor, or the work-session canvas."
         },
         "agendo.gitignoreTodos": {
           "type": "boolean",

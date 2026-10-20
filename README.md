@@ -3,7 +3,8 @@
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Version](https://img.shields.io/badge/version-0.1.15-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.4.6-orange.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.4.8-orange.svg)
+![Canvas Version](https://img.shields.io/badge/canvas-0.1.0-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
@@ -73,6 +74,31 @@ the backlog. When the repository is too large for one focused pass, it automatic
 stable issue-ID batches, tracks reviewed and remaining IDs, and returns one consolidated report for
 approval. It uses the existing `complete` and `cancelled` states rather than creating a separate
 archive folder.
+
+## The work session canvas
+
+Agendo also bundles a Copilot canvas, `agendo-work-session`, that shows the todo you are working on
+in an editor tab next to the chat. Canvases are a preview feature of the Copilot agent harness and
+require a supported local Copilot Agent Host session with canvases enabled. The bundled canvas is
+version 0.1.0, versioned separately from the extension and the skill.
+
+The canvas shows:
+
+- the todo number, title, status, and priority
+- acceptance criteria with a progress bar, where each criterion can be checked from the canvas
+- a dependency panel that resolves what blocks the todo and what it blocks, with each todo's status and priority, whether it is satisfied, and click-through navigation to open it
+- back and forward buttons, a recent-todos dropdown and quick-jump chips, since the canvas is one shared panel that follows the todo being worked on
+- resume context and work log rendered as Markdown, with a control to show every work log entry
+- a confetti celebration when a todo is completed or its last criterion is checked
+
+It reads and edits the same Markdown todo file, takes status and priority from the filename, and
+reloads itself when the file changes. Installing the Agendo skill also installs the canvas at user level, in
+`~/.copilot/extensions/agendo-work-session/` (or under `COPILOT_HOME` when set), so it is
+available in every workspace like the skill is. An installed canvas is refreshed when the extension
+ships a newer version, and a project-level copy from an earlier build is migrated away. The skill tells agents to open the canvas for the active
+todo when it is available, and to skip it silently when it is not.
+
+You can also view any todo in the same dashboard without an agent session: right-click it in the tree or on a board card and choose **Open in Work Session Canvas**, or set `agendo.viewMode` to `canvas`. The Skill panel has its own canvas row, and **Agendo: Install/Update Work Session Canvas** installs or updates it separately from the skill.
 
 ## Features
 
@@ -191,7 +217,7 @@ This is especially useful when you want a follow-up task captured into the same 
 | `agendo.completeFolder` | `complete` | Folder used for completed tasks |
 | `agendo.cancelledFolder` | `cancelled` | Folder used for cancelled tasks |
 | `agendo.backlogFolder` | `backlog` | Folder used for backlogged tasks |
-| `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, or `previewEditor` mode |
+| `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
 | `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
 
@@ -205,6 +231,7 @@ This is especially useful when you want a follow-up task captured into the same 
 ├── docs/
 │   └── todos/
 ├── resources/
+│   ├── canvas/
 │   └── skill/
 ├── src/
 │   ├── commandRegistration.ts
