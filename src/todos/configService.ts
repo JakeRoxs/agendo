@@ -40,16 +40,18 @@ interface ProjectionOptions {
  *   associated with a custom editor.
  * - `preview` — the rendered markdown preview.
  * - `previewEditor` — VS Code's newer (beta) markdown editor preview.
+ * - `canvas` — the Agendo work-session canvas dashboard in an editor tab.
  */
-export type ViewMode = "default" | "editor" | "preview" | "previewEditor";
+export type ViewMode = "default" | "editor" | "preview" | "previewEditor" | "canvas";
 
-export const VIEW_MODES: ViewMode[] = ["default", "editor", "preview", "previewEditor"];
+export const VIEW_MODES: ViewMode[] = ["default", "editor", "preview", "previewEditor", "canvas"];
 
 const VIEW_MODE_LABEL: Record<ViewMode, string> = {
   default: "VSCode Default",
   editor: "Editor (source)",
   preview: "Preview",
   previewEditor: "Preview editor (beta)",
+  canvas: "Work session canvas",
 };
 
 export function isViewMode(value: unknown): value is ViewMode {
@@ -73,6 +75,20 @@ const TODO_FILE_PATTERN =
  * file is a skill-readable projection of them.
  */
 export class ConfigService {
+  private canvasOpener?: (uri: vscode.Uri) => Promise<boolean>;
+
+  /** Register the handler for the `canvas` view mode; it returns false when it cannot show the todo. */
+  setCanvasOpener(opener: (uri: vscode.Uri) => Promise<boolean>): void {
+    this.canvasOpener = opener;
+  }
+
+  /** Show a todo in the work-session canvas, falling back to the source editor when it cannot start. */
+  async openInCanvas(uri: vscode.Uri): Promise<void> {
+    if (!(await this.canvasOpener?.(uri))) {
+      await vscode.window.showTextDocument(uri, { preview: true });
+    }
+  }
+
   /** Workspace-relative root folder for todos. */
   get root(): string {
     const value = (get<string>(Settings.Root) ?? DEFAULT_TODOS_CONFIG.root).replace(/\\/g, "/");
@@ -131,6 +147,10 @@ export class ConfigService {
     if (mode === "editor") {
       // Force the plain text editor, bypassing editor associations.
       await vscode.window.showTextDocument(uri, { preview: true });
+      return;
+    }
+    if (mode === "canvas") {
+      await this.openInCanvas(uri);
       return;
     }
     if (mode === "previewEditor") {
