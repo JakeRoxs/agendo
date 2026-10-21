@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.4.8
+version: 1.4.9
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -22,6 +22,39 @@ This skill should be used when:
 - Reconciling or auditing todos against the current codebase
 - Converting PR comments or code findings into tracked work
 - Updating work logs during todo execution
+
+## Interpreting the Argument
+
+The text after `/agendo` is the user's request. Parse it to determine the operation and use it
+directly — do not ask the user to repeat or rephrase what they already said.
+
+**Examples:**
+
+- `/agendo make a todo investigating the login bug` → Create a new todo about investigating the login bug. Use the description to derive the filename, problem statement, and initial context.
+- `/agendo triage` → List pending items and begin the triage workflow.
+- `/agendo what's next` → Show active work and unblocked items.
+- `/agendo complete 005` → Mark todo 005 as complete.
+- `/agendo` (no argument) → Show the status summary below.
+
+**Rules:**
+
+- Extract the operation (create, triage, complete, etc.) and any identifiers (todo IDs, titles) from the argument.
+- Use the argument text as the source of truth for what the user wants. Do not ask clarifying questions about information already provided in the argument.
+- If the argument is ambiguous about priority, default to `p2` and note it. If it mentions urgency or criticality, use `p1`.
+- If the argument describes a task, create the todo immediately with the information given. Fill in what you can from the description and leave optional sections for later.
+
+## Default Behavior (no argument)
+
+When invoked as `/agendo` without a specific operation, show a concise status summary instead of
+asking questions. Read the todos directory and report:
+
+1. **Counts by status** — pending, in-progress, ready, backlogged, complete, cancelled
+2. **Pending items needing triage** — list titles and priorities
+3. **Active work** — in-progress and ready items with their next steps from Resume Context
+4. **Blocked items** — active items with unresolved dependencies
+
+Keep the summary brief (under 15 lines). Do not ask the user what they want to do; present the
+state and let them follow up with a specific command like `/agendo triage` or `/agendo create`.
 
 ## Read `.agendo-config.json` first
 
