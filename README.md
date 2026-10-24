@@ -233,7 +233,7 @@ Agendo creates one todo per rule and repository/project, initially prioritized b
 finding. These are normal todos: use the tree, source groups, tag filters (`codeql`, `sonarqube`,
 `code-scanning`), board, digest, dependencies, and work-session canvas as usual. Status changes stay
 inside the source's folders. Existing scanning todos remain visible when imports are disabled.
-The canvas labels regular todos, CodeQL findings, and SonarQube findings with distinct source badges
+The canvas labels regular todos, CodeQL findings, and SonarQube findings with lowercase `todo`, `cql`, and `sq` source badges
 in the header, dependencies, and recent history, independently of lifecycle status colours.
 
 Re-imports update only the marked **Scanner Evidence** section. IDs, status, priority, notes,

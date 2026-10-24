@@ -458,9 +458,9 @@ suite("native code scanning", () => {
       dependents: [],
     };
     for (const [id, key, label] of [
-      ["001", "todo", "Todo"],
-      ["cql-001", "codeql", "CodeQL"],
-      ["sq-001", "sonarqube", "SonarQube"],
+      ["001", "todo", "todo"],
+      ["cql-001", "codeql", "cql"],
+      ["sq-001", "sonarqube", "sq"],
     ]) {
       const html = renderCanvas(
         {
@@ -488,9 +488,9 @@ suite("native code scanning", () => {
       for (const item of recent) {
         assert.ok(html.includes(`data-open="${item.id}"`));
       }
-      assert.ok(html.includes("Todo · #001 Regular"));
-      assert.ok(html.includes("CodeQL · #cql-001 CodeQL finding"));
-      assert.ok(html.includes("SonarQube · #sq-001 SonarQube finding"));
+      assert.ok(html.includes("todo · #001 Regular"));
+      assert.ok(html.includes("cql · #cql-001 CodeQL finding"));
+      assert.ok(html.includes("sq · #sq-001 SonarQube finding"));
       assert.ok(html.includes('class="canvas-toolbar"'));
       assert.ok(html.includes('data-edit title="Edit todo file"'));
       assert.ok(html.includes("<span>Edit</span>"));

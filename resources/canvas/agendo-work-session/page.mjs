@@ -16,9 +16,9 @@ const PROFILES = {
 export const STATUS_OPTIONS = ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'];
 
 function todoSource(id) {
-  if (id.startsWith('cql-')) return { key: 'codeql', label: 'CodeQL' };
-  if (id.startsWith('sq-')) return { key: 'sonarqube', label: 'SonarQube' };
-  return { key: 'todo', label: 'Todo' };
+  if (id.startsWith('cql-')) return { key: 'codeql', label: 'cql' };
+  if (id.startsWith('sq-')) return { key: 'sonarqube', label: 'sq' };
+  return { key: 'todo', label: 'todo' };
 }
 
 function sourceBadge(id) {
