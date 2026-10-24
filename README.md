@@ -2,9 +2,9 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Extension](https://img.shields.io/badge/version-0.2.0-blue.svg)
-![Skill](https://img.shields.io/badge/skill-1.5.0-orange.svg)
-![Canvas](https://img.shields.io/badge/canvas-0.1.2-purple.svg)
+![Extension Version](https://img.shields.io/badge/extension-0.2.0-blue.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.5.0-orange.svg)
+![Canvas Version](https://img.shields.io/badge/canvas-0.1.2-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
