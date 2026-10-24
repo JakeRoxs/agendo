@@ -4,10 +4,12 @@ import type { ConfigService } from "./configService";
 import { readText } from "./fileSystem";
 import {
   isTodoFileName,
+  matchesTodoScope,
   parseTodo,
   SCANNING_ID_PREFIX,
   TERMINAL_STATUSES,
   type Todo,
+  type TodoViewScope,
 } from "./todoModel";
 
 const REFRESH_DEBOUNCE_MS = 400;
@@ -51,7 +53,17 @@ export class TodoRepository implements vscode.Disposable {
   }
 
   /** Sorted group names computed with the current repository snapshot. */
-  getGroups(): readonly string[] {
+  getGroups(scope?: TodoViewScope): readonly string[] {
+    if (scope) {
+      return [
+        ...new Set(
+          this.todos
+            .filter((todo) => matchesTodoScope(todo, scope))
+            .map((todo) => todo.group)
+            .filter((group): group is string => Boolean(group)),
+        ),
+      ].sort();
+    }
     return this.groups;
   }
 
@@ -89,13 +101,21 @@ export class TodoRepository implements vscode.Disposable {
 
   private computeDependencyGraph(): DependencyGraph {
     const todosById = new Map(this.todos.map((todo) => [todo.id, todo]));
+    const idCounts = new Map<string, number>();
+    for (const todo of this.todos) {
+      idCounts.set(todo.id, (idCounts.get(todo.id) ?? 0) + 1);
+    }
     const blockedBy = new Map<string, string[]>();
     const blocking = new Map<string, string[]>();
 
     for (const todo of this.todos) {
       const unmetDependencies = todo.dependencies.filter((dependencyId) => {
         const dependency = todosById.get(dependencyId);
-        return !dependency || !TERMINAL_STATUSES.includes(dependency.status);
+        return (
+          idCounts.get(dependencyId) !== 1 ||
+          !dependency ||
+          !TERMINAL_STATUSES.includes(dependency.status)
+        );
       });
       blockedBy.set(todo.id, unmetDependencies);
       blocking.set(todo.id, []);

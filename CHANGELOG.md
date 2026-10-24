@@ -6,13 +6,21 @@ All notable changes to the Agendo extension are documented here.
 
 ### Added
 
+- Duplicate-ID warnings in regular and scanning trees and boards, with hover details listing all conflicting records even when filters hide some of them
+- Clickable tree warning actions and board warnings focus the matching tree/board on the colliding records; section badges show collision counts, and Clear Filters exits focus without changing saved board layouts
+- **Copy ID Collision Reconciliation Context** action for individual collisions or all collisions, producing an approval-gated Agendo skill prompt with exact file paths
 - Optional native CodeQL and SonarQube imports through **Import Code-Scanning Todos...**, disabled by default and fetched only on request
 - Source-specific `code-scanning/codeql` and `code-scanning/sonarqube` todo roots with independent `cql-001` / `sq-001` numbering and nested lifecycle folders
 - Scanner todos participate in native discovery, groups, filters, dependencies, board, digest, link checks, and canvas; re-imports refresh only scanner evidence and preserve user-managed lifecycle and notes
 - SonarQube credentials stored in VS Code SecretStorage; CodeQL uses the authenticated GitHub CLI
+- Dedicated **Code Scanning** sidebar section between Todos and Skill, grouped by CodeQL / SonarQube before the normal lifecycle and priority/group hierarchy
+- Independent scanning search, source/status/priority filters, refresh, digest, date sorting, collapsed state, and board controls; regular Todos views exclude scanning tasks while cross-source dependencies remain shared
+- Separate code-scanning board with CodeQL and SonarQube sections, normal status columns, and independently persisted layout settings
 
 ### Changed
 
+- Skill view uses a minimal initial size so its three options remain visible without dominating the sidebar; saved user layouts remain unchanged
+- Ambiguous ID-based board actions are refused, canvas opening falls back to the selected source file, and dependencies on duplicated IDs remain blocked until reconciliation
 - Work-session canvas version 0.1.2 recognizes scanner IDs and source-specific lifecycle folders, with lowercase `todo`, `cql`, and `sq` badges in the header, dependencies, and recent history
 - Canvas edit action uses a consistent icon and labelled toolbar button instead of an overlapping, font-dependent pencil
 - Canvas status pill auto-sizes to the selected status with centered text and is vertically aligned with source and priority badges

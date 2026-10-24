@@ -14,6 +14,7 @@ import { LinkService } from "./todos/linkService";
 import { SkillManager } from "./todos/skillManager";
 import { SkillStatusTreeProvider } from "./todos/skillStatusTreeProvider";
 import { StatusService } from "./todos/statusService";
+import { findTodoCollisions } from "./todos/todoCollisions";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
@@ -25,6 +26,11 @@ export async function activate(context: vscode.ExtensionContext) {
   const repository = new TodoRepository(config);
   const filter = new FilterService(context.workspaceState);
   const treeState = new TreeStateService(context.workspaceState);
+  const scanningFilter = new FilterService(context.workspaceState, "agendo.codeScanning.filter");
+  const scanningTreeState = new TreeStateService(
+    context.workspaceState,
+    "agendo.codeScanning.tree.collapsed",
+  );
   const status = new StatusService(config, repository);
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
@@ -37,6 +43,12 @@ export async function activate(context: vscode.ExtensionContext) {
     if (!todoId || !root) {
       return false;
     }
+    if (repository.getTodos().filter((todo) => todo.id === todoId).length > 1) {
+      vscode.window.showWarningMessage(
+        `Duplicate todo ID ${todoId}: opening the selected source file instead of an ambiguous canvas session.`,
+      );
+      return false;
+    }
     try {
       await canvasViewer.open(root, todoId);
       return true;
@@ -47,6 +59,13 @@ export async function activate(context: vscode.ExtensionContext) {
   });
   const busy = new BusyIndicator();
   const treeProvider = new TodoTreeProvider(repository, filter, treeState, busy);
+  const scanningTreeProvider = new TodoTreeProvider(
+    repository,
+    scanningFilter,
+    scanningTreeState,
+    busy,
+    "code-scanning",
+  );
   const skillStatusTreeProvider = new SkillStatusTreeProvider(skill, config, canvas);
   const boardViewProvider = new BoardViewProvider(
     repository,
@@ -54,11 +73,39 @@ export async function activate(context: vscode.ExtensionContext) {
     status,
     context.workspaceState,
   );
+  const scanningBoardViewProvider = new BoardViewProvider(
+    repository,
+    scanningFilter,
+    status,
+    context.workspaceState,
+    "code-scanning",
+  );
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,
     showCollapseAll: true,
   });
+  const scanningTreeView = vscode.window.createTreeView("agendo.codeScanning", {
+    treeDataProvider: scanningTreeProvider,
+    showCollapseAll: true,
+  });
+  context.subscriptions.push(
+    repository.onDidChange(() => {
+      const collisions = findTodoCollisions(repository.getTodos());
+      for (const [view, scanning] of [
+        [treeView, false],
+        [scanningTreeView, true],
+      ] as const) {
+        const scoped = collisions.filter((collision) => (collision.source !== "todo") === scanning);
+        view.badge = scoped.length
+          ? {
+              value: scoped.length,
+              tooltip: `Duplicate IDs requiring reconciliation: ${scoped.map((collision) => `${collision.id} (${collision.todos.length} files)`).join(", ")}`,
+            }
+          : undefined;
+      }
+    }),
+  );
   const skillStatusTreeView = vscode.window.createTreeView("agendo.skillStatus", {
     treeDataProvider: skillStatusTreeProvider,
   });
@@ -80,6 +127,20 @@ export async function activate(context: vscode.ExtensionContext) {
     treeView,
     skillStatusTreeView,
     boardViewProvider,
+    scanningTreeView,
+    scanningBoardViewProvider,
+    scanningTreeView.onDidCollapseElement(async (event) => {
+      const key = getTreeNodeKey(event.element as TreeNode | undefined);
+      if (key) {
+        await scanningTreeState.collapse(key);
+      }
+    }),
+    scanningTreeView.onDidExpandElement(async (event) => {
+      const key = getTreeNodeKey(event.element as TreeNode | undefined);
+      if (key) {
+        await scanningTreeState.expand(key);
+      }
+    }),
   );
 
   // Keep the on-disk config projection and gitignore in sync on activation and
@@ -120,17 +181,28 @@ export async function activate(context: vscode.ExtensionContext) {
     treeProvider,
     boardViewProvider,
     refreshSkillStatus: () => skillStatusTreeProvider.refresh(),
+    scanning: {
+      filter: scanningFilter,
+      treeState: scanningTreeState,
+      treeProvider: scanningTreeProvider,
+      boardViewProvider: scanningBoardViewProvider,
+    },
   });
 
   await updateFilterContexts(filter);
+  await updateFilterContexts(scanningFilter, "agendo.codeScanning");
   repository.startWatching();
 
   // Show loading state during initial repository scan
   treeProvider.setLoading(true);
+  scanningTreeProvider.setLoading(true);
   await vscode.commands.executeCommand("setContext", "agendo.loading", true);
+  await vscode.commands.executeCommand("setContext", "agendo.codeScanning.loading", true);
   await repository.refresh();
   treeProvider.markLoaded();
+  scanningTreeProvider.markLoaded();
   await vscode.commands.executeCommand("setContext", "agendo.loading", false);
+  await vscode.commands.executeCommand("setContext", "agendo.codeScanning.loading", false);
 
   // Keep an already-installed work-session canvas in step with the bundled version
   try {

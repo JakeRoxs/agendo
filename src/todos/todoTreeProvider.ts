@@ -3,7 +3,17 @@ import type { BusyIndicator } from "../busyIndicator";
 import { Command } from "../commands";
 import { get, Settings } from "../configuration";
 import type { FilterService } from "./filterService";
-import { TODO_PRIORITIES, type Todo, type TodoPriority, type TodoStatus } from "./todoModel";
+import { collisionDetails, findTodoCollisions, type TodoCollision } from "./todoCollisions";
+import {
+  getTodoSource,
+  matchesTodoScope,
+  type ScanningSource,
+  TODO_PRIORITIES,
+  type Todo,
+  type TodoPriority,
+  type TodoStatus,
+  type TodoViewScope,
+} from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
 import type { TreeStateService } from "./treeStateService";
 
@@ -48,8 +58,10 @@ const PRIORITY_COLOR: Record<TodoPriority, string> = {
 };
 
 /** Sort todos by the active sort setting (date or ID). */
-function sortTodos(todos: Todo[]): Todo[] {
-  if (get<boolean>(Settings.SortByDate)) {
+function sortTodos(todos: Todo[], scope: TodoViewScope): Todo[] {
+  if (
+    get<boolean>(scope === "code-scanning" ? Settings.CodeScanningSortByDate : Settings.SortByDate)
+  ) {
     return [...todos].sort((a, b) => {
       const aTime = a.updatedAt ?? 0;
       const bTime = b.updatedAt ?? 0;
@@ -72,6 +84,7 @@ interface StatusNode {
   kind: "status";
   status: TodoStatus;
   count: number;
+  source?: ScanningSource;
 }
 
 interface PriorityNode {
@@ -79,6 +92,7 @@ interface PriorityNode {
   status: TodoStatus;
   priority: TodoPriority;
   todos: Todo[];
+  source?: ScanningSource;
 }
 
 interface GroupNode {
@@ -86,6 +100,13 @@ interface GroupNode {
   status: TodoStatus;
   group: string;
   todos: Todo[];
+  source?: ScanningSource;
+}
+
+interface SourceNode {
+  kind: "source";
+  source: ScanningSource;
+  count: number;
 }
 
 interface TodoNode {
@@ -93,7 +114,7 @@ interface TodoNode {
   todo: Todo;
 }
 
-type TreeNode = DependencyNode | StatusNode | PriorityNode | GroupNode | TodoNode;
+type TreeNode = SourceNode | DependencyNode | StatusNode | PriorityNode | GroupNode | TodoNode;
 
 export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): string | undefined {
   if (!node) {
@@ -104,7 +125,8 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
     typeof (node as { id?: string }).id === "string" ? (node as { id: string }).id : undefined;
   if (
     maybeId &&
-    (maybeId.startsWith("status:") ||
+    (maybeId.startsWith("source:") ||
+      maybeId.startsWith("status:") ||
       maybeId.startsWith("priority:") ||
       maybeId.startsWith("group:") ||
       maybeId.startsWith("dependency:"))
@@ -113,15 +135,18 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
   }
 
   if ("kind" in node) {
+    const prefix = "source" in node && node.source ? `source:${node.source}:` : "";
     switch (node.kind) {
+      case "source":
+        return `source:${node.source}`;
       case "dependency":
         return `dependency:${node.todo.id}`;
       case "status":
-        return `status:${node.status}`;
+        return `${prefix}status:${node.status}`;
       case "priority":
-        return `priority:${node.status}:${node.priority}`;
+        return `${prefix}priority:${node.status}:${node.priority}`;
       case "group":
-        return `group:${node.status}:${node.group}`;
+        return `${prefix}group:${node.status}:${node.group}`;
       default:
         return undefined;
     }
@@ -132,6 +157,22 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
 
 /** Groups todos by status, then priority, then leaf todo items. */
 export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
+  private collisionSnapshot?: readonly Todo[];
+  private readonly collisionsByUri = new Map<string, TodoCollision>();
+
+  private collisionFor(todo: Todo): TodoCollision | undefined {
+    const snapshot = this.repository.getTodos();
+    if (snapshot !== this.collisionSnapshot) {
+      this.collisionSnapshot = snapshot;
+      this.collisionsByUri.clear();
+      for (const collision of findTodoCollisions(snapshot)) {
+        for (const candidate of collision.todos) {
+          this.collisionsByUri.set(candidate.uri.toString(), collision);
+        }
+      }
+    }
+    return this.collisionsByUri.get(todo.uri.toString());
+  }
   private readonly onDidChangeTreeDataEmitter = new vscode.EventEmitter<TreeNode | undefined>();
   readonly onDidChangeTreeData = this.onDidChangeTreeDataEmitter.event;
 
@@ -143,6 +184,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private readonly filter: FilterService,
     private readonly treeState: TreeStateService,
     private readonly busy?: BusyIndicator,
+    private readonly scope: TodoViewScope = "todos",
   ) {
     this.repository.onDidChange(() => this.refresh());
     this.busy?.onChange(() => this.refresh());
@@ -168,11 +210,28 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   private visibleTodos(): Todo[] {
     const dependencyGraph = this.repository.getDependencyGraph();
-    return this.repository.getTodos().filter((todo) => this.filter.matches(todo, dependencyGraph));
+    return this.repository
+      .getTodos()
+      .filter(
+        (todo) => matchesTodoScope(todo, this.scope) && this.filter.matches(todo, dependencyGraph),
+      );
   }
 
   getTreeItem(node: TreeNode): vscode.TreeItem {
     switch (node.kind) {
+      case "source": {
+        const key = getTreeNodeKey(node);
+        const item = new vscode.TreeItem(
+          `${node.source === "codeql" ? "CodeQL" : "SonarQube"} (${node.count})`,
+          key && this.treeState.isCollapsed(key)
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.Expanded,
+        );
+        item.id = key;
+        item.iconPath = new vscode.ThemeIcon("shield");
+        item.contextValue = "sourceGroup";
+        return item;
+      }
       case "dependency":
         return this.dependencyItem(node);
       case "status":
@@ -186,17 +245,23 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     }
   }
 
-  private statusNodes(todos: Todo[]): TreeNode[] {
+  private statusNodes(todos: Todo[], source?: ScanningSource): TreeNode[] {
     return STATUS_ORDER.filter((status) => todos.some((t) => t.status === status)).map(
       (status) => ({
         kind: "status",
         status,
         count: todos.filter((t) => t.status === status).length,
+        ...(source ? { source } : {}),
       }),
     );
   }
 
-  private groupNodes(status: string, grouped: Todo[], ungrouped: Todo[]): TreeNode[] {
+  private groupNodes(
+    status: string,
+    grouped: Todo[],
+    ungrouped: Todo[],
+    source?: ScanningSource,
+  ): TreeNode[] {
     const groups = [
       ...new Set(grouped.map((t) => t.group).filter((group): group is string => Boolean(group))),
     ].sort((a, b) => a.localeCompare(b));
@@ -204,7 +269,11 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       kind: "group",
       status: status as TodoStatus,
       group,
-      todos: sortTodos(grouped.filter((t) => t.group === group)),
+      todos: sortTodos(
+        grouped.filter((t) => t.group === group),
+        this.scope,
+      ),
+      ...(source ? { source } : {}),
     }));
     const priorityResults: PriorityNode[] = TODO_PRIORITIES.filter((priority) =>
       ungrouped.some((t) => t.priority === priority),
@@ -212,18 +281,26 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       kind: "priority",
       status: status as TodoStatus,
       priority,
-      todos: sortTodos(ungrouped.filter((t) => t.priority === priority)),
+      todos: sortTodos(
+        ungrouped.filter((t) => t.priority === priority),
+        this.scope,
+      ),
+      ...(source ? { source } : {}),
     }));
     return [...groupResults, ...priorityResults];
   }
 
-  private priorityNodes(status: string, todos: Todo[]): TreeNode[] {
+  private priorityNodes(status: string, todos: Todo[], source?: ScanningSource): TreeNode[] {
     return TODO_PRIORITIES.filter((priority) => todos.some((t) => t.priority === priority)).map(
       (priority) => ({
         kind: "priority",
         status: status as TodoStatus,
         priority,
-        todos: sortTodos(todos.filter((t) => t.priority === priority)),
+        todos: sortTodos(
+          todos.filter((t) => t.priority === priority),
+          this.scope,
+        ),
+        ...(source ? { source } : {}),
       }),
     );
   }
@@ -233,6 +310,9 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     const processedIds = new Set<string>();
 
     for (const todo of todos) {
+      if (this.collisionFor(todo)) {
+        continue;
+      }
       const blockedBy = this.repository.getDependencyGraph().blockedBy.get(todo.id) ?? [];
       if (blockedBy.length === 0) {
         continue;
@@ -242,19 +322,22 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
         dependencyGroups.set(blockerId, []);
       }
       dependencyGroups.get(blockerId)?.push(todo);
-      processedIds.add(todo.id);
     }
 
     const result: TreeNode[] = [];
     for (const [blockerId, dependents] of dependencyGroups) {
-      const blocker = todos.find((t) => t.id === blockerId);
-      if (blocker && !processedIds.has(blocker.id)) {
+      const blocker = todos.find((t) => t.id === blockerId && !this.collisionFor(t));
+      const remainingDependents = dependents.filter((todo) => !processedIds.has(todo.id));
+      if (blocker && !processedIds.has(blocker.id) && remainingDependents.length) {
         result.push({
           kind: "dependency",
           todo: blocker,
-          dependents: sortTodos(dependents),
+          dependents: sortTodos(remainingDependents, this.scope),
         });
         processedIds.add(blocker.id);
+        for (const dependent of remainingDependents) {
+          processedIds.add(dependent.id);
+        }
       }
     }
 
@@ -271,18 +354,40 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     const todos = this.visibleTodos();
 
     if (!node) {
+      if (this.scope === "code-scanning") {
+        return (["codeql", "sonarqube"] as const).flatMap((source) => {
+          const count = todos.filter((todo) => getTodoSource(todo) === source).length;
+          return count ? [{ kind: "source" as const, source, count }] : [];
+        });
+      }
       return this.statusNodes(todos);
     }
 
+    if (node.kind === "source") {
+      return this.statusNodes(
+        todos.filter((todo) => getTodoSource(todo) === node.source),
+        node.source,
+      );
+    }
+
     if (node.kind === "status") {
-      const inStatus = todos.filter((t) => t.status === node.status);
-      const grouped = inStatus.filter((t) => t.group);
-      const ungrouped = inStatus.filter((t) => !t.group);
+      const inStatus = todos.filter(
+        (t) => t.status === node.status && (!node.source || getTodoSource(t) === node.source),
+      );
+      const sourceGroup = node.source === "codeql" ? "CodeQL" : "SonarQube";
+      const grouped = inStatus.filter((t) => t.group && (!node.source || t.group !== sourceGroup));
+      const ungrouped = inStatus.filter(
+        (t) => !t.group || (node.source && t.group === sourceGroup),
+      );
 
       if (grouped.length > 0) {
-        return this.groupNodes(node.status, grouped, ungrouped);
+        return this.groupNodes(node.status, grouped, ungrouped, node.source);
       }
-      return this.priorityNodes(node.status, inStatus);
+      return this.priorityNodes(node.status, inStatus, node.source);
+    }
+
+    if (node.kind === "dependency") {
+      return node.dependents.map((todo) => ({ kind: "todo", todo }));
     }
 
     if (node.kind === "group") {
@@ -365,6 +470,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   private todoItem(node: TodoNode): vscode.TreeItem {
     const { todo } = node;
+    const collision = this.collisionFor(todo);
     const incompleteDependencies =
       this.repository.getDependencyGraph().blockedBy.get(todo.id) ?? [];
     const isBlockedFlag = incompleteDependencies.length > 0;
@@ -379,6 +485,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     ].filter((value): value is string => Boolean(value));
     item.description = description.join(" · ");
     item.resourceUri = todo.uri;
+    item.id = `todo:${todo.uri.toString()}`;
     item.contextValue = isBlockedFlag ? "todoItemBlocked" : "todoItem";
     if (this.busy?.isTodoBusy(todo.id)) {
       item.iconPath = new vscode.ThemeIcon(
@@ -422,6 +529,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       tooltip.appendMarkdown(`\n> **Blocked by:** ${incompleteDependencies.join(", ")}\n`);
     }
     item.tooltip = tooltip;
+    this.addCollisionWarning(item, tooltip, collision);
 
     item.command = {
       command: Command.OpenPreview,
@@ -429,6 +537,26 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       arguments: [node],
     };
     return item;
+  }
+
+  private addCollisionWarning(
+    item: vscode.TreeItem,
+    tooltip: vscode.MarkdownString,
+    collision?: TodoCollision,
+  ): void {
+    if (!collision) {
+      return;
+    }
+    item.description = ["duplicate ID", item.description].filter(Boolean).join(" · ");
+    item.contextValue += "Collision";
+    const warning = new vscode.MarkdownString();
+    warning.appendMarkdown("**Duplicate todo ID: reconciliation needed**\n\n");
+    warning.appendText(collisionDetails(collision));
+    warning.appendMarkdown(
+      "\n\nClick the inline warning action to show only the conflicting files, or right-click and choose **Copy ID Collision Reconciliation Context**.\n\n",
+    );
+    warning.appendMarkdown(tooltip.value);
+    item.tooltip = warning;
   }
 }
 

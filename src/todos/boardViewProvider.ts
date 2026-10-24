@@ -3,12 +3,16 @@ import * as vscode from "vscode";
 import { Command } from "../commands";
 import type { FilterService } from "./filterService";
 import type { StatusService } from "./statusService";
+import { collisionDetails, findTodoCollisions } from "./todoCollisions";
 import {
+  getTodoSource,
+  matchesTodoScope,
   TERMINAL_STATUSES,
   TODO_PRIORITIES,
   TODO_STATUSES,
   type Todo,
   type TodoStatus,
+  type TodoViewScope,
 } from "./todoModel";
 import type { DependencyGraph, TodoRepository } from "./todoRepository";
 
@@ -31,6 +35,8 @@ const STATUS_ICON: Record<TodoStatus, string> = {
 };
 
 export interface BoardTodo {
+  collision?: string;
+  collisionSource?: string;
   id: string;
   key?: string;
   title: string;
@@ -52,6 +58,12 @@ export interface BoardColumn {
   todos: BoardTodo[];
   totalCount: number;
   wipLimit?: number;
+}
+
+export interface BoardSourceSection {
+  source: "codeql" | "sonarqube";
+  label: string;
+  columns: BoardColumn[];
 }
 
 export const BOARD_CARD_FIELDS = [
@@ -137,6 +149,8 @@ const TODO_PRIORITY_SET = new Set<Todo["priority"]>(TODO_PRIORITIES);
 
 export interface BoardSnapshot {
   columns: BoardColumn[];
+  sections?: BoardSourceSection[];
+  scope: TodoViewScope;
   hiddenStatuses: TodoStatus[];
   cardFields: BoardCardFieldPreference[];
   cardDensity: BoardCardDensity;
@@ -175,6 +189,7 @@ const BOARD_TERMINAL_CARD_LIMIT_KEY = "agendo.board.terminalCardLimit";
 const BOARD_COLUMN_SORTS_KEY = "agendo.board.columnSorts";
 const BOARD_GROUPING_KEY = "agendo.board.grouping";
 const BOARD_WIP_LIMITS_KEY = "agendo.board.wipLimits";
+const SCANNING_BOARD_PREFIX = "agendo.codeScanning.board.";
 const DEFAULT_HIDDEN_CARD_FIELDS = new Set<BoardCardField>(["createdAt", "updatedAt"]);
 const DEFAULT_CARD_DENSITY: BoardCardDensity = "comfortable";
 const DEFAULT_BOARD_SORT: BoardSort = "default";
@@ -323,37 +338,72 @@ export function buildBoardSnapshot(
   todos: readonly Todo[],
   dependencyGraph: DependencyGraph,
   filter: FilterService,
+  scope: TodoViewScope = "todos",
 ): BoardSnapshot {
-  const visibleTodos = todos.filter((todo) => filter.matches(todo, dependencyGraph));
-  const columns = TODO_STATUSES.map((status) => {
-    const columnTodos = visibleTodos
-      .filter((todo) => todo.status === status)
-      .sort((left, right) => left.id.localeCompare(right.id))
-      .map((todo) => ({
-        id: todo.id,
-        key: todo.key,
-        title: todo.title,
-        summary: todo.summary,
-        status: todo.status,
-        priority: todo.priority,
-        group: todo.group,
-        epic: todo.epic,
-        tags: todo.tags,
-        blocked: Boolean(dependencyGraph.blockedBy.get(todo.id)?.length),
-        createdAt: todo.createdAt,
-        updatedAt: todo.updatedAt,
-      }));
-    return {
-      status,
-      label: STATUS_LABEL[status],
-      icon: STATUS_ICON[status],
-      todos: columnTodos,
-      totalCount: columnTodos.length,
-    };
+  const collisionByUri = new Map(
+    findTodoCollisions(todos).flatMap((collision) => {
+      const data = { source: collision.source, details: collisionDetails(collision) };
+      return collision.todos.map((todo) => [todo.uri.toString(), data] as const);
+    }),
+  );
+  const visibleTodos = todos.filter((todo) => {
+    if (!matchesTodoScope(todo, scope)) {
+      return false;
+    }
+    return filter.matches(todo, dependencyGraph);
   });
+
+  const buildColumns = (scopedTodos: readonly Todo[]) =>
+    TODO_STATUSES.map((status) => {
+      const columnTodos = scopedTodos
+        .filter((todo) => todo.status === status)
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((todo) => ({
+          id: todo.id,
+          collision: collisionByUri.get(todo.uri.toString())?.details,
+          collisionSource: collisionByUri.get(todo.uri.toString())?.source,
+          key: todo.key,
+          title: todo.title,
+          summary: todo.summary,
+          status: todo.status,
+          priority: todo.priority,
+          group: todo.group,
+          epic: todo.epic,
+          tags: todo.tags,
+          blocked: Boolean(dependencyGraph.blockedBy.get(todo.id)?.length),
+          createdAt: todo.createdAt,
+          updatedAt: todo.updatedAt,
+        }));
+      return {
+        status,
+        label: STATUS_LABEL[status],
+        icon: STATUS_ICON[status],
+        todos: columnTodos,
+        totalCount: columnTodos.length,
+      };
+    });
+
+  let columns = buildColumns(visibleTodos);
+  let sections: BoardSourceSection[] | undefined;
+
+  if (scope === "code-scanning") {
+    const sources: Array<"codeql" | "sonarqube"> = ["codeql", "sonarqube"];
+    sections = sources
+      .filter(
+        (source) => !filter.current.sources?.length || filter.current.sources.includes(source),
+      )
+      .map((source) => ({
+        source,
+        label: source === "codeql" ? "CodeQL" : "SonarQube",
+        columns: buildColumns(visibleTodos.filter((todo) => getTodoSource(todo) === source)),
+      }));
+    columns = [];
+  }
 
   return {
     columns,
+    sections,
+    scope,
     hiddenStatuses: [],
     cardFields: BOARD_CARD_FIELDS.map((field) => ({
       field,
@@ -380,6 +430,7 @@ export function buildBoardSnapshot(
 
 interface BoardMessage {
   type:
+    | "focusCollision"
     | "ready"
     | "open"
     | "delete"
@@ -407,8 +458,10 @@ interface BoardMessage {
     | "applyPreset"
     | "setPriority"
     | "openExternalKey"
-    | "resetBoardSettings";
+    | "resetBoardSettings"
+    | "scopedCommand";
   todoId?: string;
+  collisionSource?: string;
   status?: TodoStatus;
   statuses?: TodoStatus[];
   field?: BoardCardField;
@@ -430,20 +483,29 @@ interface BoardMessage {
   preset?: BoardPreset;
   priority?: Todo["priority"];
   limit?: number;
+  command?: string;
 }
 
 /** Renders the file-backed todo board in a reusable editor webview panel. */
 export class BoardViewProvider implements vscode.Disposable {
   private panel: vscode.WebviewPanel | undefined;
   private readonly repositorySubscription: vscode.Disposable;
+  private readonly scope: TodoViewScope;
 
   constructor(
     private readonly repository: TodoRepository,
     private readonly filter: FilterService,
     private readonly status: StatusService,
     private readonly state: vscode.Memento,
+    scope: TodoViewScope = "todos",
   ) {
+    this.scope = scope;
     this.repositorySubscription = repository.onDidChange(() => this.sendSnapshot());
+  }
+
+  /** Public refresh that re-sends the current snapshot. */
+  refresh(): void {
+    this.sendSnapshot();
   }
 
   open(): void {
@@ -452,9 +514,10 @@ export class BoardViewProvider implements vscode.Disposable {
       return;
     }
 
+    const isScanning = this.scope === "code-scanning";
     const panel = vscode.window.createWebviewPanel(
-      "agendo.board",
-      "Agendo Board",
+      isScanning ? "agendo.codeScanning.board" : "agendo.board",
+      isScanning ? "Code Scanning Board" : "Agendo Board",
       vscode.ViewColumn.Active,
       { enableScripts: true, retainContextWhenHidden: true },
     );
@@ -474,8 +537,37 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private async handleMessage(message: BoardMessage): Promise<void> {
+    if (message.type === "focusCollision") {
+      if (
+        this.repository
+          .getTodos()
+          .some(
+            (todo) =>
+              todo.id === message.todoId &&
+              matchesTodoScope(todo, this.scope) &&
+              (getTodoSource(todo) ?? "todo") === message.collisionSource,
+          )
+      ) {
+        await vscode.commands.executeCommand(Command.FocusCollision, {
+          todoId: message.todoId,
+          collisionSource: message.collisionSource,
+        });
+      }
+      return;
+    }
     if (message.type === "ready") {
       this.sendSnapshot();
+      return;
+    }
+
+    if (message.type === "scopedCommand" && message.command) {
+      const prefix = this.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
+      const allowed = ["refresh", "filter", "search", "clearFilters", "clearSearch"].map(
+        (action) => `${prefix}.${action}`,
+      );
+      if (allowed.includes(message.command)) {
+        await vscode.commands.executeCommand(message.command);
+      }
       return;
     }
 
@@ -487,9 +579,22 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private async handleTodoMessage(message: BoardMessage): Promise<void> {
-    const todo = message.todoId
-      ? this.repository.getTodos().find((candidate) => candidate.id === message.todoId)
-      : undefined;
+    const matches = message.todoId
+      ? this.repository
+          .getTodos()
+          .filter(
+            (candidate) =>
+              candidate.id === message.todoId && matchesTodoScope(candidate, this.scope),
+          )
+      : [];
+    if (matches.length > 1) {
+      vscode.window.showWarningMessage(
+        `Duplicate todo ID ${message.todoId}: reconcile the conflicting files before using ID-based board actions.`,
+      );
+      this.sendSnapshot();
+      return;
+    }
+    const todo = matches[0];
     if (!todo) {
       return;
     }
@@ -599,64 +704,78 @@ export class BoardViewProvider implements vscode.Disposable {
         return this.setCardFieldOrder(message.fields);
       case "setCardDensity":
         return this.setValidatedPreference(
-          BOARD_CARD_DENSITY_KEY,
+          this.keyFor(BOARD_CARD_DENSITY_KEY),
           message.density,
           isBoardCardDensity,
         );
       case "setBoardSort":
-        return this.setValidatedPreference(BOARD_SORT_KEY, message.sort, isBoardSort);
+        return this.setValidatedPreference(this.keyFor(BOARD_SORT_KEY), message.sort, isBoardSort);
       case "setDescriptionPreview":
         return this.setValidatedPreference(
-          BOARD_DESCRIPTION_PREVIEW_KEY,
+          this.keyFor(BOARD_DESCRIPTION_PREVIEW_KEY),
           message.descriptionPreview,
           isBoardDescriptionPreview,
         );
       case "setHideEmptyColumns":
-        return this.setBooleanPreference(BOARD_HIDE_EMPTY_COLUMNS_KEY, message.enabled);
+        return this.setBooleanPreference(
+          this.keyFor(BOARD_HIDE_EMPTY_COLUMNS_KEY),
+          message.enabled,
+        );
       case "setMetadataLabels":
-        return this.setBooleanPreference(BOARD_SHOW_METADATA_LABELS_KEY, message.enabled);
+        return this.setBooleanPreference(
+          this.keyFor(BOARD_SHOW_METADATA_LABELS_KEY),
+          message.enabled,
+        );
       case "setDateFormat":
         return this.setValidatedPreference(
-          BOARD_DATE_FORMAT_KEY,
+          this.keyFor(BOARD_DATE_FORMAT_KEY),
           message.dateFormat,
           isBoardDateFormat,
         );
       case "setTagLimit":
-        return this.setValidatedPreference(BOARD_TAG_LIMIT_KEY, message.tagLimit, isBoardTagLimit);
+        return this.setValidatedPreference(
+          this.keyFor(BOARD_TAG_LIMIT_KEY),
+          message.tagLimit,
+          isBoardTagLimit,
+        );
       case "setTitleWrapping":
         return this.setValidatedPreference(
-          BOARD_TITLE_WRAPPING_KEY,
+          this.keyFor(BOARD_TITLE_WRAPPING_KEY),
           message.titleWrapping,
           isBoardTitleWrapping,
         );
       case "setMissingValueBehavior":
         return this.setValidatedPreference(
-          BOARD_MISSING_VALUE_BEHAVIOR_KEY,
+          this.keyFor(BOARD_MISSING_VALUE_BEHAVIOR_KEY),
           message.missingValueBehavior,
           isBoardMissingValueBehavior,
         );
       case "setCardAccent":
         return this.setValidatedPreference(
-          BOARD_CARD_ACCENT_KEY,
+          this.keyFor(BOARD_CARD_ACCENT_KEY),
           message.cardAccent,
           isBoardCardAccent,
         );
       case "setColumnWidth":
         return this.setValidatedPreference(
-          BOARD_COLUMN_WIDTH_KEY,
+          this.keyFor(BOARD_COLUMN_WIDTH_KEY),
           message.columnWidth,
           isBoardColumnWidth,
         );
       case "setTerminalCardLimit":
         return this.setValidatedPreference(
-          BOARD_TERMINAL_CARD_LIMIT_KEY,
+          this.keyFor(BOARD_TERMINAL_CARD_LIMIT_KEY),
           message.terminalCardLimit,
           isBoardTerminalCardLimit,
         );
       case "setColumnSort":
         return this.setColumnSort(message.status, message.columnSort);
       case "setGrouping":
-        return this.setValidatedPreference(BOARD_GROUPING_KEY, message.grouping, isBoardGrouping);
+        return this.setValidatedPreference(
+          this.keyFor(BOARD_GROUPING_KEY),
+          message.grouping,
+          isBoardGrouping,
+        );
       case "setWipLimit":
         return this.setWipLimit(message.status, message.limit);
       case "applyPreset":
@@ -678,7 +797,7 @@ export class BoardViewProvider implements vscode.Disposable {
     } else {
       hiddenStatuses.delete(status);
     }
-    await this.state.update(BOARD_HIDDEN_STATUSES_KEY, [...hiddenStatuses]);
+    await this.state.update(this.keyFor(BOARD_HIDDEN_STATUSES_KEY), [...hiddenStatuses]);
     return true;
   }
 
@@ -686,7 +805,10 @@ export class BoardViewProvider implements vscode.Disposable {
     if (!Array.isArray(statuses) || !statuses.every(isTodoStatus)) {
       return false;
     }
-    await this.state.update(BOARD_STATUS_ORDER_KEY, normalizeBoardStatusOrder(statuses));
+    await this.state.update(
+      this.keyFor(BOARD_STATUS_ORDER_KEY),
+      normalizeBoardStatusOrder(statuses),
+    );
     return true;
   }
 
@@ -700,7 +822,7 @@ export class BoardViewProvider implements vscode.Disposable {
     } else {
       hiddenFields.add(field);
     }
-    await this.state.update(BOARD_HIDDEN_CARD_FIELDS_KEY, [...hiddenFields]);
+    await this.state.update(this.keyFor(BOARD_HIDDEN_CARD_FIELDS_KEY), [...hiddenFields]);
     return true;
   }
 
@@ -708,7 +830,10 @@ export class BoardViewProvider implements vscode.Disposable {
     if (!Array.isArray(fields) || !fields.every(isBoardCardField)) {
       return false;
     }
-    await this.state.update(BOARD_CARD_FIELD_ORDER_KEY, normalizeBoardCardFieldOrder(fields));
+    await this.state.update(
+      this.keyFor(BOARD_CARD_FIELD_ORDER_KEY),
+      normalizeBoardCardFieldOrder(fields),
+    );
     return true;
   }
 
@@ -742,7 +867,7 @@ export class BoardViewProvider implements vscode.Disposable {
     } else {
       columnSorts[status] = sort;
     }
-    await this.state.update(BOARD_COLUMN_SORTS_KEY, columnSorts);
+    await this.state.update(this.keyFor(BOARD_COLUMN_SORTS_KEY), columnSorts);
     return true;
   }
 
@@ -759,7 +884,7 @@ export class BoardViewProvider implements vscode.Disposable {
     } else {
       limits[status] = limit;
     }
-    await this.state.update(BOARD_WIP_LIMITS_KEY, limits);
+    await this.state.update(this.keyFor(BOARD_WIP_LIMITS_KEY), limits);
     return true;
   }
 
@@ -772,26 +897,26 @@ export class BoardViewProvider implements vscode.Disposable {
     }
     const preferences: Record<Exclude<BoardPreset, "default">, Record<string, unknown>> = {
       compact: {
-        [BOARD_CARD_DENSITY_KEY]: "compact",
-        [BOARD_TITLE_WRAPPING_KEY]: "oneLine",
-        [BOARD_DESCRIPTION_PREVIEW_KEY]: "hidden",
-        [BOARD_TAG_LIMIT_KEY]: "2",
-        [BOARD_HIDE_EMPTY_COLUMNS_KEY]: true,
-        [BOARD_COLUMN_WIDTH_KEY]: "narrow",
-        [BOARD_TERMINAL_CARD_LIMIT_KEY]: "25",
+        [this.keyFor(BOARD_CARD_DENSITY_KEY)]: "compact",
+        [this.keyFor(BOARD_TITLE_WRAPPING_KEY)]: "oneLine",
+        [this.keyFor(BOARD_DESCRIPTION_PREVIEW_KEY)]: "hidden",
+        [this.keyFor(BOARD_TAG_LIMIT_KEY)]: "2",
+        [this.keyFor(BOARD_HIDE_EMPTY_COLUMNS_KEY)]: true,
+        [this.keyFor(BOARD_COLUMN_WIDTH_KEY)]: "narrow",
+        [this.keyFor(BOARD_TERMINAL_CARD_LIMIT_KEY)]: "25",
       },
       focus: {
-        [BOARD_HIDDEN_STATUSES_KEY]: ["backlogged", "complete", "cancelled"],
-        [BOARD_SORT_KEY]: "priority",
-        [BOARD_HIDE_EMPTY_COLUMNS_KEY]: true,
-        [BOARD_COLUMN_WIDTH_KEY]: "wide",
+        [this.keyFor(BOARD_HIDDEN_STATUSES_KEY)]: ["backlogged", "complete", "cancelled"],
+        [this.keyFor(BOARD_SORT_KEY)]: "priority",
+        [this.keyFor(BOARD_HIDE_EMPTY_COLUMNS_KEY)]: true,
+        [this.keyFor(BOARD_COLUMN_WIDTH_KEY)]: "wide",
       },
       review: {
-        [BOARD_CARD_DENSITY_KEY]: "comfortable",
-        [BOARD_DESCRIPTION_PREVIEW_KEY]: "twoLines",
-        [BOARD_SORT_KEY]: "updatedAt",
-        [BOARD_DATE_FORMAT_KEY]: "relative",
-        [BOARD_TERMINAL_CARD_LIMIT_KEY]: "50",
+        [this.keyFor(BOARD_CARD_DENSITY_KEY)]: "comfortable",
+        [this.keyFor(BOARD_DESCRIPTION_PREVIEW_KEY)]: "twoLines",
+        [this.keyFor(BOARD_SORT_KEY)]: "updatedAt",
+        [this.keyFor(BOARD_DATE_FORMAT_KEY)]: "relative",
+        [this.keyFor(BOARD_TERMINAL_CARD_LIMIT_KEY)]: "50",
       },
     };
     await Promise.all(
@@ -801,29 +926,28 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private async resetBoardSettings(): Promise<boolean> {
-    await Promise.all(
-      [
-        BOARD_HIDDEN_STATUSES_KEY,
-        BOARD_STATUS_ORDER_KEY,
-        BOARD_CARD_FIELD_ORDER_KEY,
-        BOARD_HIDDEN_CARD_FIELDS_KEY,
-        BOARD_CARD_DENSITY_KEY,
-        BOARD_SORT_KEY,
-        BOARD_DESCRIPTION_PREVIEW_KEY,
-        BOARD_HIDE_EMPTY_COLUMNS_KEY,
-        BOARD_SHOW_METADATA_LABELS_KEY,
-        BOARD_DATE_FORMAT_KEY,
-        BOARD_TAG_LIMIT_KEY,
-        BOARD_TITLE_WRAPPING_KEY,
-        BOARD_MISSING_VALUE_BEHAVIOR_KEY,
-        BOARD_CARD_ACCENT_KEY,
-        BOARD_COLUMN_WIDTH_KEY,
-        BOARD_TERMINAL_CARD_LIMIT_KEY,
-        BOARD_COLUMN_SORTS_KEY,
-        BOARD_GROUPING_KEY,
-        BOARD_WIP_LIMITS_KEY,
-      ].map((key) => this.state.update(key, undefined)),
-    );
+    const keys = [
+      BOARD_HIDDEN_STATUSES_KEY,
+      BOARD_STATUS_ORDER_KEY,
+      BOARD_CARD_FIELD_ORDER_KEY,
+      BOARD_HIDDEN_CARD_FIELDS_KEY,
+      BOARD_CARD_DENSITY_KEY,
+      BOARD_SORT_KEY,
+      BOARD_DESCRIPTION_PREVIEW_KEY,
+      BOARD_HIDE_EMPTY_COLUMNS_KEY,
+      BOARD_SHOW_METADATA_LABELS_KEY,
+      BOARD_DATE_FORMAT_KEY,
+      BOARD_TAG_LIMIT_KEY,
+      BOARD_TITLE_WRAPPING_KEY,
+      BOARD_MISSING_VALUE_BEHAVIOR_KEY,
+      BOARD_CARD_ACCENT_KEY,
+      BOARD_COLUMN_WIDTH_KEY,
+      BOARD_TERMINAL_CARD_LIMIT_KEY,
+      BOARD_COLUMN_SORTS_KEY,
+      BOARD_GROUPING_KEY,
+      BOARD_WIP_LIMITS_KEY,
+    ].map((key) => this.keyFor(key));
+    await Promise.all(keys.map((key) => this.state.update(key, undefined)));
     return true;
   }
 
@@ -835,8 +959,9 @@ export class BoardViewProvider implements vscode.Disposable {
       this.repository.getTodos(),
       this.repository.getDependencyGraph(),
       this.filter,
+      this.scope,
     );
-    const hiddenStatuses = this.getHiddenStatuses();
+    const hiddenStatuses = this.filter.current.collision ? [] : this.getHiddenStatuses();
     const hidden = new Set(hiddenStatuses);
     snapshot.hideEmptyColumns = this.getBooleanPreference(BOARD_HIDE_EMPTY_COLUMNS_KEY, false);
     snapshot.columns = normalizeBoardStatusOrder(this.getStatusOrder()).flatMap((status) => {
@@ -844,6 +969,18 @@ export class BoardViewProvider implements vscode.Disposable {
       const visible = column && !hidden.has(column.status);
       return visible && !(snapshot.hideEmptyColumns && column.todos.length === 0) ? [column] : [];
     });
+    if (snapshot.sections) {
+      snapshot.sections = snapshot.sections.map((section) => ({
+        ...section,
+        columns: normalizeBoardStatusOrder(this.getStatusOrder()).flatMap((status) => {
+          const column = section.columns.find((candidate) => candidate.status === status);
+          const visible = column && !hidden.has(column.status);
+          return visible && !(snapshot.hideEmptyColumns && column.todos.length === 0)
+            ? [column]
+            : [];
+        }),
+      }));
+    }
     snapshot.hiddenStatuses = hiddenStatuses;
     const hiddenCardFields = new Set(this.getHiddenCardFields());
     snapshot.cardFields = this.getCardFieldOrder().map((field) => ({
@@ -861,7 +998,9 @@ export class BoardViewProvider implements vscode.Disposable {
     snapshot.missingValueBehavior = this.getMissingValueBehavior();
     snapshot.cardAccent = this.getCardAccent();
     snapshot.columnWidth = this.getColumnWidth();
-    snapshot.terminalCardLimit = this.getTerminalCardLimit();
+    snapshot.terminalCardLimit = this.filter.current.collision
+      ? "all"
+      : this.getTerminalCardLimit();
     snapshot.columnSorts = this.getColumnSorts();
     snapshot.grouping = this.getGrouping();
     snapshot.wipLimits = this.getWipLimits();
@@ -872,6 +1011,20 @@ export class BoardViewProvider implements vscode.Disposable {
       snapshot.wipLimits,
     );
     snapshot.columns = limitTerminalBoardColumns(snapshot.columns, snapshot.terminalCardLimit);
+    if (snapshot.sections) {
+      snapshot.sections = snapshot.sections.map((section) => ({
+        ...section,
+        columns: limitTerminalBoardColumns(
+          applyBoardColumnRules(
+            section.columns,
+            snapshot.sort,
+            snapshot.columnSorts,
+            snapshot.wipLimits,
+          ),
+          snapshot.terminalCardLimit,
+        ),
+      }));
+    }
 
     void this.panel.webview.postMessage({
       type: "snapshot",
@@ -879,89 +1032,106 @@ export class BoardViewProvider implements vscode.Disposable {
     });
   }
 
+  private keyFor(regularKey: string): string {
+    if (this.scope !== "code-scanning") {
+      return regularKey;
+    }
+    const base = regularKey.replace("agendo.board.", "");
+    return `${SCANNING_BOARD_PREFIX}${base}`;
+  }
+
   private getHiddenStatuses(): TodoStatus[] {
-    const hiddenStatuses = this.state.get<unknown[]>(BOARD_HIDDEN_STATUSES_KEY, []);
+    const hiddenStatuses = this.state.get<unknown[]>(this.keyFor(BOARD_HIDDEN_STATUSES_KEY), []);
     return hiddenStatuses.filter(isTodoStatus);
   }
 
   private getStatusOrder(): TodoStatus[] {
-    const order = this.state.get<unknown[]>(BOARD_STATUS_ORDER_KEY, []);
+    const order = this.state.get<unknown[]>(this.keyFor(BOARD_STATUS_ORDER_KEY), []);
     return normalizeBoardStatusOrder(order.filter(isTodoStatus));
   }
 
   private getHiddenCardFields(): BoardCardField[] {
-    const fields = this.state.get<unknown[]>(BOARD_HIDDEN_CARD_FIELDS_KEY, [
+    const fields = this.state.get<unknown[]>(this.keyFor(BOARD_HIDDEN_CARD_FIELDS_KEY), [
       ...DEFAULT_HIDDEN_CARD_FIELDS,
     ]);
     return fields.filter(isBoardCardField);
   }
 
   private getCardFieldOrder(): BoardCardField[] {
-    const fields = this.state.get<unknown[]>(BOARD_CARD_FIELD_ORDER_KEY, []);
+    const fields = this.state.get<unknown[]>(this.keyFor(BOARD_CARD_FIELD_ORDER_KEY), []);
     return normalizeBoardCardFieldOrder(fields.filter(isBoardCardField));
   }
 
   private getCardDensity(): BoardCardDensity {
-    const density = this.state.get<unknown>(BOARD_CARD_DENSITY_KEY, DEFAULT_CARD_DENSITY);
+    const density = this.state.get<unknown>(
+      this.keyFor(BOARD_CARD_DENSITY_KEY),
+      DEFAULT_CARD_DENSITY,
+    );
     return isBoardCardDensity(density) ? density : DEFAULT_CARD_DENSITY;
   }
 
   private getBoardSort(): BoardSort {
-    const sort = this.state.get<unknown>(BOARD_SORT_KEY, DEFAULT_BOARD_SORT);
+    const sort = this.state.get<unknown>(this.keyFor(BOARD_SORT_KEY), DEFAULT_BOARD_SORT);
     return isBoardSort(sort) ? sort : DEFAULT_BOARD_SORT;
   }
 
   private getDescriptionPreview(): BoardDescriptionPreview {
     const preview = this.state.get<unknown>(
-      BOARD_DESCRIPTION_PREVIEW_KEY,
+      this.keyFor(BOARD_DESCRIPTION_PREVIEW_KEY),
       DEFAULT_DESCRIPTION_PREVIEW,
     );
     return isBoardDescriptionPreview(preview) ? preview : DEFAULT_DESCRIPTION_PREVIEW;
   }
 
   private getDateFormat(): BoardDateFormat {
-    const format = this.state.get<unknown>(BOARD_DATE_FORMAT_KEY, DEFAULT_DATE_FORMAT);
+    const format = this.state.get<unknown>(this.keyFor(BOARD_DATE_FORMAT_KEY), DEFAULT_DATE_FORMAT);
     return isBoardDateFormat(format) ? format : DEFAULT_DATE_FORMAT;
   }
 
   private getTagLimit(): BoardTagLimit {
-    const limit = this.state.get<unknown>(BOARD_TAG_LIMIT_KEY, DEFAULT_TAG_LIMIT);
+    const limit = this.state.get<unknown>(this.keyFor(BOARD_TAG_LIMIT_KEY), DEFAULT_TAG_LIMIT);
     return isBoardTagLimit(limit) ? limit : DEFAULT_TAG_LIMIT;
   }
 
   private getTitleWrapping(): BoardTitleWrapping {
-    const wrapping = this.state.get<unknown>(BOARD_TITLE_WRAPPING_KEY, DEFAULT_TITLE_WRAPPING);
+    const wrapping = this.state.get<unknown>(
+      this.keyFor(BOARD_TITLE_WRAPPING_KEY),
+      DEFAULT_TITLE_WRAPPING,
+    );
     return isBoardTitleWrapping(wrapping) ? wrapping : DEFAULT_TITLE_WRAPPING;
   }
 
   private getMissingValueBehavior(): BoardMissingValueBehavior {
     const behavior = this.state.get<unknown>(
-      BOARD_MISSING_VALUE_BEHAVIOR_KEY,
+      this.keyFor(BOARD_MISSING_VALUE_BEHAVIOR_KEY),
       DEFAULT_MISSING_VALUE_BEHAVIOR,
     );
     return isBoardMissingValueBehavior(behavior) ? behavior : DEFAULT_MISSING_VALUE_BEHAVIOR;
   }
 
   private getCardAccent(): BoardCardAccent {
-    const accent = this.state.get<unknown>(BOARD_CARD_ACCENT_KEY, DEFAULT_CARD_ACCENT);
+    const accent = this.state.get<unknown>(this.keyFor(BOARD_CARD_ACCENT_KEY), DEFAULT_CARD_ACCENT);
     return isBoardCardAccent(accent) ? accent : DEFAULT_CARD_ACCENT;
   }
 
   private getColumnWidth(): BoardColumnWidth {
-    const width = this.state.get<unknown>(BOARD_COLUMN_WIDTH_KEY, DEFAULT_COLUMN_WIDTH);
+    const width = this.state.get<unknown>(
+      this.keyFor(BOARD_COLUMN_WIDTH_KEY),
+      DEFAULT_COLUMN_WIDTH,
+    );
     return isBoardColumnWidth(width) ? width : DEFAULT_COLUMN_WIDTH;
   }
 
   private getTerminalCardLimit(): BoardTerminalCardLimit {
     const limit = this.state.get<unknown>(
-      BOARD_TERMINAL_CARD_LIMIT_KEY,
+      this.keyFor(BOARD_TERMINAL_CARD_LIMIT_KEY),
       DEFAULT_TERMINAL_CARD_LIMIT,
     );
     return isBoardTerminalCardLimit(limit) ? limit : DEFAULT_TERMINAL_CARD_LIMIT;
   }
 
   private getColumnSorts(): Partial<Record<TodoStatus, BoardSort>> {
-    const stored = this.state.get<unknown>(BOARD_COLUMN_SORTS_KEY, {});
+    const stored = this.state.get<unknown>(this.keyFor(BOARD_COLUMN_SORTS_KEY), {});
     if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
       return {};
     }
@@ -971,12 +1141,12 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private getGrouping(): BoardGrouping {
-    const grouping = this.state.get<unknown>(BOARD_GROUPING_KEY, DEFAULT_GROUPING);
+    const grouping = this.state.get<unknown>(this.keyFor(BOARD_GROUPING_KEY), DEFAULT_GROUPING);
     return isBoardGrouping(grouping) ? grouping : DEFAULT_GROUPING;
   }
 
   private getWipLimits(): Partial<Record<TodoStatus, number>> {
-    const stored = this.state.get<unknown>(BOARD_WIP_LIMITS_KEY, {});
+    const stored = this.state.get<unknown>(this.keyFor(BOARD_WIP_LIMITS_KEY), {});
     if (!stored || typeof stored !== "object" || Array.isArray(stored)) {
       return {};
     }
@@ -994,7 +1164,7 @@ export class BoardViewProvider implements vscode.Disposable {
   }
 
   private getBooleanPreference(key: string, fallback: boolean): boolean {
-    const value = this.state.get<unknown>(key, fallback);
+    const value = this.state.get<unknown>(this.keyFor(key), fallback);
     return typeof value === "boolean" ? value : fallback;
   }
 
@@ -1010,7 +1180,7 @@ export class BoardViewProvider implements vscode.Disposable {
   <style>
     :root { color-scheme: light dark; }
     body { color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); margin: 0; padding: 12px; }
-    .toolbar { align-items: center; display: flex; gap: 6px; min-height: 28px; padding-bottom: 8px; }
+    .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; padding-bottom: 8px; }
     .toolbar-label { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
     .settings-toggle { margin-left: auto; }
     button { background: var(--vscode-button-secondaryBackground); border: 0; color: var(--vscode-button-secondaryForeground); cursor: pointer; padding: 4px 8px; }
@@ -1059,6 +1229,10 @@ export class BoardViewProvider implements vscode.Disposable {
     .card.accent-status-backlogged { border-left-color: var(--vscode-charts-purple); }
     .card.accent-status-complete { border-left-color: var(--vscode-charts-green); }
     .card.blocked { box-shadow: inset 0 0 0 1px var(--vscode-charts-red); }
+    .collision-warning { color: var(--vscode-editorWarning-foreground); font-size: 0.85em; margin: 4px 0; }
+    .source-section { margin-bottom: 20px; overflow-x: auto; padding-bottom: 8px; }
+    .board.source-sections { display: block; min-width: 0; }
+    .source-section-title { font-size: 1.1em; font-weight: 700; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--vscode-panel-border); }
     .card-title { display: -webkit-box; font-weight: 600; overflow: hidden; -webkit-box-orient: vertical; }
     .card-title.oneLine { -webkit-line-clamp: 1; }
     .card-title.twoLines { -webkit-line-clamp: 2; }
@@ -1102,6 +1276,14 @@ export class BoardViewProvider implements vscode.Disposable {
           button.addEventListener("click", () => vscode.postMessage({ type: "showStatus", status }));
           toolbar.append(button);
         }
+      }
+      const prefix = snapshot.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
+      for (const [label, action] of [["Refresh", "refresh"], ["Filter", "filter"], ["Search", "search"], ["Clear Filters", "clearFilters"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("click", () => vscode.postMessage({ type: "scopedCommand", command: prefix + "." + action }));
+        toolbar.append(button);
       }
       const settingsToggle = document.createElement("button");
       settingsToggle.className = "settings-toggle";
@@ -1476,15 +1658,17 @@ export class BoardViewProvider implements vscode.Disposable {
       card.dataset.vscodeContext = JSON.stringify({
         webviewSection: "todoCard",
         todoId: todo.id,
+        todoIdCollision: Boolean(todo.collision),
         preventDefaultContextMenuItems: true,
       });
       card.title = [
+        todo.collision,
         todo.createdAt ? "Created " + new Date(todo.createdAt).toLocaleString() : undefined,
         todo.updatedAt ? "Modified " + new Date(todo.updatedAt).toLocaleString() : undefined,
       ]
         .filter(Boolean)
         .join("\n") || "File timestamps unavailable";
-      card.draggable = true;
+      card.draggable = !todo.collision;
       card.addEventListener("dragstart", (event) => {
         event.stopPropagation();
         draggedTodoId = todo.id;
@@ -1506,6 +1690,18 @@ export class BoardViewProvider implements vscode.Disposable {
         .filter(Boolean)
         .join(" · ");
       card.append(title);
+      if (todo.collision) {
+        const warning = document.createElement("button");
+        warning.type = "button";
+        warning.className = "collision-warning";
+        warning.textContent = "Duplicate ID - show conflicting files";
+        warning.title = todo.collision;
+        warning.addEventListener("click", event => {
+          event.stopPropagation();
+          vscode.postMessage({ type: "focusCollision", todoId: todo.id, collisionSource: todo.collisionSource });
+        });
+        card.append(warning);
+      }
       if (description.textContent && snapshot.descriptionPreview !== "hidden") card.append(description);
       if (meta.textContent) card.append(meta);
 
@@ -1565,81 +1761,118 @@ export class BoardViewProvider implements vscode.Disposable {
       board.style.setProperty("--column-count", String(Math.max(snapshot.columns.length, 1)));
       board.dataset.density = snapshot.cardDensity;
       board.dataset.columnWidth = snapshot.columnWidth;
+      board.classList.toggle("source-sections", Boolean(snapshot.sections));
+      board.setAttribute("aria-label", snapshot.scope === "code-scanning" ? "Code-scanning task board" : "Agendo task board");
       board.replaceChildren();
-      for (const column of snapshot.columns) {
-        const columnElement = document.createElement("section");
-        columnElement.className = "column";
-        columnElement.dataset.status = column.status;
-        columnElement.addEventListener("dragover", (event) => {
-          event.preventDefault();
-          columnElement.classList.add("drop-target");
-        });
-        columnElement.addEventListener("dragleave", () => columnElement.classList.remove("drop-target"));
-        columnElement.addEventListener("drop", (event) => {
-          event.preventDefault();
-          columnElement.classList.remove("drop-target");
-          if (draggedTodoId) {
-            vscode.postMessage({ type: "setStatus", todoId: draggedTodoId, status: column.status });
-          } else if (draggedStatus && draggedStatus !== column.status) {
-            const statuses = Array.from(board.children).map((element) => element.dataset.status);
-            const fromIndex = statuses.indexOf(draggedStatus);
-            const toIndex = statuses.indexOf(column.status);
-            statuses.splice(fromIndex, 1);
-            statuses.splice(toIndex, 0, draggedStatus);
-            vscode.postMessage({ type: "reorderStatuses", statuses });
+
+      if (snapshot.sections && snapshot.sections.length) {
+        for (const section of snapshot.sections) {
+          const sectionWrap = document.createElement("section");
+          sectionWrap.className = "source-section";
+          sectionWrap.setAttribute("aria-label", section.label);
+          const sectionTitle = document.createElement("h2");
+          sectionTitle.className = "source-section-title";
+          sectionTitle.textContent = section.label;
+          sectionWrap.append(sectionTitle);
+
+          const sectionBoard = document.createElement("div");
+          sectionBoard.className = "board source-board";
+          sectionBoard.dataset.density = snapshot.cardDensity;
+          sectionBoard.dataset.columnWidth = snapshot.columnWidth;
+          sectionBoard.style.setProperty("--column-count", String(Math.max(section.columns.length, 1)));
+          if (!section.columns.length) {
+            const empty = document.createElement("div");
+            empty.className = "empty";
+            empty.textContent = "No matching tasks";
+            sectionBoard.append(empty);
           }
-          draggedStatus = undefined;
-        });
-
-        const header = document.createElement("div");
-        header.className = "column-header";
-        header.draggable = true;
-        header.addEventListener("dragstart", () => { draggedStatus = column.status; });
-        header.addEventListener("dragend", () => { draggedStatus = undefined; });
-        const label = document.createElement("span");
-        label.textContent = column.label;
-        const actions = document.createElement("span");
-        actions.className = "column-actions";
-        const count = document.createElement("span");
-        const overWip = column.wipLimit && column.totalCount > column.wipLimit;
-        count.className = "count" + (overWip ? " over-wip" : "");
-        const visibleCount = column.todos.length === column.totalCount
-          ? String(column.totalCount)
-          : column.todos.length + " / " + column.totalCount;
-        count.textContent = column.wipLimit ? visibleCount + " · WIP " + column.wipLimit : visibleCount;
-        if (overWip) columnElement.classList.add("over-wip");
-        const hide = document.createElement("button");
-        hide.className = "hide-column";
-        hide.type = "button";
-        hide.textContent = "Hide";
-        hide.addEventListener("click", (event) => {
-          event.stopPropagation();
-          vscode.postMessage({ type: "hideStatus", status: column.status });
-        });
-        actions.append(count, hide);
-        header.append(label, actions);
-        columnElement.append(header);
-
-        if (!column.todos.length) {
-          const empty = document.createElement("div");
-          empty.className = "empty";
-          empty.textContent = "No tasks";
-          columnElement.append(empty);
+          for (const column of section.columns) {
+            sectionBoard.append(createColumn(column, snapshot));
+          }
+          sectionWrap.append(sectionBoard);
+          board.append(sectionWrap);
         }
-
-        for (const group of groupTodos(column.todos, snapshot.grouping)) {
-          if (group.label) {
-            const groupHeader = document.createElement("div");
-            groupHeader.className = "group-header";
-            groupHeader.textContent = group.label + " · " + group.todos.length;
-            columnElement.append(groupHeader);
-          }
-          for (const todo of group.todos) {
-            columnElement.append(createCard(todo, snapshot));
-          }
-        }
-        board.append(columnElement);
+        return;
       }
+
+      for (const column of snapshot.columns) {
+        board.append(createColumn(column, snapshot));
+      }
+    }
+
+    function createColumn(column, snapshot) {
+      const columnElement = document.createElement("section");
+      columnElement.className = "column";
+      columnElement.dataset.status = column.status;
+      columnElement.addEventListener("dragover", (event) => {
+        event.preventDefault();
+        columnElement.classList.add("drop-target");
+      });
+      columnElement.addEventListener("dragleave", () => columnElement.classList.remove("drop-target"));
+      columnElement.addEventListener("drop", (event) => {
+        event.preventDefault();
+        columnElement.classList.remove("drop-target");
+        if (draggedTodoId) {
+          vscode.postMessage({ type: "setStatus", todoId: draggedTodoId, status: column.status });
+        } else if (draggedStatus && draggedStatus !== column.status) {
+          const statuses = Array.from(columnElement.parentElement.children).map((element) => element.dataset.status);
+          const fromIndex = statuses.indexOf(draggedStatus);
+          const toIndex = statuses.indexOf(column.status);
+          statuses.splice(fromIndex, 1);
+          statuses.splice(toIndex, 0, draggedStatus);
+          vscode.postMessage({ type: "reorderStatuses", statuses });
+        }
+        draggedStatus = undefined;
+      });
+
+      const header = document.createElement("div");
+      header.className = "column-header";
+      header.draggable = true;
+      header.addEventListener("dragstart", () => { draggedStatus = column.status; });
+      header.addEventListener("dragend", () => { draggedStatus = undefined; });
+      const label = document.createElement("span");
+      label.textContent = column.label;
+      const actions = document.createElement("span");
+      actions.className = "column-actions";
+      const count = document.createElement("span");
+      const overWip = column.wipLimit && column.totalCount > column.wipLimit;
+      count.className = "count" + (overWip ? " over-wip" : "");
+      const visibleCount = column.todos.length === column.totalCount
+        ? String(column.totalCount)
+        : column.todos.length + " / " + column.totalCount;
+      count.textContent = column.wipLimit ? visibleCount + " · WIP " + column.wipLimit : visibleCount;
+      if (overWip) columnElement.classList.add("over-wip");
+      const hide = document.createElement("button");
+      hide.className = "hide-column";
+      hide.type = "button";
+      hide.textContent = "Hide";
+      hide.addEventListener("click", (event) => {
+        event.stopPropagation();
+        vscode.postMessage({ type: "hideStatus", status: column.status });
+      });
+      actions.append(count, hide);
+      header.append(label, actions);
+      columnElement.append(header);
+
+      if (!column.todos.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No tasks";
+        columnElement.append(empty);
+      }
+
+      for (const group of groupTodos(column.todos, snapshot.grouping)) {
+        if (group.label) {
+          const groupHeader = document.createElement("div");
+          groupHeader.className = "group-header";
+          groupHeader.textContent = group.label + " · " + group.todos.length;
+          columnElement.append(groupHeader);
+        }
+        for (const todo of group.todos) {
+          columnElement.append(createCard(todo, snapshot));
+        }
+      }
+      return columnElement;
     }
 
     window.addEventListener("message", (event) => {

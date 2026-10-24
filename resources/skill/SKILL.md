@@ -144,6 +144,11 @@ import identity. Preserve these markers and metadata. Keep work logs, decisions,
 the managed block. Importing findings does not authorize status changes; missing alerts do not prove
 completion. The lifecycle and verification rules below apply equally to scanner todos.
 
+The extension displays scanner todos in a separate Code Scanning section between Todos and Skill,
+grouped by CodeQL or SonarQube, then status and priority/custom group. Its search, filters, digest,
+sort settings, and board are independent of regular Todos. Dependencies still span all sources;
+view separation does not restrict repository-wide discovery or reconciliation.
+
 Todo files follow this naming pattern:
 
 ```

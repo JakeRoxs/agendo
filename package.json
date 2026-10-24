@@ -42,17 +42,46 @@
         {
           "id": "agendo.todos",
           "name": "Todos",
+          "initialSize": 8,
           "icon": "$(checklist)",
           "contextualTitle": "Agendo"
         },
         {
+          "id": "agendo.codeScanning",
+          "name": "Code Scanning",
+          "initialSize": 5,
+          "icon": "$(shield)",
+          "contextualTitle": "Agendo Code Scanning"
+        },
+        {
           "id": "agendo.skillStatus",
           "name": "Skill",
+          "initialSize": 1,
           "icon": "$(cloud-download)"
         }
       ]
     },
     "viewsWelcome": [
+      {
+        "view": "agendo.codeScanning",
+        "contents": "Loading code-scanning todos…",
+        "when": "agendo.codeScanning.loading"
+      },
+      {
+        "view": "agendo.codeScanning",
+        "contents": "No code-scanning todos match the current search.\n[Clear Search](command:agendo.codeScanning.clearSearch)",
+        "when": "!agendo.codeScanning.loading && agendo.codeScanning.searchActive"
+      },
+      {
+        "view": "agendo.codeScanning",
+        "contents": "No code-scanning todos match the current filters.\n[Clear Filters](command:agendo.codeScanning.clearFilters)",
+        "when": "!agendo.codeScanning.loading && agendo.codeScanning.filterActive && !agendo.codeScanning.searchActive"
+      },
+      {
+        "view": "agendo.codeScanning",
+        "contents": "No code-scanning todos yet.\n[Import Code-Scanning Todos](command:agendo.importCodeScanning)",
+        "when": "!agendo.codeScanning.loading && !agendo.codeScanning.filterActive"
+      },
       {
         "view": "agendo.todos",
         "contents": "Loading todos…",
@@ -75,6 +104,84 @@
       }
     ],
     "commands": [
+      {
+        "command": "agendo.focusCollision",
+        "title": "Show Conflicting Files",
+        "category": "Agendo",
+        "icon": "$(warning)"
+      },
+      {
+        "command": "agendo.copyCollisionContext",
+        "title": "Copy ID Collision Reconciliation Context",
+        "category": "Agendo",
+        "icon": "$(copy)"
+      },
+      {
+        "command": "agendo.codeScanning.refresh",
+        "title": "Refresh Code-Scanning Todos",
+        "category": "Agendo",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agendo.codeScanning.refresh.loading",
+        "title": "Refreshing Code-Scanning Todos...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
+        "command": "agendo.codeScanning.search",
+        "title": "Search Code-Scanning Todos...",
+        "category": "Agendo",
+        "icon": "$(search)"
+      },
+      {
+        "command": "agendo.codeScanning.clearSearch",
+        "title": "Clear Code-Scanning Search",
+        "category": "Agendo",
+        "icon": "$(close)"
+      },
+      {
+        "command": "agendo.codeScanning.filter",
+        "title": "Filter Code-Scanning Todos...",
+        "category": "Agendo",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "agendo.codeScanning.clearFilters",
+        "title": "Clear Code-Scanning Filters",
+        "category": "Agendo",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "agendo.codeScanning.openBoard",
+        "title": "Open Code-Scanning Board",
+        "category": "Agendo",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "agendo.codeScanning.openBoard.loading",
+        "title": "Opening Code-Scanning Board...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
+        "command": "agendo.codeScanning.showDigest",
+        "title": "Show Code-Scanning Task Digest",
+        "category": "Agendo",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "agendo.codeScanning.showDigest.loading",
+        "title": "Code-Scanning Task Digest Is Loading...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
+        "command": "agendo.codeScanning.toggleSortDate",
+        "title": "Toggle Code-Scanning Sort by Date Modified",
+        "category": "Agendo",
+        "icon": "$(calendar)"
+      },
       {
         "command": "agendo.importCodeScanning",
         "title": "Import Code-Scanning Todos...",
@@ -308,8 +415,63 @@
       "view/title": [
         {
           "command": "agendo.importCodeScanning",
-          "when": "view == agendo.todos && config.agendo.codeScanning.enabled",
-          "group": "3_import@1"
+          "when": "view == agendo.codeScanning",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agendo.codeScanning.showDigest",
+          "when": "view == agendo.codeScanning && !agendo.codeScanning.digestLoading",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agendo.codeScanning.showDigest.loading",
+          "when": "view == agendo.codeScanning && agendo.codeScanning.digestLoading",
+          "group": "navigation@2"
+        },
+        {
+          "command": "agendo.codeScanning.openBoard",
+          "when": "view == agendo.codeScanning && !agendo.codeScanning.openingBoard",
+          "group": "navigation@2.5"
+        },
+        {
+          "command": "agendo.codeScanning.openBoard.loading",
+          "when": "view == agendo.codeScanning && agendo.codeScanning.openingBoard",
+          "group": "navigation@2.5"
+        },
+        {
+          "command": "agendo.codeScanning.search",
+          "when": "view == agendo.codeScanning && !agendo.codeScanning.searchActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agendo.codeScanning.clearSearch",
+          "when": "view == agendo.codeScanning && agendo.codeScanning.searchActive",
+          "group": "navigation@3"
+        },
+        {
+          "command": "agendo.codeScanning.filter",
+          "when": "view == agendo.codeScanning",
+          "group": "navigation@4"
+        },
+        {
+          "command": "agendo.codeScanning.refresh",
+          "when": "view == agendo.codeScanning && !agendo.codeScanning.refreshing",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agendo.codeScanning.refresh.loading",
+          "when": "view == agendo.codeScanning && agendo.codeScanning.refreshing",
+          "group": "navigation@5"
+        },
+        {
+          "command": "agendo.codeScanning.clearFilters",
+          "when": "view == agendo.codeScanning",
+          "group": "1_filters@1"
+        },
+        {
+          "command": "agendo.codeScanning.toggleSortDate",
+          "when": "view == agendo.codeScanning",
+          "group": "2_config@1"
         },
         {
           "command": "agendo.createTodo",
@@ -450,80 +612,95 @@
       ],
       "webview/context": [
         {
+          "command": "agendo.copyCollisionContext",
+          "when": "(webviewId == 'agendo.board' || webviewId == 'agendo.codeScanning.board') && webviewSection == 'todoCard' && todoIdCollision",
+          "group": "agendo@2"
+        },
+        {
           "command": "agendo.openCanvas",
-          "when": "webviewId == 'agendo.board' && webviewSection == 'todoCard'",
+          "when": "(webviewId == 'agendo.board' || webviewId == 'agendo.codeScanning.board') && webviewSection == 'todoCard'",
           "group": "1_open@1"
         }
       ],
       "view/item/context": [
         {
+          "command": "agendo.focusCollision",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /Collision/",
+          "group": "inline@0"
+        },
+        {
+          "command": "agendo.copyCollisionContext",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /Collision/",
+          "group": "1_reconcile@1"
+        },
+        {
           "command": "agendo.collapseNode",
-          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /sourceGroup|statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@1"
         },
         {
           "command": "agendo.expandNode",
-          "when": "view == agendo.todos && viewItem =~ /statusGroup|priorityGroup|groupGroup/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /sourceGroup|statusGroup|priorityGroup|groupGroup/",
           "group": "1_collapse@2"
         },
         {
           "command": "agendo.openPreview",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "1_open@1"
         },
         {
           "command": "agendo.openCanvas",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "1_open@2"
         },
         {
           "command": "agendo.setStatus.pending",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@1"
         },
         {
           "command": "agendo.setStatus.in-progress",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@2"
         },
         {
           "command": "agendo.setStatus.ready",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@3"
         },
         {
           "command": "agendo.setStatus.backlogged",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@4"
         },
         {
           "command": "agendo.setStatus.complete",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@5"
         },
         {
           "command": "agendo.setStatus.cancelled",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "2_status@6"
         },
         {
           "command": "agendo.setPriority",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "3_priority@1"
         },
         {
           "command": "agendo.setDependency",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "3_priority@2"
         },
         {
           "command": "agendo.setGroup",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "3_priority@3"
         },
         {
           "command": "agendo.deleteTodo",
-          "when": "view == agendo.todos && viewItem =~ /todoItem|todoItemBlocked/",
+          "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "4_delete@1"
         }
       ]
@@ -531,6 +708,11 @@
     "configuration": {
       "title": "Agendo",
       "properties": {
+        "agendo.codeScanning.sortByDate": {
+          "type": "boolean",
+          "default": false,
+          "description": "Sort code-scanning todos by last modified date independently of the regular Todos view."
+        },
         "agendo.codeScanning.enabled": {
           "type": "boolean",
           "default": false,

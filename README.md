@@ -31,10 +31,7 @@ skill invocation.
 
 ## The work session canvas
 
-Agendo also bundles a Copilot canvas, `agendo-work-session`, that shows the todo you are working on
-in an editor tab next to the chat. Canvases are a preview feature of the Copilot agent harness and
-require a supported local Copilot Agent Host session with canvases enabled. The bundled canvas is
-version 0.1.0, versioned separately from the extension and the skill.
+Agendo bundles the `agendo-work-session` canvas, an interactive dashboard that shows the todo you are working on in an editor tab next to the chat. The canvas reads and edits the same Markdown todo file, takes status and priority from the filename, and reloads automatically when the file changes.
 
 The canvas shows:
 
@@ -45,14 +42,9 @@ The canvas shows:
 - resume context and work log rendered as Markdown, with a control to show every work log entry
 - a confetti celebration when a todo is completed or its last criterion is checked
 
-It reads and edits the same Markdown todo file, takes status and priority from the filename, and
-reloads itself when the file changes. Installing the Agendo skill also installs the canvas at user level, in
-`~/.copilot/extensions/agendo-work-session/` (or under `COPILOT_HOME` when set), so it is
-available in every workspace like the skill is. An installed canvas is refreshed when the extension
-ships a newer version, and a project-level copy from an earlier build is migrated away. The skill tells agents to open the canvas for the active
-todo when it is available, and to skip it silently when it is not.
+**Using the canvas with an agent:** Install the Agendo skill, which also installs the canvas at user level so it is available in every workspace. When working on a todo, the skill tells the agent to open the canvas for the active todo.
 
-You can also view any todo in the same dashboard without an agent session: right-click it in the tree or on a board card and choose **Open in Work Session Canvas**, or set `agendo.viewMode` to `canvas`. The Skill panel has its own canvas row, and **Agendo: Install/Update Work Session Canvas** installs or updates it separately from the skill.
+**Using the canvas standalone:** Right-click any todo in the tree or on a board card and choose **Open in Work Session Canvas**, or set `agendo.viewMode` to `canvas`. The Skill panel has its own canvas row, and **Agendo: Install/Update Work Session Canvas** installs or updates it separately from the skill.
 
 ## Features
 
@@ -87,8 +79,8 @@ Examples:
 
 ```text
 001-pending-p2-write-readme.md
-060-in-progress-p1-fix-release-checks.md
-061-ready-p1-verify-release-checks.md
+002-in-progress-p1-fix-n-plus-1.md
+003-ready-p1-verify-n-plus-1-fix.md
 ```
 
 The naming convention includes:
@@ -192,20 +184,32 @@ This is especially useful when you want a follow-up task captured into the same 
 | `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
 | `agendo.codeScanning.enabled` | `false` | Enable manually triggered native code-scanning imports |
+| `agendo.codeScanning.sortByDate` | `false` | Sort scanning todos by modified date independently of the regular tree |
 | `agendo.codeScanning.sonarqube.url` | empty | SonarQube server URL |
 | `agendo.codeScanning.sonarqube.projectKey` | empty | SonarQube project key |
 
+## Duplicate IDs
+
+When multiple files reuse an ID within the same todo type, each affected tree row shows an inline warning action and a **duplicate ID** label. The section header also shows a collision-count badge. Regular, CodeQL, and SonarQube sequences are checked independently; `003`, `cql-003`, and `sq-003` do not collide with one another.
+
+**Inspecting collisions:** Hover a warning row to see every conflicting filename, folder, status, and priority, including records hidden by the current filters. Click the warning action to focus that section's tree and board on only the conflicting files, clearing filters that would hide them. Use **Clear Filters** to exit collision focus.
+
+**Resolving collisions:** Right-click a warning row or board card and choose **Copy ID Collision Reconciliation Context**. The clipboard contains a prompt for the Agendo reconciliation skill with the exact file paths and evidence, ready to paste into Copilot, Kilo, or another agent harness. The same command in the Command Palette copies all detected collisions. Copying context does not invoke an agent or modify files; the prompt requires an evidence-backed plan and approval before cleanup.
+
+**Board and canvas behavior:** Boards show a clickable collision warning with the same focus behavior and refuse ambiguous ID-based actions. Opening a selected tree record in canvas mode falls back to its exact source file rather than choosing another duplicate. Dependencies on ambiguous IDs stay blocked until reconciliation resolves the collision.
+
 ## Code Scanning
 
-Code scanning is optional and disabled by default. Run **Agendo: Import Code-Scanning Todos...**
-from the Command Palette to enable it for a workspace and select CodeQL or SonarQube. When
-enabled, the same command is available in the Todos view menu. Imports run only on request;
-activation and normal refresh never contact a scanning service.
+Code scanning is optional and disabled by default. Run **Agendo: Import Code-Scanning Todos...** from the Command Palette or the **Code Scanning** section to enable it for a workspace and select CodeQL or SonarQube. Imports run only on request; activation and normal refresh never contact a scanning service.
 
-- CodeQL uses the GitHub CLI's authenticated account (`gh auth login`) and the current workspace's repository; the account needs permission to read code-scanning alerts
-- SonarQube prompts for a server URL, project key, and user token; the token is stored in VS Code SecretStorage, not settings, todo files, or logs; leave the token prompt blank to reuse it or enter a new token to replace it
+### Authentication
+
+- **CodeQL** uses the GitHub CLI's authenticated account (`gh auth login`) and the current workspace's repository; the account needs permission to read code-scanning alerts
+- **SonarQube** prompts for a server URL, project key, and user token; the token is stored in VS Code SecretStorage, not settings, todo files, or logs; leave the token prompt blank to reuse it or enter a new token to replace it
 - SonarQube requires HTTPS except for loopback servers, and includes unresolved issues, not Security Hotspots
 - Imports require a trusted workspace and run natively in the extension, without Python
+
+### File layout
 
 Each source has its own numbering sequence and lifecycle folders beneath your configured todo root:
 
@@ -225,21 +229,35 @@ docs/todos/
       backlog/
 ```
 
-Custom complete, cancelled, and backlog folder settings apply inside each source as well. Folders
-are created only when needed. Scanning IDs never consume the regular todo sequence. Use the full
-ID, such as `cql-001`, in dependencies and links.
+Custom complete, cancelled, and backlog folder settings apply inside each source as well. Folders are created only when needed. Scanning IDs never consume the regular todo sequence; use the full ID (e.g. `cql-001`) in dependencies and links.
 
-Agendo creates one todo per rule and repository/project, initially prioritized by the most severe
-finding. These are normal todos: use the tree, source groups, tag filters (`codeql`, `sonarqube`,
-`code-scanning`), board, digest, dependencies, and work-session canvas as usual. Status changes stay
-inside the source's folders. Existing scanning todos remain visible when imports are disabled.
-The canvas labels regular todos, CodeQL findings, and SonarQube findings with lowercase `todo`, `cql`, and `sq` source badges
-in the header, dependencies, and recent history, independently of lifecycle status colours.
+Agendo creates one todo per rule and repository/project, initially prioritized by the most severe finding.
 
-Re-imports update only the marked **Scanner Evidence** section. IDs, status, priority, notes,
-acceptance criteria, and work logs are preserved, including completed or cancelled todos. Missing
-findings never automatically complete, cancel, reopen, or delete a todo. Save pending editor changes
-before importing, and retain the evidence markers so Agendo can refresh that section safely.
+### Sidebar and board
+
+The sidebar has a dedicated **Code Scanning** section between **Todos** and **Skill**:
+
+```text
+Todos
+Code Scanning
+  CodeQL
+    Pending
+      P1 - High
+        cql-001 ...
+  SonarQube
+    Pending
+      P2 - Medium
+        sq-001 ...
+Skill
+```
+
+Regular Todos and its board exclude scanning tasks. Code Scanning has its own search, filters (including source selection), refresh, digest, board, date-sort toggle, and collapsed-node state. Its board displays separate CodeQL and SonarQube sections with the usual status columns and has its own saved layout settings.
+
+### Behavior
+
+Both sections share the same repository and dependency graph, so dependencies across regular, CodeQL, and SonarQube tasks remain valid. Refresh reloads local todo files, while Import fetches new scanner evidence. Status changes stay inside the source's folders. Existing scanning todos remain visible when imports are disabled, and the work-session canvas works for every task type. The canvas labels tasks with lowercase `todo`, `cql`, and `sq` source badges in the header, dependencies, and recent history.
+
+**Re-imports** update only the marked **Scanner Evidence** section. IDs, status, priority, notes, acceptance criteria, and work logs are preserved, including completed or cancelled todos. Missing findings never automatically complete, cancel, reopen, or delete a todo. Save pending editor changes before importing, and retain the evidence markers so Agendo can refresh that section safely.
 
 ## Contributing
 
@@ -251,7 +269,7 @@ Contributions are welcome.
 4. Run the relevant validation commands before opening a PR.
 5. Keep the README and project docs updated when behavior changes.
 
-When working on the project, follow the repo's existing conventions and keep the implementation consistent with the VS Code extension patterns already in `src/`.
+When making changes, follow the existing conventions in `src/` and keep the implementation consistent with established VS Code extension patterns in this repository.
 
 ## Development workflow
 

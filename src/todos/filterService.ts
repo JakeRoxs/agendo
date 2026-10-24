@@ -1,5 +1,12 @@
 import type * as vscode from "vscode";
-import type { Todo, TodoPriority, TodoStatus } from "./todoModel";
+import type { TodoCollision } from "./todoCollisions";
+import {
+  getTodoSource,
+  type ScanningSource,
+  type Todo,
+  type TodoPriority,
+  type TodoStatus,
+} from "./todoModel";
 import type { DependencyGraph } from "./todoRepository";
 
 /** Active filter/search criteria applied to the tree. */
@@ -16,6 +23,8 @@ export interface TodoFilter {
   blocking?: string;
   /** When set, only show todos belonging to the given group. */
   group?: string;
+  sources?: ScanningSource[];
+  collision?: Pick<TodoCollision, "id" | "source">;
 }
 
 const STATE_KEY = "agendo.filter";
@@ -68,8 +77,11 @@ function matchesGroup(todo: Todo, group?: string): boolean {
 export class FilterService {
   private filter: TodoFilter = {};
 
-  constructor(private readonly state: vscode.Memento) {
-    this.filter = state.get<TodoFilter>(STATE_KEY) ?? {};
+  constructor(
+    private readonly state: vscode.Memento,
+    private readonly stateKey = STATE_KEY,
+  ) {
+    this.filter = state.get<TodoFilter>(stateKey) ?? {};
   }
 
   get current(): TodoFilter {
@@ -77,7 +89,8 @@ export class FilterService {
   }
 
   get isActive(): boolean {
-    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group } = this.filter;
+    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group, sources } =
+      this.filter;
     return Boolean(
       statuses?.length ||
         priorities?.length ||
@@ -86,13 +99,16 @@ export class FilterService {
         blocked !== undefined ||
         dependsOn?.length ||
         blocking?.length ||
-        group?.length,
+        group?.length ||
+        sources?.length ||
+        this.filter.collision,
     );
   }
 
   /** True when the given todo passes the current filter. */
   matches(todo: Todo, dependencyGraph?: DependencyGraph): boolean {
-    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group } = this.filter;
+    const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group, sources } =
+      this.filter;
 
     const checks = [
       () => matchesStatuses(todo, statuses),
@@ -103,13 +119,18 @@ export class FilterService {
       () => matchesDependsOn(todo, dependsOn),
       () => !blocking?.length || matchesBlocking(todo, blocking, dependencyGraph),
       () => matchesGroup(todo, group),
+      () => !sources?.length || sources.some((source) => source === getTodoSource(todo)),
+      () =>
+        !this.filter.collision ||
+        (todo.id === this.filter.collision.id &&
+          (getTodoSource(todo) ?? "todo") === this.filter.collision.source),
     ];
     return checks.every((check) => check());
   }
 
   async set(filter: TodoFilter): Promise<void> {
     this.filter = filter;
-    await this.state.update(STATE_KEY, filter);
+    await this.state.update(this.stateKey, filter);
   }
 
   async clear(): Promise<void> {
