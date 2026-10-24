@@ -7,6 +7,12 @@ import { get, Settings, set, setDefault } from "./configuration";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import {
+  fetchCodeQL,
+  fetchSonarQube,
+  importScanningFindings,
+  validateSonarUrl,
+} from "./todos/codeScanningService";
+import {
   type ConfigService,
   VIEW_MODES,
   type ViewMode,
@@ -63,6 +69,146 @@ export function registerCommands(
   registerConfigCommands(register, services);
   registerSkillCommands(register, services, busy);
   registerTreeCommands(register, services);
+  let scanning = false;
+  register(Command.ImportCodeScanning, async () => {
+    if (scanning) {
+      return;
+    }
+    scanning = true;
+    try {
+      try {
+        await runCodeScanningImport(context, services);
+      } finally {
+        await services.repository.refresh();
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Code-scanning import failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      scanning = false;
+    }
+  });
+}
+
+async function runCodeScanningImport(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+): Promise<void> {
+  const { config, repository } = services;
+  if (!vscode.workspace.isTrusted) {
+    vscode.window.showWarningMessage(
+      "Trust this workspace before importing code-scanning findings.",
+    );
+    return;
+  }
+  const workspace = config.getWorkspaceFolder();
+  if (workspace?.uri.scheme !== "file") {
+    vscode.window.showWarningMessage(
+      "Open a filesystem workspace before importing code-scanning findings.",
+    );
+    return;
+  }
+  if (!config.codeScanningEnabled) {
+    const choice = await vscode.window.showInformationMessage(
+      "Enable optional code-scanning imports for this workspace? Scans are fetched only when you run this command.",
+      "Enable",
+    );
+    if (choice !== "Enable") {
+      return;
+    }
+    await set(Settings.CodeScanningEnabled, true);
+  }
+  const source = await vscode.window.showQuickPick(
+    [
+      {
+        label: "CodeQL",
+        description: "GitHub code-scanning alerts (requires gh auth login)",
+        source: "codeql" as const,
+      },
+      {
+        label: "SonarQube",
+        description: "Unresolved issues from a SonarQube project",
+        source: "sonarqube" as const,
+      },
+    ],
+    { placeHolder: "Import code-scanning todos from..." },
+  );
+  if (!source) {
+    return;
+  }
+  const sonar = source.source === "sonarqube" ? await promptSonarQubeSettings(context) : undefined;
+  if (source.source === "sonarqube" && !sonar) {
+    return;
+  }
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
+    async () => {
+      const scan = sonar
+        ? await fetchSonarQube(sonar.server, sonar.project, sonar.token)
+        : await fetchCodeQL(workspace.uri.fsPath);
+      const result = await importScanningFindings(
+        config,
+        repository,
+        source.source,
+        scan.scope,
+        scan.findings,
+      );
+      vscode.window.showInformationMessage(
+        `${source.label}: ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
+      );
+    },
+  );
+}
+
+async function promptSonarQubeSettings(
+  context: vscode.ExtensionContext,
+): Promise<{ server: string; project: string; token: string } | undefined> {
+  const urlInput = await vscode.window.showInputBox({
+    prompt: "SonarQube server URL",
+    value: get<string>(Settings.SonarQubeUrl) || "",
+    validateInput: (value) => {
+      try {
+        validateSonarUrl(value);
+        return undefined;
+      } catch {
+        return "Enter an HTTPS URL, or HTTP on loopback";
+      }
+    },
+  });
+  if (!urlInput) {
+    return;
+  }
+  const server = validateSonarUrl(urlInput).toString();
+  const projectInput = await vscode.window.showInputBox({
+    prompt: "SonarQube project key",
+    value: get<string>(Settings.SonarQubeProjectKey) || "",
+    validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
+  });
+  if (!projectInput) {
+    return;
+  }
+  const project = projectInput.trim();
+  const secretKey = `agendo.sonarqube:${server}`;
+  const saved = await context.secrets.get(secretKey);
+  const tokenInput = await vscode.window.showInputBox({
+    prompt: saved
+      ? "SonarQube token (leave blank to reuse saved token)"
+      : "SonarQube user token (stored securely in VS Code)",
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (tokenInput === undefined) {
+    return;
+  }
+  const token = tokenInput.trim() || saved || "";
+  if (!token) {
+    return;
+  }
+  await context.secrets.store(secretKey, token);
+  await set(Settings.SonarQubeUrl, server);
+  await set(Settings.SonarQubeProjectKey, project);
+  return { server, project, token };
 }
 
 /**
@@ -769,7 +915,10 @@ export async function importFromClipboard(
 
   // Get the next available ID
   const todos = repository.getTodos();
-  const maxId = todos.reduce((max, t) => Math.max(Number.parseInt(t.id, 10), max), 0);
+  const maxId = todos.reduce((max, t) => {
+    const value = Number.parseInt(t.id, 10);
+    return Number.isNaN(value) ? max : Math.max(value, max);
+  }, 0);
   const newId = String(maxId + 1).padStart(3, "0");
 
   // Build the todo content

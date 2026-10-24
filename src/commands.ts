@@ -5,6 +5,7 @@
  */
 export enum Command {
   Refresh = "agendo.refresh",
+  ImportCodeScanning = "agendo.importCodeScanning",
   RefreshLoading = "agendo.refresh.loading",
   ShowDigest = "agendo.showDigest",
   ShowDigestLoading = "agendo.showDigest.loading",

@@ -51,10 +51,13 @@ or repeatedly request the next batch.
 Before reviewing code, build one stable inventory from the resolved configuration:
 
 1. Directly list active files in `{root}` and files in `{backlog}`, `{complete}`, and `{cancelled}`.
+   Also inventory `code-scanning/codeql` and `code-scanning/sonarqube` under `{root}` and each
+   source's own configured lifecycle subfolders, including when scanning imports are disabled.
    Follow the config discovery and `gitignored` rules in SKILL.md; never infer absence from an empty
    workspace search result.
 2. Record each todo's ID, status, priority, path, dependencies, and `superseded_by` value.
-3. Sort the semantic-review queue by numeric issue ID. Freeze that ordered ID manifest for the run
+3. Sort the semantic-review queue by namespace and numeric issue ID, retaining full prefixed scanner
+   IDs such as `cql-001`. Freeze that ordered ID manifest for the run
    so moves or newly created todos do not cause skipped or duplicate reviews.
 4. Run the deterministic checks below across the complete inventory before semantic batches begin.
 
@@ -94,9 +97,11 @@ These checks catch structural problems and run entirely on file contents and fol
   - Filename priority token matches the frontmatter `priority`.
   - Folder placement matches the status: active states in `{root}`, `backlogged` in `{backlog}`,
     `complete` in `{complete}`, `cancelled` in `{cancelled}`.
+    For scanner todos, these locations are relative to their `code-scanning/{source}` root.
 - **IDs**
   - No duplicate issue IDs across the root and every state subfolder.
-  - IDs are zero-padded to 3 digits and unique.
+  - IDs have at least 3 numeric digits and are unique within their namespace; scanner IDs include
+    the `cql-` or `sq-` prefix and never collide with regular numeric IDs.
 - **Dependencies**
   - Every ID in `dependencies:` points to a real todo that exists.
   - A todo with dependencies is correctly flagged as blocked when any dependency is not yet

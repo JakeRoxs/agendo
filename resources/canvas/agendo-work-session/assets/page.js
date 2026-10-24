@@ -68,12 +68,17 @@
     }
   });
 
-  document.querySelector('[data-edit]')?.addEventListener('click', async () => {
+  document.querySelector('[data-edit]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    message.textContent = '';
     try {
       const res = await post('/edit', {});
       if (!res.ok) throw new Error(await res.text());
     } catch (err) {
       message.textContent = 'Could not open editor: ' + err.message;
+    } finally {
+      button.disabled = false;
     }
   });
 

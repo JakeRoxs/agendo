@@ -38,9 +38,16 @@ export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "in-progress", "ready"]
 /** Statuses that are terminal (finished or abandoned). */
 export const TERMINAL_STATUSES: TodoStatus[] = ["complete", "cancelled"];
 
+export const SCANNING_ID_PREFIX = { codeql: "cql", sonarqube: "sq" } as const;
+
+/** Scanning todos retain their source's own lifecycle folders. */
+export function codeScanningBase(folder: string): string | undefined {
+  return /^(code-scanning\/(?:codeql|sonarqube))(?:\/|$)/.exec(folder)?.[1];
+}
+
 /** Parsed representation of a single todo markdown file. */
 export interface Todo {
-  /** Zero-padded issue id, e.g. "060". */
+  /** Zero-padded issue id, e.g. "060", "cql-001", or "sq-001". */
   id: string;
   status: TodoStatus;
   priority: TodoPriority;
@@ -105,7 +112,7 @@ export function getBlockedBy(todo: Todo, allTodos: readonly Todo[]): string[] {
 }
 
 const FILENAME_RE =
-  /^(\d{3})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
+  /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
 
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {

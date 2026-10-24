@@ -1154,6 +1154,7 @@ suite("todoModel", () => {
       completeFolder: "complete",
       cancelledFolder: "cancelled",
     } as never;
+    Object.assign(config, { getTodoFolders: () => ["", "backlog", "complete", "cancelled"] });
     const service = new LinkService(config);
 
     const references = await service.findReferencesToName(staleName, otherUri);
@@ -1879,6 +1880,7 @@ suite("todoModel", () => {
       completeFolder: "complete",
       cancelledFolder: "cancelled",
     } as never;
+    Object.assign(config, { getTodoFolders: () => ["", "backlog", "complete", "cancelled"] });
     const repository = new TodoRepository(config);
 
     await repository.refresh();

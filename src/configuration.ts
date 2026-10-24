@@ -20,6 +20,9 @@ export enum Settings {
   SkillUpdateCheck = "skillUpdateCheck",
   SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
+  CodeScanningEnabled = "codeScanning.enabled",
+  SonarQubeUrl = "codeScanning.sonarqube.url",
+  SonarQubeProjectKey = "codeScanning.sonarqube.projectKey",
 }
 
 /**

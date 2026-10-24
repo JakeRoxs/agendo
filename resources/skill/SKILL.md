@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.4.9
+version: 1.5.0
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -87,6 +87,7 @@ defaults to any missing key — or to the whole configuration when the file is a
 | `backlogFolder`   | `backlog`    |
 | `cancelledFolder` | `cancelled`  |
 | `completeFolder`  | `complete`   |
+| `codeScanning`    | `false`      |
 
 Example of a config with a single non-default setting:
 
@@ -123,6 +124,25 @@ before running a command. `{file}` means the current todo filename stem and `{is
 three-digit ID; neither is shell brace expansion.
 
 ## File Naming Convention
+
+### Optional Code-Scanning Todos
+
+Agendo can import CodeQL and SonarQube findings natively. Existing scanning todos must always be
+included in discovery, even when `codeScanning` is false (that setting enables fetching, not visibility).
+List `{root}/code-scanning/codeql` and `{root}/code-scanning/sonarqube` directly, plus their own
+configured complete, cancelled, and backlog subfolders. Do not assume search tools index them.
+
+Each source has an independent sequence: `cql-001-pending-p1-rule-name.md` and
+`sq-001-pending-p2-rule-name.md`. The full prefixed ID is the `issue_id` and dependency key.
+Regular numeric todos keep their existing sequence; scanner IDs do not advance it. Never reuse an ID.
+On a scanner status change, retain its source root, for example
+`{root}/code-scanning/codeql/{completeFolder}/cql-001-complete-p1-rule-name.md`.
+Reopening returns it to `{root}/code-scanning/codeql`, not the main root.
+
+Scanner imports manage only the marked Scanner Evidence block and `scan_identity` is the stable
+import identity. Preserve these markers and metadata. Keep work logs, decisions, and notes outside
+the managed block. Importing findings does not authorize status changes; missing alerts do not prove
+completion. The lifecycle and verification rules below apply equally to scanner todos.
 
 Todo files follow this naming pattern:
 

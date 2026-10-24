@@ -27,6 +27,7 @@ export interface TodosConfig {
   backlogFolder?: string;
   cancelledFolder?: string;
   completeFolder?: string;
+  codeScanning?: boolean;
 }
 
 interface ProjectionOptions {
@@ -67,7 +68,7 @@ export function viewModeLabel(mode: ViewMode): string {
  */
 const PREVIEW_EDITOR_VIEW_TYPE = "vscode.markdown.preview.editor";
 const TODO_FILE_PATTERN =
-  /^\d{3}-(pending|in-progress|ready|backlogged|complete|cancelled)-p[123]-[^/]+\.md$/;
+  /^(?:(?:cql|sq)-)?\d{3,}-(pending|in-progress|ready|backlogged|complete|cancelled)-p[123]-[^/]+\.md$/;
 
 /**
  * Bridges VS Code settings and the on-disk `.agendo-config.json` projection that
@@ -109,6 +110,23 @@ export class ConfigService {
 
   get backlogFolder(): string {
     return get<string>(Settings.BacklogFolder) || DEFAULT_TODOS_CONFIG.backlogFolder;
+  }
+
+  get codeScanningEnabled(): boolean {
+    return get<boolean>(Settings.CodeScanningEnabled) === true;
+  }
+
+  /** Existing scanning todos stay visible even when fetching is disabled. */
+  getTodoFolders(): string[] {
+    const states = ["", this.completeFolder, this.cancelledFolder, this.backlogFolder];
+    return [
+      ...new Set([
+        ...states,
+        ...["codeql", "sonarqube"].flatMap((source) =>
+          states.map((state) => ["code-scanning", source, state].filter(Boolean).join("/")),
+        ),
+      ]),
+    ];
   }
 
   get openInPreview(): boolean {
@@ -218,6 +236,9 @@ export class ConfigService {
     if (this.completeFolder !== DEFAULT_TODOS_CONFIG.completeFolder) {
       config.completeFolder = this.completeFolder;
     }
+    if (this.codeScanningEnabled) {
+      config.codeScanning = true;
+    }
     return config;
   }
 
@@ -234,7 +255,7 @@ export class ConfigService {
   }
 
   private async hasTodoFiles(rootUri: vscode.Uri): Promise<boolean> {
-    const subfolders = ["", this.completeFolder, this.cancelledFolder, this.backlogFolder];
+    const subfolders = this.getTodoFolders();
     for (const subfolder of subfolders) {
       const uri = subfolder ? vscode.Uri.joinPath(rootUri, subfolder) : rootUri;
       let entries: [string, vscode.FileType][];

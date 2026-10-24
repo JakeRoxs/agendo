@@ -15,6 +15,17 @@ const PROFILES = {
 };
 export const STATUS_OPTIONS = ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'];
 
+function todoSource(id) {
+  if (id.startsWith('cql-')) return { key: 'codeql', label: 'CodeQL' };
+  if (id.startsWith('sq-')) return { key: 'sonarqube', label: 'SonarQube' };
+  return { key: 'todo', label: 'Todo' };
+}
+
+function sourceBadge(id) {
+  const source = todoSource(id);
+  return `<span class="badge badge-source source-${source.key}" aria-label="Source: ${source.label}">${source.label}</span>`;
+}
+
 // Every section is collapsible; the page script remembers the choice per todo.
 function collapsible(id, title, content, { open = true, hint = '', auto = false } = {}) {
   return `<section aria-labelledby="${id}-heading"><details class="collapsible" id="${id}" data-section="${id}"${open ? ' open' : ''} data-auto-open="${auto}"><summary><h2 id="${id}-heading">${title}${hint ? ` <span class="hint">${escapeHtml(hint)}</span>` : ''}</h2></summary>${content}</details></section>`;
@@ -67,16 +78,17 @@ export function renderCanvas(todo, relations, nav, actions = {}) {
   const sections = profile.order.map(id => byId[id]).join('');
 
   const statusPill = `<label class="badge-select"><span class="visually-hidden">Change status</span><select data-status-select class="badge status-${escapeHtml(todo.status)}" aria-label="Change status">${STATUS_OPTIONS.map(s => `<option value="${s}"${s === todo.status ? ' selected' : ''}>${s}</option>`).join('')}</select></label>`;
-  const editButton = actions.edit ? '<button type="button" class="edit-button" data-edit title="Edit todo file" aria-label="Edit todo file">&#9998;</button>' : '';
+  const editButton = actions.edit ? '<button type="button" class="edit-button" data-edit title="Edit todo file" aria-label="Edit todo file"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 3 5 5-12 12H4v-5Z"/><path d="m13 6 5 5"/></svg><span>Edit</span></button>' : '';
+  const navigation = renderNav(nav);
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(todo.title)}</title>
   <link rel="stylesheet" href="/page.css"></head>
   <body data-todo-id="${escapeHtml(todo.id)}" data-status="${escapeHtml(todo.status)}" data-percent="${percent}">
     <main>
-      ${editButton}
-      ${renderNav(nav)}
+      ${navigation || editButton ? `<div class="canvas-toolbar">${navigation}${editButton}</div>` : ''}
       <h1><span class="todo-id">#${escapeHtml(todo.id)}</span>${escapeHtml(todo.title)}</h1>
       <div class="meta">
+        ${sourceBadge(todo.id)}
         ${statusPill}
         <span class="badge badge-priority">${escapeHtml(todo.priority)}</span>
       </div>
@@ -88,7 +100,7 @@ export function renderCanvas(todo, relations, nav, actions = {}) {
 }
 
 function todoItem(item, note) {
-  const badges = `<span class="badge status-${escapeHtml(item.status)}">${escapeHtml(item.status)}</span><span class="badge badge-priority">${escapeHtml(item.priority)}</span>`;
+  const badges = `${sourceBadge(item.id)}<span class="badge status-${escapeHtml(item.status)}">${escapeHtml(item.status)}</span><span class="badge badge-priority">${escapeHtml(item.priority)}</span>`;
   return `<li class="${item.satisfied || item.active === false ? 'settled' : ''}"><button type="button" class="todo-link" data-open="${escapeHtml(item.id)}"><span class="todo-id">#${escapeHtml(item.id)}</span>${escapeHtml(item.title)}</button>${badges}${note ? `<span class="note">${note}</span>` : ''}</li>`;
 }
 
@@ -102,7 +114,7 @@ function renderRelations({ blocked, dependencies, dependents }, terminal, profil
   const needsAttention = !terminal && (blocked || waiting > 0);
 
   const depItems = dependencies.map(d => {
-    if (d.missing) return `<li class="unresolved"><span class="todo-id">#${escapeHtml(d.id)}</span>Not found<span class="note">unresolved dependency</span></li>`;
+    if (d.missing) return `<li class="unresolved"><span class="todo-id">#${escapeHtml(d.id)}</span>${sourceBadge(d.id)}Not found<span class="note">unresolved dependency</span></li>`;
     const notes = [];
     if (d.status === 'cancelled') notes.push('cancelled, reassess this todo');
     if (d.circular) notes.push('circular dependency');
@@ -133,9 +145,9 @@ const VISIBLE_CHIPS = 4;
 function renderNav(nav) {
   if (!nav) return '';
   const multiple = nav.recent.length > 1;
-  const chips = multiple ? `<ul class="recent" aria-label="Recent todos">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${escapeHtml(r.title)} (${escapeHtml(r.status)})">#${escapeHtml(r.id)}</button></li>`).join('')}</ul>` : '';
+  const chips = multiple ? `<ul class="recent" aria-label="Recent todos">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(r.title)} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(r.id)}</button></li>`).join('')}</ul>` : '';
   const current = nav.recent.find(r => r.current);
-  const select = multiple ? `<label class="recent-select"><span class="visually-hidden">Jump to a recent todo</span><select data-open-select class="status-border-${escapeHtml(current?.status ?? 'missing')}">${nav.recent.map(r => `<option class="status-border-${escapeHtml(r.status)}" value="${escapeHtml(r.id)}"${r.current ? ' selected' : ''}>#${escapeHtml(r.id)} ${escapeHtml(r.title)} (${escapeHtml(r.status)})</option>`).join('')}</select></label>` : '';
+  const select = multiple ? `<label class="recent-select"><span class="visually-hidden">Jump to a recent todo</span><select data-open-select class="status-border-${escapeHtml(current?.status ?? 'missing')}">${nav.recent.map(r => `<option class="status-border-${escapeHtml(r.status)}" value="${escapeHtml(r.id)}"${r.current ? ' selected' : ''}>${todoSource(r.id).label} · #${escapeHtml(r.id)} ${escapeHtml(r.title)} (${escapeHtml(r.status)})</option>`).join('')}</select></label>` : '';
   return `<nav class="history" aria-label="Todo history">
         <button type="button" data-nav="back" aria-label="Back"${nav.canBack ? '' : ' disabled'}>&larr;</button>
         <button type="button" data-nav="forward" aria-label="Forward"${nav.canForward ? '' : ' disabled'}>&rarr;</button>
