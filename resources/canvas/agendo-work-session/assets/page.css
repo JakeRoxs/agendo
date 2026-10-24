@@ -8,7 +8,7 @@ pre{background:#252525;padding:10px;border-radius:6px;overflow-x:auto;}
 pre code{background:none;padding:0;}
 :focus-visible{outline:2px solid #4da3ff;outline-offset:2px;}
 .todo-id{color:#8a8a8a;font-weight:400;margin-right:10px;font-variant-numeric:tabular-nums;}
-.meta{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:12px;}
 .badge{padding:3px 8px;border-radius:12px;font-size:0.8em;font-weight:600;background:#333;}
 .badge-priority{background:#5a3d2d;color:#ffbf7f;}
 .badge-source.source-todo{background:#30383d;color:#c9d2d9;}
@@ -81,7 +81,7 @@ details.collapsible[open]>summary h2::before{transform:rotate(90deg);}
 .hint{font-size:0.8em;font-weight:400;color:#8a8a8a;}
 @media (prefers-reduced-motion:reduce){details.collapsible>summary h2::before{transition:none;}}
 .badge-select{display:inline-flex;}
-select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:600;appearance:none;-webkit-appearance:none;padding:3px 10px;}
+select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:600;appearance:none;-webkit-appearance:none;padding:3px 10px;field-sizing:content;text-align:center;text-align-last:center;}
 select.badge:disabled{opacity:0.6;cursor:progress;}
 select.badge option{background:#2d2d2d;color:#e6e6e6;}
 .edit-button{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;min-height:32px;padding:5px 10px;font:inherit;font-size:0.85em;}

@@ -13,8 +13,9 @@ All notable changes to the Agendo extension are documented here.
 
 ### Changed
 
-- Work-session canvas version 0.1.2 recognizes scanner IDs and source-specific lifecycle folders, with explicit Todo, CodeQL, and SonarQube badges in the header, dependencies, and recent history
+- Work-session canvas version 0.1.2 recognizes scanner IDs and source-specific lifecycle folders, with lowercase `todo`, `cql`, and `sq` badges in the header, dependencies, and recent history
 - Canvas edit action uses a consistent icon and labelled toolbar button instead of an overlapping, font-dependent pencil
+- Canvas status pill auto-sizes to the selected status with centered text and is vertically aligned with source and priority badges
 - Bundled Agendo skill version 1.5.0 documents scanning discovery, independent IDs, source-specific lifecycle, and evidence ownership
 
 ## [0.1.16]
