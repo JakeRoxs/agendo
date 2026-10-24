@@ -3,15 +3,15 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync,
 import { basename, dirname, join, parse, resolve } from 'node:path';
 
 const TODO_DIRS = ['docs/todos', 'todos'];
-const FILENAME_RE = /^(\d{3,})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-.*\.md$/;
+const FILENAME_RE = /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-.*\.md$/;
 const CRITERION_RE = /^(\s*-\s*\[)([ xX])(\]\s*)(.+)$/;
-const TODO_ID_RE = /^\d{3,}$/;
+const TODO_ID_RE = /^(?:(?:cql|sq)-)?\d{3,}$/;
 // Both satisfy a dependency; a cancelled blocker will never be delivered, so the UI flags it.
 const SATISFYING_STATUSES = new Set(['complete', 'cancelled']);
 
 export function assertTodoId(todoId) {
   if (typeof todoId !== 'string' || !TODO_ID_RE.test(todoId)) {
-    throw new CanvasError('invalid_todo_id', 'todoId must be the numeric todo ID, for example "033"');
+    throw new CanvasError('invalid_todo_id', 'todoId must be an Agendo ID, for example "033" or "cql-001"');
   }
   return todoId;
 }
@@ -94,8 +94,9 @@ export function todoLocations(workspaceRoot) {
       complete: name(config.completeFolder, 'complete'),
       cancelled: name(config.cancelledFolder, 'cancelled')
     };
-    return { base, folders, dirs: ['', ...Object.values(folders)].map(sub => join(base, sub)) };
-  });
+    return [base, join(base, 'code-scanning', 'codeql'), join(base, 'code-scanning', 'sonarqube')]
+      .map(sourceBase => ({ base: sourceBase, folders, dirs: ['', ...Object.values(folders)].map(sub => join(sourceBase, sub)) }));
+  }).flat();
 }
 
 function todoFiles(workspaceRoot) {
@@ -349,7 +350,7 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
 
   const location = todoLocations(workspaceRoot).find(l => l.dirs.includes(dirname(filePath)));
   const targetDir = location.folders[newStatus] ? join(location.base, location.folders[newStatus]) : location.base;
-  const slug = name.replace(/^\d{3,}-[a-z-]+?-p[123]-/, '');
+  const slug = name.replace(/^(?:(?:cql|sq)-)?\d{3,}-[a-z-]+?-p[123]-/, '');
   const target = join(targetDir, `${todoId}-${newStatus}-${priority}-${slug}`);
 
   const temp = join(dirname(filePath), `.${name}.${process.pid}.${Date.now()}.tmp`);

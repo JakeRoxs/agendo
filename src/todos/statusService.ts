@@ -4,6 +4,7 @@ import type { ConfigService } from "./configService";
 import { readText } from "./fileSystem";
 import {
   buildFileName,
+  codeScanningBase,
   splitFrontmatter,
   type Todo,
   type TodoPriority,
@@ -76,7 +77,9 @@ export class StatusService {
       content = content.replace(CANCELLED_BANNER_RE, "");
     }
 
-    const targetFolder = this.folderForStatus(newStatus);
+    const targetFolder = [codeScanningBase(todo.folder), this.folderForStatus(newStatus)]
+      .filter(Boolean)
+      .join("/");
     const newName = buildFileName(todo.id, newStatus, todo.priority, todo.description);
 
     return this.writeAndMove(todo, content, targetFolder, newName);

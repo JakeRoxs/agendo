@@ -2,7 +2,7 @@
   "name": "agendo",
   "displayName": "Agendo",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.1.16",
+  "version": "0.2.0",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -75,6 +75,13 @@
       }
     ],
     "commands": [
+      {
+        "command": "agendo.importCodeScanning",
+        "title": "Import Code-Scanning Todos...",
+        "category": "Agendo",
+        "icon": "$(shield)",
+        "enablement": "isWorkspaceTrusted"
+      },
       {
         "command": "agendo.refresh",
         "title": "Refresh",
@@ -300,6 +307,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "agendo.importCodeScanning",
+          "when": "view == agendo.todos && config.agendo.codeScanning.enabled",
+          "group": "3_import@1"
+        },
+        {
           "command": "agendo.createTodo",
           "when": "view == agendo.todos && !agendo.creatingTodo",
           "group": "navigation@1"
@@ -519,6 +531,21 @@
     "configuration": {
       "title": "Agendo",
       "properties": {
+        "agendo.codeScanning.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable optional, manually triggered CodeQL and SonarQube imports. Existing scanning todos remain visible when disabled."
+        },
+        "agendo.codeScanning.sonarqube.url": {
+          "type": "string",
+          "default": "",
+          "description": "SonarQube server URL. Tokens are stored separately in VS Code SecretStorage, never in settings."
+        },
+        "agendo.codeScanning.sonarqube.projectKey": {
+          "type": "string",
+          "default": "",
+          "description": "SonarQube project key used for importing unresolved issues."
+        },
         "agendo.root": {
           "type": "string",
           "default": "docs/todos",

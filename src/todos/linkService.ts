@@ -21,7 +21,7 @@ export class LinkService {
 
   /** Folders (relative to the root) to scan for referencing todos. */
   private scanFolders(): string[] {
-    return ["", this.config.completeFolder, this.config.cancelledFolder, this.config.backlogFolder];
+    return this.config.getTodoFolders();
   }
 
   /**

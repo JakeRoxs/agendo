@@ -2,9 +2,9 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Version](https://img.shields.io/badge/version-0.1.16-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.4.9-orange.svg)
-![Canvas Version](https://img.shields.io/badge/canvas-0.1.0-purple.svg)
+![Extension](https://img.shields.io/badge/version-0.2.0-blue.svg)
+![Skill](https://img.shields.io/badge/skill-1.5.0-orange.svg)
+![Canvas](https://img.shields.io/badge/canvas-0.1.0-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
@@ -191,6 +191,55 @@ This is especially useful when you want a follow-up task captured into the same 
 | `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
 | `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
 | `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
+| `agendo.codeScanning.enabled` | `false` | Enable manually triggered native code-scanning imports |
+| `agendo.codeScanning.sonarqube.url` | empty | SonarQube server URL |
+| `agendo.codeScanning.sonarqube.projectKey` | empty | SonarQube project key |
+
+## Code Scanning
+
+Code scanning is optional and disabled by default. Run **Agendo: Import Code-Scanning Todos...**
+from the Command Palette to enable it for a workspace and select CodeQL or SonarQube. When
+enabled, the same command is available in the Todos view menu. Imports run only on request;
+activation and normal refresh never contact a scanning service.
+
+- CodeQL uses the GitHub CLI's authenticated account (`gh auth login`) and the current workspace's repository; the account needs permission to read code-scanning alerts
+- SonarQube prompts for a server URL, project key, and user token; the token is stored in VS Code SecretStorage, not settings, todo files, or logs; leave the token prompt blank to reuse it or enter a new token to replace it
+- SonarQube requires HTTPS except for loopback servers, and includes unresolved issues, not Security Hotspots
+- Imports require a trusted workspace and run natively in the extension, without Python
+
+Each source has its own numbering sequence and lifecycle folders beneath your configured todo root:
+
+```text
+docs/todos/
+  001-pending-p2-regular-todo.md
+  code-scanning/
+    codeql/
+      cql-001-pending-p1-js-example.md
+      complete/
+      cancelled/
+      backlog/
+    sonarqube/
+      sq-001-pending-p2-typescript-s123.md
+      complete/
+      cancelled/
+      backlog/
+```
+
+Custom complete, cancelled, and backlog folder settings apply inside each source as well. Folders
+are created only when needed. Scanning IDs never consume the regular todo sequence. Use the full
+ID, such as `cql-001`, in dependencies and links.
+
+Agendo creates one todo per rule and repository/project, initially prioritized by the most severe
+finding. These are normal todos: use the tree, source groups, tag filters (`codeql`, `sonarqube`,
+`code-scanning`), board, digest, dependencies, and work-session canvas as usual. Status changes stay
+inside the source's folders. Existing scanning todos remain visible when imports are disabled.
+The canvas labels regular todos, CodeQL findings, and SonarQube findings with distinct source badges
+in the header, dependencies, and recent history, independently of lifecycle status colours.
+
+Re-imports update only the marked **Scanner Evidence** section. IDs, status, priority, notes,
+acceptance criteria, and work logs are preserved, including completed or cancelled todos. Missing
+findings never automatically complete, cancel, reopen, or delete a todo. Save pending editor changes
+before importing, and retain the evidence markers so Agendo can refresh that section safely.
 
 ## Contributing
 

@@ -32,7 +32,7 @@ export async function activate(context: vscode.ExtensionContext) {
   const canvasViewer = new CanvasViewer(context.extensionUri);
   context.subscriptions.push(canvasViewer);
   config.setCanvasOpener(async (uri) => {
-    const todoId = /^(\d{3,})-/.exec(basename(uri.fsPath))?.[1];
+    const todoId = /^((?:(?:cql|sq)-)?\d{3,})-/.exec(basename(uri.fsPath))?.[1];
     const root = config.getWorkspaceFolder()?.uri.fsPath;
     if (!todoId || !root) {
       return false;

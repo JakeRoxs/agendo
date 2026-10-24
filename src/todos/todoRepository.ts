@@ -2,7 +2,13 @@ import * as vscode from "vscode";
 import { out } from "../output";
 import type { ConfigService } from "./configService";
 import { readText } from "./fileSystem";
-import { isTodoFileName, parseTodo, TERMINAL_STATUSES, type Todo } from "./todoModel";
+import {
+  isTodoFileName,
+  parseTodo,
+  SCANNING_ID_PREFIX,
+  TERMINAL_STATUSES,
+  type Todo,
+} from "./todoModel";
 
 const REFRESH_DEBOUNCE_MS = 400;
 
@@ -60,21 +66,10 @@ export class TodoRepository implements vscode.Disposable {
       return;
     }
 
-    const folders: Array<{ uri: vscode.Uri; folder: string }> = [
-      { uri: rootUri, folder: "" },
-      {
-        uri: vscode.Uri.joinPath(rootUri, this.config.completeFolder),
-        folder: this.config.completeFolder,
-      },
-      {
-        uri: vscode.Uri.joinPath(rootUri, this.config.cancelledFolder),
-        folder: this.config.cancelledFolder,
-      },
-      {
-        uri: vscode.Uri.joinPath(rootUri, this.config.backlogFolder),
-        folder: this.config.backlogFolder,
-      },
-    ];
+    const folders = this.config.getTodoFolders().map((folder) => ({
+      uri: folder ? vscode.Uri.joinPath(rootUri, folder) : rootUri,
+      folder,
+    }));
 
     const collected: Todo[] = [];
     for (const { uri, folder } of folders) {
@@ -188,10 +183,14 @@ export class TodoRepository implements vscode.Disposable {
     this.watcher = undefined;
   }
 
-  /** Highest numeric id across all known todos, for id allocation. */
-  getMaxId(): number {
+  /** Highest numeric ID in one namespace; scanner IDs never advance regular IDs. */
+  getMaxId(source?: "codeql" | "sonarqube"): number {
     return this.todos.reduce((max, todo) => {
-      const value = Number.parseInt(todo.id, 10);
+      const prefix = source ? `${SCANNING_ID_PREFIX[source]}-` : "";
+      if (source && !todo.id.startsWith(prefix)) {
+        return max;
+      }
+      const value = Number.parseInt(todo.id.slice(prefix.length), 10);
       return Number.isNaN(value) ? max : Math.max(max, value);
     }, 0);
   }

@@ -2,6 +2,21 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [Unreleased]
+
+### Added
+
+- Optional native CodeQL and SonarQube imports through **Import Code-Scanning Todos...**, disabled by default and fetched only on request
+- Source-specific `code-scanning/codeql` and `code-scanning/sonarqube` todo roots with independent `cql-001` / `sq-001` numbering and nested lifecycle folders
+- Scanner todos participate in native discovery, groups, filters, dependencies, board, digest, link checks, and canvas; re-imports refresh only scanner evidence and preserve user-managed lifecycle and notes
+- SonarQube credentials stored in VS Code SecretStorage; CodeQL uses the authenticated GitHub CLI
+
+### Changed
+
+- Work-session canvas version 0.1.2 recognizes scanner IDs and source-specific lifecycle folders, with explicit Todo, CodeQL, and SonarQube badges in the header, dependencies, and recent history
+- Canvas edit action uses a consistent icon and labelled toolbar button instead of an overlapping, font-dependent pencil
+- Bundled Agendo skill version 1.5.0 documents scanning discovery, independent IDs, source-specific lifecycle, and evidence ownership
+
 ## [0.1.16]
 
 ### Added
