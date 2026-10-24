@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - development
+      - dev
   pull_request:
   workflow_dispatch:
 
@@ -74,10 +74,10 @@ jobs:
     if: (
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'workflow_dispatch' &&
-       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/development') ||
+       (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')) ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/dev') ||
       (github.event_name == 'pull_request' &&
-       github.base_ref == 'development' &&
+       github.base_ref == 'dev' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
        github.event.pull_request.user.type != 'Bot' &&
        github.actor != 'dependabot[bot]'))
