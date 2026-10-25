@@ -1,6 +1,7 @@
 {
   "name": "agendo",
   "displayName": "Agendo",
+  "icon": "resources/images/agendo-icon.png",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
   "version": "0.2.0",
   "publisher": "jakemorgeson",
@@ -33,7 +34,7 @@
         {
           "id": "agendo-container",
           "title": "Agendo",
-          "icon": "$(checklist)"
+          "icon": "resources/images/agendo-icon.svg"
         }
       ]
     },
@@ -43,7 +44,7 @@
           "id": "agendo.todos",
           "name": "Todos",
           "initialSize": 8,
-          "icon": "$(checklist)",
+          "icon": "resources/images/agendo-icon.svg",
           "contextualTitle": "Agendo"
         },
         {

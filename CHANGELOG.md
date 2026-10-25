@@ -19,6 +19,7 @@ All notable changes to the Agendo extension are documented here.
 
 ### Changed
 
+- Use the new Agendo artwork for the Activity Bar, Todos view, and extension listing icons, and as the decorative A in the README title
 - Skill view uses a minimal initial size so its three options remain visible without dominating the sidebar; saved user layouts remain unchanged
 - Ambiguous ID-based board actions are refused, canvas opening falls back to the selected source file, and dependencies on duplicated IDs remain blocked until reconciliation
 - Work-session canvas version 0.1.2 recognizes scanner IDs and source-specific lifecycle folders, with lowercase `todo`, `cql`, and `sq` badges in the header, dependencies, and recent history

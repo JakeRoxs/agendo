@@ -1,4 +1,4 @@
-# Agendo
+<h1><img src="resources/images/agendo-icon.png" alt="A" width="44" height="44" align="absmiddle">gendo</h1>
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
