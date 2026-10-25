@@ -39,10 +39,26 @@ export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "in-progress", "ready"]
 export const TERMINAL_STATUSES: TodoStatus[] = ["complete", "cancelled"];
 
 export const SCANNING_ID_PREFIX = { codeql: "cql", sonarqube: "sq" } as const;
+export type ScanningSource = keyof typeof SCANNING_ID_PREFIX;
+export type TodoViewScope = "todos" | "code-scanning";
 
 /** Scanning todos retain their source's own lifecycle folders. */
 export function codeScanningBase(folder: string): string | undefined {
   return /^(code-scanning\/(?:codeql|sonarqube))(?:\/|$)/.exec(folder)?.[1];
+}
+
+export function getTodoSource(todo: Todo): ScanningSource | undefined {
+  const folderSource = codeScanningBase(todo.folder)?.split("/")[1];
+  if (folderSource === "codeql" || folderSource === "sonarqube") {
+    return folderSource;
+  }
+  return (Object.keys(SCANNING_ID_PREFIX) as ScanningSource[]).find((source) =>
+    todo.id.startsWith(`${SCANNING_ID_PREFIX[source]}-`),
+  );
+}
+
+export function matchesTodoScope(todo: Todo, scope: TodoViewScope): boolean {
+  return Boolean(getTodoSource(todo)) === (scope === "code-scanning");
 }
 
 /** Parsed representation of a single todo markdown file. */

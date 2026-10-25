@@ -9,8 +9,11 @@ const TREE_STATE_KEY = "agendo.tree.collapsed";
 export class TreeStateService {
   private readonly collapsedNodes: Set<string> = new Set();
 
-  constructor(private readonly state: vscode.Memento) {
-    const stored = state.get<string[]>(TREE_STATE_KEY, []);
+  constructor(
+    private readonly state: vscode.Memento,
+    private readonly stateKey = TREE_STATE_KEY,
+  ) {
+    const stored = state.get<string[]>(stateKey, []);
     this.collapsedNodes = new Set(stored);
   }
 
@@ -48,6 +51,6 @@ export class TreeStateService {
   }
 
   private async persist(): Promise<void> {
-    await this.state.update(TREE_STATE_KEY, Array.from(this.collapsedNodes));
+    await this.state.update(this.stateKey, Array.from(this.collapsedNodes));
   }
 }

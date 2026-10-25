@@ -1693,7 +1693,7 @@ suite("todoModel", () => {
     };
     const provider = new BoardViewProvider(
       repository as never,
-      { matches: () => true } as never,
+      { matches: () => true, current: {} } as never,
       { setStatus: async () => undefined, setPriority: async () => undefined } as never,
       {
         get: <T>(key: string, fallback: T): T =>
@@ -1800,7 +1800,7 @@ suite("todoModel", () => {
     };
     const provider = new BoardViewProvider(
       repository as never,
-      { matches: () => true } as never,
+      { matches: () => true, current: {} } as never,
       { setStatus: async () => undefined, setPriority: async () => undefined } as never,
       {
         get: <T>(_key: string, fallback: T): T => fallback,
@@ -2142,7 +2142,11 @@ suite("todoModel", () => {
       process.env.HOME = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-home-"));
       await activate(context as never);
       assert.strictEqual(watcherCreationCount, 1);
-      assert.deepStrictEqual(treeViewIds, ["agendo.todos", "agendo.skillStatus"]);
+      assert.deepStrictEqual(treeViewIds, [
+        "agendo.todos",
+        "agendo.codeScanning",
+        "agendo.skillStatus",
+      ]);
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({

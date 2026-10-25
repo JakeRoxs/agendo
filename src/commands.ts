@@ -4,6 +4,19 @@
  * Commands follow the format: "agendo.commandName".
  */
 export enum Command {
+  CopyCollisionContext = "agendo.copyCollisionContext",
+  FocusCollision = "agendo.focusCollision",
+  CodeScanningRefresh = "agendo.codeScanning.refresh",
+  CodeScanningRefreshLoading = "agendo.codeScanning.refresh.loading",
+  CodeScanningSearch = "agendo.codeScanning.search",
+  CodeScanningClearSearch = "agendo.codeScanning.clearSearch",
+  CodeScanningFilter = "agendo.codeScanning.filter",
+  CodeScanningClearFilters = "agendo.codeScanning.clearFilters",
+  CodeScanningOpenBoard = "agendo.codeScanning.openBoard",
+  CodeScanningOpenBoardLoading = "agendo.codeScanning.openBoard.loading",
+  CodeScanningShowDigest = "agendo.codeScanning.showDigest",
+  CodeScanningShowDigestLoading = "agendo.codeScanning.showDigest.loading",
+  CodeScanningToggleSortDate = "agendo.codeScanning.toggleSortDate",
   Refresh = "agendo.refresh",
   ImportCodeScanning = "agendo.importCodeScanning",
   RefreshLoading = "agendo.refresh.loading",

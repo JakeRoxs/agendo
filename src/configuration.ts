@@ -21,6 +21,7 @@ export enum Settings {
   SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
   CodeScanningEnabled = "codeScanning.enabled",
+  CodeScanningSortByDate = "codeScanning.sortByDate",
   SonarQubeUrl = "codeScanning.sonarqube.url",
   SonarQubeProjectKey = "codeScanning.sonarqube.projectKey",
 }

@@ -23,17 +23,26 @@ import type { FilterService } from "./todos/filterService";
 import type { LinkService } from "./todos/linkService";
 import type { SkillManager } from "./todos/skillManager";
 import type { StatusService } from "./todos/statusService";
+import { buildCollisionReconcileContext, findTodoCollisions } from "./todos/todoCollisions";
 import {
   buildFileName,
+  matchesTodoScope,
+  type ScanningSource,
   TERMINAL_STATUSES,
   TODO_PRIORITIES,
   TODO_STATUSES,
   type Todo,
   type TodoPriority,
   type TodoStatus,
+  type TodoViewScope,
 } from "./todos/todoModel";
 import type { TodoRepository } from "./todos/todoRepository";
-import type { TodoNode, TodoTreeProvider, TreeNode } from "./todos/todoTreeProvider";
+import {
+  getTreeNodeKey,
+  type TodoNode,
+  type TodoTreeProvider,
+  type TreeNode,
+} from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
 
 export interface CommandServices {
@@ -49,6 +58,7 @@ export interface CommandServices {
   treeProvider: TodoTreeProvider;
   boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
+  scanning?: Pick<CommandServices, "filter" | "treeState" | "treeProvider" | "boardViewProvider">;
 }
 
 type Register = (command: string, callback: (...args: any[]) => any) => void;
@@ -69,6 +79,63 @@ export function registerCommands(
   registerConfigCommands(register, services);
   registerSkillCommands(register, services, busy);
   registerTreeCommands(register, services);
+  register(Command.FocusCollision, async (arg: unknown) => {
+    await services.repository.refresh();
+    const todo = resolveTodo(arg);
+    const context = arg as { todoId?: unknown; collisionSource?: unknown } | undefined;
+    const collision = findTodoCollisions(services.repository.getTodos()).find((group) =>
+      todo
+        ? group.todos.some((candidate) => candidate.uri.toString() === todo.uri.toString())
+        : group.id === context?.todoId &&
+          (!context?.collisionSource || group.source === context.collisionSource),
+    );
+    if (!collision) {
+      return;
+    }
+    const target = collision.source === "todo" ? services : services.scanning;
+    if (!target) {
+      return;
+    }
+    await target.filter.set({ collision: { id: collision.id, source: collision.source } });
+    await updateFilterContexts(
+      target.filter,
+      collision.source === "todo" ? "agendo" : "agendo.codeScanning",
+    );
+    target.treeProvider.refresh();
+    target.boardViewProvider.refresh();
+  });
+  register(Command.CopyCollisionContext, async (arg: unknown) => {
+    await services.repository.refresh();
+    const todo = resolveTodo(arg);
+    const todoId = (arg as { todoId?: unknown } | undefined)?.todoId;
+    const collisions = findTodoCollisions(services.repository.getTodos()).filter((collision) => {
+      if (todo) {
+        return collision.todos.some(
+          (candidate) => candidate.uri.toString() === todo.uri.toString(),
+        );
+      }
+      return typeof todoId !== "string" || collision.id === todoId;
+    });
+    if (!collisions.length) {
+      vscode.window.showInformationMessage("No duplicate todo IDs detected for this selection.");
+      return;
+    }
+    await vscode.env.clipboard.writeText(
+      buildCollisionReconcileContext(collisions, services.config.root),
+    );
+    vscode.window.showInformationMessage(
+      `Copied reconciliation context for ${collisions.length} ID collision(s).`,
+    );
+  });
+  if (services.scanning) {
+    const scanningServices = { ...services, ...services.scanning };
+    registerFilterCommands(register, scanningServices, busy, "code-scanning");
+    registerBoardCommands(register, scanningServices, busy, "code-scanning");
+    register(Command.CodeScanningToggleSortDate, async () => {
+      await set(Settings.CodeScanningSortByDate, !get<boolean>(Settings.CodeScanningSortByDate));
+      scanningServices.treeProvider.refresh();
+    });
+  }
   let scanning = false;
   register(Command.ImportCodeScanning, async () => {
     if (scanning) {
@@ -217,6 +284,9 @@ async function promptSonarQubeSettings(
  * driven by the operation's context key.
  */
 function registerLoadingCommands(register: Register): void {
+  register(Command.CodeScanningRefreshLoading, () => undefined);
+  register(Command.CodeScanningOpenBoardLoading, () => undefined);
+  register(Command.CodeScanningShowDigestLoading, () => undefined);
   register(Command.ShowDigestLoading, () => undefined);
   register(Command.EnableSkillLoading, () => undefined);
   register(Command.InstallCanvasLoading, () => undefined);
@@ -231,22 +301,30 @@ function registerBoardCommands(
   register: Register,
   services: CommandServices,
   busy: BusyIndicator,
+  scope: TodoViewScope = "todos",
 ): void {
-  register(Command.OpenBoard, async () => {
-    await busy.run(
-      "Opening board…",
-      async () => services.boardViewProvider.open(),
-      "agendo.openingBoard",
-    );
-  });
+  const prefix = scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
+  register(
+    scope === "code-scanning" ? Command.CodeScanningOpenBoard : Command.OpenBoard,
+    async () => {
+      await busy.run(
+        "Opening board…",
+        async () => services.boardViewProvider.open(),
+        `${prefix}.openingBoard`,
+      );
+    },
+  );
 }
 
-export async function updateFilterContexts(filter: FilterService): Promise<void> {
+export async function updateFilterContexts(
+  filter: FilterService,
+  prefix = "agendo",
+): Promise<void> {
   await Promise.all([
-    vscode.commands.executeCommand("setContext", "agendo.filterActive", filter.isActive),
+    vscode.commands.executeCommand("setContext", `${prefix}.filterActive`, filter.isActive),
     vscode.commands.executeCommand(
       "setContext",
-      "agendo.searchActive",
+      `${prefix}.searchActive`,
       Boolean(filter.current.text),
     ),
   ]);
@@ -256,14 +334,27 @@ function registerFilterCommands(
   register: Register,
   services: CommandServices,
   busy: BusyIndicator,
+  scope: TodoViewScope = "todos",
 ): void {
   const { repository, filter, treeProvider } = services;
+  const commands =
+    scope === "code-scanning"
+      ? {
+          Refresh: Command.CodeScanningRefresh,
+          ShowDigest: Command.CodeScanningShowDigest,
+          ClearFilters: Command.CodeScanningClearFilters,
+          Filter: Command.CodeScanningFilter,
+          Search: Command.CodeScanningSearch,
+          ClearSearch: Command.CodeScanningClearSearch,
+        }
+      : Command;
+  const prefix = scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
   let digestLoading = false;
 
-  register(Command.Refresh, async () => {
-    await busy.run("Refreshing todos…", () => repository.refresh(), "agendo.refreshing");
+  register(commands.Refresh, async () => {
+    await busy.run("Refreshing todos…", () => repository.refresh(), `${prefix}.refreshing`);
   });
-  register(Command.ShowDigest, async () => {
+  register(commands.ShowDigest, async () => {
     if (digestLoading) {
       vscode.window.showInformationMessage("Task digest is already loading.");
       return;
@@ -274,15 +365,25 @@ function registerFilterCommands(
         "Loading task digest…",
         async () => {
           await repository.refresh();
-          const content = buildTodoDigest(repository.getTodos(), repository.getDependencyGraph());
+          const content = buildTodoDigest(
+            repository.getTodos().filter((todo) => matchesTodoScope(todo, scope)),
+            repository.getDependencyGraph(),
+          );
           // Write to a real temp file and preview it the same way todos do. Showing the
           // preview on an untitled in-memory document materializes both an editor and a
           // preview; a real file URI shows only the preview.
-          const digestUri = vscode.Uri.file(path.join(os.tmpdir(), "agendo-task-digest.md"));
+          const digestUri = vscode.Uri.file(
+            path.join(
+              os.tmpdir(),
+              scope === "code-scanning"
+                ? "agendo-code-scanning-digest.md"
+                : "agendo-task-digest.md",
+            ),
+          );
           await vscode.workspace.fs.writeFile(digestUri, Buffer.from(content, "utf8"));
           await vscode.commands.executeCommand("markdown.showPreview", digestUri);
         },
-        "agendo.digestLoading",
+        `${prefix}.digestLoading`,
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to show task digest: ${error}`);
@@ -290,15 +391,17 @@ function registerFilterCommands(
       digestLoading = false;
     }
   });
-  register(Command.ClearFilters, async () => {
+  register(commands.ClearFilters, async () => {
     await filter.clear();
-    await updateFilterContexts(filter);
+    await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
+    services.boardViewProvider.refresh();
   });
-  register(Command.Filter, async () => {
-    await runFilterPicker(filter, treeProvider, repository);
+  register(commands.Filter, async () => {
+    await runFilterPicker(filter, treeProvider, repository, scope);
+    services.boardViewProvider.refresh();
   });
-  register(Command.Search, async () => {
+  register(commands.Search, async () => {
     const text = await vscode.window.showInputBox({
       prompt: "Search todos (id, title, tag, key, dependency)",
       value: filter.current.text ?? "",
@@ -308,13 +411,15 @@ function registerFilterCommands(
       return;
     }
     await filter.set({ ...filter.current, text: text.trim() || undefined });
-    await updateFilterContexts(filter);
+    await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
+    services.boardViewProvider.refresh();
   });
-  register(Command.ClearSearch, async () => {
+  register(commands.ClearSearch, async () => {
     await filter.set({ ...filter.current, text: undefined });
-    await updateFilterContexts(filter);
+    await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
+    services.boardViewProvider.refresh();
   });
 }
 
@@ -703,20 +808,20 @@ function registerSkillCommands(
 }
 
 function registerTreeCommands(register: Register, services: CommandServices): void {
-  const { treeState, treeProvider } = services;
-
   register(Command.CollapseNode, async (arg: unknown) => {
-    const node = arg as TreeNode | undefined;
-    if (node && "id" in node && node.id) {
-      await treeState.collapse(node.id as string);
-      treeProvider.refresh();
+    const key = getTreeNodeKey(arg as TreeNode | undefined);
+    if (key) {
+      const target = key.startsWith("source:") ? (services.scanning ?? services) : services;
+      await target.treeState.collapse(key);
+      target.treeProvider.refresh();
     }
   });
   register(Command.ExpandNode, async (arg: unknown) => {
-    const node = arg as TreeNode | undefined;
-    if (node && "id" in node && node.id) {
-      await treeState.expand(node.id as string);
-      treeProvider.refresh();
+    const key = getTreeNodeKey(arg as TreeNode | undefined);
+    if (key) {
+      const target = key.startsWith("source:") ? (services.scanning ?? services) : services;
+      await target.treeState.expand(key);
+      target.treeProvider.refresh();
     }
   });
 }
@@ -724,7 +829,14 @@ function registerTreeCommands(register: Register, services: CommandServices): vo
 /** Board cards pass the `data-vscode-context` object of the right-clicked card. */
 function resolveBoardTodo(arg: unknown, todos: readonly Todo[]): Todo | undefined {
   const todoId = (arg as { todoId?: unknown } | undefined)?.todoId;
-  return typeof todoId === "string" ? todos.find((todo) => todo.id === todoId) : undefined;
+  const matches = typeof todoId === "string" ? todos.filter((todo) => todo.id === todoId) : [];
+  if (matches.length > 1) {
+    vscode.window.showWarningMessage(
+      `Duplicate todo ID ${todoId}: reconcile the conflicting files before opening by ID.`,
+    );
+    return undefined;
+  }
+  return matches[0];
 }
 
 export function resolveTodo(arg: unknown): Todo | undefined {
@@ -741,9 +853,10 @@ async function runFilterPicker(
   filter: FilterService,
   treeProvider: TodoTreeProvider,
   repository: TodoRepository,
+  scope: TodoViewScope = "todos",
 ): Promise<void> {
   type Item = vscode.QuickPickItem & {
-    itemType?: "status" | "priority" | "blocked" | "group";
+    itemType?: "status" | "priority" | "blocked" | "group" | "source";
     value?: string;
     description?: string;
     picked?: boolean;
@@ -752,6 +865,15 @@ async function runFilterPicker(
 
   const current = filter.current;
   const items: Item[] = [
+    ...(scope === "code-scanning"
+      ? (["codeql", "sonarqube"] as const).map<Item>((source) => ({
+          label: source === "codeql" ? "CodeQL" : "SonarQube",
+          description: "source",
+          itemType: "source",
+          value: source,
+          picked: current.sources?.includes(source) ?? false,
+        }))
+      : []),
     ...TODO_STATUSES.map<Item>((status) => ({
       label: status,
       description: "status",
@@ -781,7 +903,7 @@ async function runFilterPicker(
       picked: current.blocked === false,
     },
     { label: "── Groups ──", kind: vscode.QuickPickItemKind.Separator },
-    ...repository.getGroups().map<Item>((group) => ({
+    ...repository.getGroups(scope).map<Item>((group) => ({
       label: group,
       description: "group",
       itemType: "group",
@@ -830,8 +952,14 @@ async function runFilterPicker(
     priorities: priorities.length ? priorities : undefined,
     blocked,
     group,
+    sources:
+      scope === "code-scanning"
+        ? selected
+            .filter((item) => item.itemType === "source")
+            .map((item) => item.value as ScanningSource)
+        : undefined,
   });
-  await updateFilterContexts(filter);
+  await updateFilterContexts(filter, scope === "code-scanning" ? "agendo.codeScanning" : "agendo");
   treeProvider.refresh();
 }
 
