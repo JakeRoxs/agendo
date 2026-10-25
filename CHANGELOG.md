@@ -4,6 +4,8 @@ All notable changes to the Agendo extension are documented here.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
 ### Added
 
 - Duplicate-ID warnings in regular and scanning trees and boards, with hover details listing all conflicting records even when filters hide some of them
