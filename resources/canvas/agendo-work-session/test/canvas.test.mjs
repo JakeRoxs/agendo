@@ -384,3 +384,46 @@ describe('Settings button and page', () => {
     assert.ok(html.includes('href="/"'), 'Should have back link to main view');
   });
 });
+
+describe('Todo validation warnings', () => {
+  it('shows validation warning when frontmatter mismatches filename', () => {
+    const todo = {
+      id: '001',
+      title: 'Test Todo',
+      status: 'pending',
+      priority: 'p3',
+      criteria: [],
+      workLog: [],
+      description: '',
+      scannerEvidence: null,
+      resumeContext: null,
+      triage: [],
+      dependencies: [],
+      validation: ['status mismatch: filename says "pending" but frontmatter says "in-progress"'],
+      scan: { source: undefined, scope: undefined, grouping: undefined, target: undefined, refreshedAt: undefined, reviewRequired: false }
+    };
+    const html = renderCanvas(todo, null, null, {}, []);
+    assert.ok(html.includes('validation-warning'), 'Should render validation warning');
+    assert.ok(html.includes('status mismatch'), 'Should show mismatch message');
+  });
+
+  it('does not show validation warning when todo is valid', () => {
+    const todo = {
+      id: '001',
+      title: 'Test Todo',
+      status: 'pending',
+      priority: 'p3',
+      criteria: [],
+      workLog: [],
+      description: '',
+      scannerEvidence: null,
+      resumeContext: null,
+      triage: [],
+      dependencies: [],
+      validation: [],
+      scan: { source: undefined, scope: undefined, grouping: undefined, target: undefined, refreshedAt: undefined, reviewRequired: false }
+    };
+    const html = renderCanvas(todo, null, null, {}, []);
+    assert.ok(!html.includes('validation-warning'), 'Should not render validation warning');
+  });
+});

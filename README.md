@@ -104,15 +104,15 @@ Lifecycle semantics:
 ```mermaid
 stateDiagram-v2
     [*] --> pending
-    pending --> in-progress : triage approved
+    pending --> in_progress : triage approved
     pending --> backlogged : deprioritized
-    in-progress --> ready : implementation done
+    in_progress --> ready : implementation done
     ready --> complete : verified working
-    ready --> in-progress : needs more work
-    in-progress --> backlogged : deprioritized
+    ready --> in_progress : needs more work
+    in_progress --> backlogged : deprioritized
     backlogged --> pending : reactivated
     pending --> cancelled : abandoned
-    in-progress --> cancelled : abandoned
+    in_progress --> cancelled : abandoned
     ready --> cancelled : abandoned
     complete --> [*]
     cancelled --> [*]

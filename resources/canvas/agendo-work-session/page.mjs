@@ -232,11 +232,16 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
     ? `<span class="badge badge-import" title="${escapeHtml(scanTooltip(todo))}" aria-label="${escapeHtml(importGrouping)}">${escapeHtml(importGrouping)}</span>`
     : '';
 
+  const validationBanner = todo.validation && todo.validation.length > 0
+    ? `<div class="validation-warning" role="alert"><strong>⚠ File structure issues:</strong><ul>${todo.validation.map(msg => `<li>${escapeHtml(msg)}</li>`).join('')}</ul></div>`
+    : '';
+
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(displayTitle(todo))}</title>
   <link rel="stylesheet" href="/page.css"></head>
   <body data-todo-id="${escapeHtml(todo.id)}" data-status="${escapeHtml(todo.status)}" data-percent="${percent}">
     <main>
       ${navigation || editButton || settingsButton ? `<div class="canvas-toolbar">${navigation}${editButton}${settingsButton}</div>` : ''}
+      ${validationBanner}
       <h1><span class="todo-id">#${escapeHtml(displayId(todo.id))}</span>${escapeHtml(displayTitle(todo))}</h1>
       <div class="meta">
         ${sourceBadge(todo.id)}

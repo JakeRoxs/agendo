@@ -79,7 +79,8 @@ const canvas = createCanvas({
           scannerEvidence: todo.scannerEvidence,
           triage: todo.triage,
           scan: todo.scan,
-          description: todo.description
+          description: todo.description,
+          validation: todo.validation
         };
       })
     },
@@ -97,6 +98,25 @@ const canvas = createCanvas({
       description: 'List the todos that depend on this todo (what it blocks), with their status',
       inputSchema: { type: 'object', properties: { todoId: todoIdSchema }, required: ['todoId'] },
       handler: guard(async ({ input }) => ({ dependents: getRelations(input?.todoId, workspaceRoot).dependents }))
+    },
+    {
+      name: 'get_view_context',
+      description: 'Get the current view context including active todo, filters, and selection state',
+      inputSchema: { type: 'object', properties: {} },
+      handler: guard(async () => {
+        const entry = [...servers.values()][0];
+        if (!entry || !entry.view) {
+          return { view: null, message: 'No active canvas view' };
+        }
+        return {
+          view: entry.view,
+          todoId: entry.todoId,
+          groupName: entry.groupName,
+          returnTo: entry.returnTo,
+          historyLength: entry.history.length,
+          position: entry.pos
+        };
+      })
     },
     {
       name: 'refresh',

@@ -342,6 +342,37 @@ export function loadTodo(todoId, workspaceRoot) {
 
   // Filename is authoritative for status and priority; frontmatter is only a fallback.
   const nameMatch = basename(filePath).match(FILENAME_RE);
+  const filenameStatus = nameMatch?.[2];
+  const filenamePriority = nameMatch?.[3];
+  const frontmatterStatus = typeof frontmatter.status === 'string' ? frontmatter.status.toLowerCase() : null;
+  const frontmatterPriority = typeof frontmatter.priority === 'string' ? frontmatter.priority.toLowerCase() : null;
+
+  const validation = [];
+  if (filenameStatus && frontmatterStatus && filenameStatus !== frontmatterStatus) {
+    validation.push(`status mismatch: filename says "${filenameStatus}" but frontmatter says "${frontmatterStatus}"`);
+  }
+  if (filenamePriority && frontmatterPriority && filenamePriority !== frontmatterPriority) {
+    validation.push(`priority mismatch: filename says "${filenamePriority}" but frontmatter says "${frontmatterPriority}"`);
+  }
+  if (!filenameStatus && !frontmatterStatus) {
+    validation.push('status missing: neither filename nor frontmatter specifies status');
+  }
+  if (!filenamePriority && !frontmatterPriority) {
+    validation.push('priority missing: neither filename nor frontmatter specifies priority');
+  }
+  if (titleIndex === -1) {
+    validation.push('title missing: no "# Title" heading found');
+  }
+  const status = filenameStatus || frontmatterStatus || 'pending';
+  if (['pending', 'in-progress', 'ready'].includes(status) && criteria.length === 0 && !findSection(bodyLines, 'Acceptance Criteria')) {
+    validation.push('acceptance criteria missing: active todo has no Acceptance Criteria section');
+  }
+  if (['in-progress', 'ready'].includes(status) && workLog.length === 0 && !findSection(bodyLines, 'Work Log')) {
+    validation.push('work log missing: active todo has no Work Log section');
+  }
+  if (status === 'in-progress' && !sectionText('Resume Context')) {
+    validation.push('resume context missing: in-progress todo has no Resume Context section');
+  }
 
   return {
     id: todoId,
@@ -355,10 +386,11 @@ export function loadTodo(todoId, workspaceRoot) {
       .map(heading => ({ heading, text: sectionText(heading) }))
       .filter(section => section.text),
     title: frontmatter.title || body.match(/^#\s+(.+)$/m)?.[1].trim() || `Todo ${todoId}`,
-    status: nameMatch?.[2] || frontmatter.status || 'pending',
-    priority: nameMatch?.[3] || frontmatter.priority || 'p3',
+    status: filenameStatus || frontmatterStatus || 'pending',
+    priority: filenamePriority || frontmatterPriority || 'p3',
     dependencies: normalizeDependencies(frontmatter.dependencies),
     group: frontmatter.group || undefined,
+    validation,
     scan: {
       source: frontmatter.scan_source || undefined,
       scope: frontmatter.scan_scope || undefined,
