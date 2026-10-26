@@ -1,5 +1,4 @@
 import { existsSync } from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
@@ -29,7 +28,6 @@ import {
   type ViewMode,
   viewModeLabel,
 } from "./todos/configService";
-import { buildTodoDigest } from "./todos/digestService";
 import type { FilterService } from "./todos/filterService";
 import type { LinkService } from "./todos/linkService";
 import {
@@ -776,23 +774,11 @@ function registerFilterCommands(
         "Loading task digest…",
         async () => {
           await repository.refresh();
-          const content = buildTodoDigest(
-            repository.getTodos().filter((todo) => matchesTodoScope(todo, scope)),
-            repository.getDependencyGraph(),
-          );
-          // Write to a real temp file and preview it the same way todos do. Showing the
-          // preview on an untitled in-memory document materializes both an editor and a
-          // preview; a real file URI shows only the preview.
-          const digestUri = vscode.Uri.file(
-            path.join(
-              os.tmpdir(),
-              scope === "code-scanning"
-                ? "agendo-code-scanning-digest.md"
-                : "agendo-task-digest.md",
-            ),
-          );
-          await vscode.workspace.fs.writeFile(digestUri, Buffer.from(content, "utf8"));
-          await vscode.commands.executeCommand("markdown.showPreview", digestUri);
+          const root = services.config.getWorkspaceFolder()?.uri.fsPath;
+          if (!root) {
+            return;
+          }
+          await services.canvasViewer.open(root, { kind: "digest", scope });
         },
         `${prefix}.digestLoading`,
       );

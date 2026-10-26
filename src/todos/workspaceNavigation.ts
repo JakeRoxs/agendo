@@ -4,7 +4,8 @@ import type { TodoViewScope } from "./todoModel";
 export type WorkspaceView =
   | { kind: "todo"; todoId: string }
   | { kind: "group"; groupName: string }
-  | { kind: "board"; scope: TodoViewScope };
+  | { kind: "board"; scope: TodoViewScope }
+  | { kind: "digest"; scope: TodoViewScope };
 
 export type BoardReturnTarget = Extract<WorkspaceView, { kind: "board" }>;
 

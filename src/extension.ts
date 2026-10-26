@@ -50,6 +50,13 @@ export async function activate(context: vscode.ExtensionContext) {
         : boardViewProvider
       ).handleCanvasMessage(message);
     },
+    getDigest: async (scope) => {
+      const { buildTodoDigest } = await import("./todos/digestService");
+      const { matchesTodoScope } = await import("./todos/todoModel");
+      const todos = repository.getTodos().filter((todo) => matchesTodoScope(todo, scope));
+      const content = buildTodoDigest(todos, repository.getDependencyGraph());
+      return { content };
+    },
     getSettingsInfo: async () => {
       let skillStatus: unknown;
       try {

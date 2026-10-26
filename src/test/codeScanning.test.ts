@@ -332,7 +332,7 @@ suite("native code scanning", () => {
       .replace(/\s*<!-- agendo:scan-evidence:end -->$/, "");
     const todo = {
       id: "sq-001",
-      title: "SonarQube: src/example.ts",
+      title: "src/example.ts",
       status: "pending",
       priority: "p1",
       criteria: [],
@@ -638,7 +638,7 @@ suite("native code scanning", () => {
     assert.strictEqual(fileTodo.frontmatter.scan_grouping, "file");
     assert.strictEqual(fileTodo.group, undefined);
     assert.strictEqual(fileTodo.priority, "p1");
-    assert.strictEqual(fileTodo.title, "SonarQube: src/example.ts");
+    assert.strictEqual(fileTodo.title, "src/example.ts");
     const content = await readText(fileTodo.uri);
     assert.strictEqual((content.match(/^### Rule:/gm) || []).length, 2);
     assert.match(content, /First explanation/);
@@ -785,7 +785,7 @@ suite("native code scanning", () => {
     assert.strictEqual(repository.getTodos().length, 2);
     const projectTodo = repository.getTodos().find((todo) => todo.frontmatter.scan_target === "");
     assert.ok(projectTodo);
-    assert.strictEqual(projectTodo.title, "SonarQube: Project-level findings");
+    assert.strictEqual(projectTodo.title, "Project-level findings");
     assert.match(await readText(projectTodo.uri), /Line: not reported/);
   });
 
@@ -1727,10 +1727,10 @@ suite("native code scanning", () => {
         .href,
     );
     const recent = [
-      { id: "sq-002", title: "SonarQube: typescript:S3776", status: "pending", current: true },
-      { id: "sq-001", title: "SonarQube: typescript:S2871", status: "pending" },
-      { id: "cql-001", title: "CodeQL: js/example", status: "ready" },
-      { id: "001", title: "SonarQube: a regular task", status: "ready" },
+      { id: "sq-002", title: "typescript:S3776", status: "pending", current: true },
+      { id: "sq-001", title: "typescript:S2871", status: "pending" },
+      { id: "cql-001", title: "js/example", status: "ready" },
+      { id: "001", title: "a regular task", status: "ready" },
     ];
     const todo = { ...recent[0], priority: "p1", criteria: [], triage: [], workLog: [] };
     const relations = {
@@ -1753,11 +1753,11 @@ suite("native code scanning", () => {
     assert.match(html, /data-todo-id="sq-002"/);
     assert.match(html, /data-open="sq-001"/);
     assert.match(html, /data-open="cql-001"/);
-    assert.match(html, /todo · #001 SonarQube: a regular task/);
+    assert.match(html, /todo · #001 a regular task/);
     const visibleText = html.replace(/<[^>]*>/g, " ");
     assert.doesNotMatch(visibleText, /(?:sq|cql)-\d+/);
-    assert.doesNotMatch(visibleText, /SonarQube: typescript:|CodeQL: js\//);
-    const fileHtml = renderCanvas({ ...todo, title: "SonarQube: src/foo\\_bar.ts" }, null, null);
+    assert.doesNotMatch(visibleText, /typescript:|js\//);
+    const fileHtml = renderCanvas({ ...todo, title: "src/foo\\_bar.ts" }, null, null);
     assert.match(fileHtml, /<h1><span class="todo-id">#002<\/span>src\/foo_bar.ts<\/h1>/);
   });
 
@@ -1842,7 +1842,7 @@ suite("native code scanning", () => {
       'scan_target: "cql-100"',
       "---",
       "",
-      "# CodeQL: test",
+      "# test",
       "",
       "Review these scanner findings.",
       "",

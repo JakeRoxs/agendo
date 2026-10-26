@@ -855,7 +855,7 @@ export async function importScanningFindings(
       `scan_target: ${JSON.stringify(key)}`,
       "---",
       "",
-      `# ${source === "codeql" ? "CodeQL" : "SonarQube"}: ${text(title)}`,
+      `# ${text(title)}`,
       "",
       "Review these scanner findings and verify any fix before completing this todo.",
       "",

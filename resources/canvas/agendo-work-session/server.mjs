@@ -10,6 +10,7 @@ import { createApprovalController } from './approval.mjs';
 
 import { renderCanvas, renderGroupCanvas } from './page.mjs';
 import { renderBoardCanvas } from './board.mjs';
+import { renderDigestCanvas } from './digest.mjs';
 import { renderSettingsPage } from './settings.mjs';
 import { assertTodoId, findTodoFile, getRelations, listGroups, listTodoSummaries, loadGroupTodos, loadTodo, PRIORITIES, setCriterionMet, setTodoGroup, setTodoPriority, setTodoStatus, STATUSES, todoFingerprint } from './todos.mjs';
 
@@ -41,7 +42,8 @@ export function normalizeView(value) {
     return { kind: 'group', groupName: value.groupName };
   }
   if (value?.kind === 'board' && ['todos', 'code-scanning'].includes(value.scope)) return { kind: 'board', scope: value.scope };
-  throw new CanvasError('invalid_input', 'Expected a todo, group, or board selection');
+  if (value?.kind === 'digest' && ['todos', 'code-scanning'].includes(value.scope)) return { kind: 'digest', scope: value.scope };
+  throw new CanvasError('invalid_input', 'Expected a todo, group, board, or digest selection');
 }
 
 // Rejects stale targets so agent navigation reports them instead of showing a missing todo or empty group.
@@ -56,6 +58,7 @@ export function assertViewExists(view, workspaceRoot) {
 
 export function assertViewSupported(entry, view) {
   if (view.kind === 'board' && !entry.hasBoard) throw new CanvasError('unsupported', 'Board view is not available in this host');
+  if (view.kind === 'digest' && !entry.hasDigest) throw new CanvasError('unsupported', 'Digest view is not available in this host');
 }
 
 export function normalizeFilters(input, workspaceRoot) {
@@ -168,6 +171,8 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
   const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
   const hasBoard = typeof actions.getBoardSnapshot === 'function' && typeof actions.handleBoardMessage === 'function';
   entry.hasBoard = hasBoard;
+  const hasDigest = typeof actions.getDigest === 'function';
+  entry.hasDigest = hasDigest;
   entry.proposals = createProposalStore(workspaceRoot);
   entry.approval = createApprovalController({
     proposals: entry.proposals, workspaceRoot, getView: () => entry.view,
@@ -216,6 +221,10 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
       } else if (req.method === 'GET' && path === '/board-snapshot') {
         const snapshot = await actions.getBoardSnapshot(boardScope());
         send(res, 200, 'application/json', JSON.stringify(snapshot));
+      } else if (req.method === 'GET' && path === '/digest-snapshot') {
+        if (!hasDigest || entry.view?.kind !== 'digest') throw new CanvasError('unsupported', 'Digest view is not available in this host');
+        const digest = await actions.getDigest(entry.view.scope);
+        send(res, 200, 'application/json', JSON.stringify(digest));
       } else if (req.method === 'GET' && path === '/settings') {
         let info = {};
         try { info = await actions.getSettingsInfo?.() ?? {}; } catch { /* ignore */ }
@@ -407,6 +416,13 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           const boardCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
           html = renderBoardCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, boardCsp);
           send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': boardCsp });
+          return;
+        } else if (entry.view?.kind === 'digest') {
+          if (!hasDigest) throw new CanvasError('unsupported', 'Digest view is not available in this host');
+          const nonce = randomBytes(16).toString('hex');
+          const digestCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
+          html = renderDigestCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, digestCsp);
+          send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': digestCsp });
           return;
         } else if (entry.groupName !== undefined) {
           // Group overview view

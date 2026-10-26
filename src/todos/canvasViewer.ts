@@ -26,6 +26,7 @@ interface CanvasServerModule {
       returnToBoard?: (scope: "todos" | "code-scanning") => Promise<void>;
       getBoardSnapshot?: (scope: "todos" | "code-scanning") => Promise<unknown>;
       handleBoardMessage?: (scope: "todos" | "code-scanning", message: unknown) => Promise<void>;
+      getDigest?: (scope: "todos" | "code-scanning") => Promise<{ content: string }>;
       getSettingsInfo?: () => Promise<unknown>;
       handleSettingsAction?: (payload: unknown) => Promise<unknown>;
     },
@@ -59,6 +60,7 @@ export class CanvasViewer implements vscode.Disposable {
     private readonly actions: Partial<CanvasHostActions> & {
       getBoardSnapshot?: (scope: "todos" | "code-scanning") => Promise<unknown>;
       handleBoardMessage?: (scope: "todos" | "code-scanning", message: unknown) => Promise<void>;
+      getDigest?: (scope: "todos" | "code-scanning") => Promise<{ content: string }>;
       getSettingsInfo?: () => Promise<unknown>;
       handleSettingsAction?: (payload: unknown) => Promise<unknown>;
     } = {},

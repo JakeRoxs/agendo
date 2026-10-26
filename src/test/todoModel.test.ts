@@ -676,7 +676,7 @@ suite("todoModel", () => {
     const originalExecuteCommand = vscode.commands.executeCommand;
 
     const registrations = new Map<string, (...args: any[]) => any>();
-    const previewCalls: unknown[] = [];
+    const canvasOpenCalls: unknown[] = [];
     const setContextCalls: unknown[][] = [];
     let infoMessageCount = 0;
     let resolveRefresh: () => void = () => undefined;
@@ -694,7 +694,6 @@ suite("todoModel", () => {
     Object.defineProperty(vscode.commands, "executeCommand", {
       value: async (command: string, ...args: unknown[]) => {
         if (command === "setContext") setContextCalls.push(args);
-        if (command === "markdown.showPreview") previewCalls.push(args);
         return undefined;
       },
       configurable: true,
@@ -714,6 +713,14 @@ suite("todoModel", () => {
           getTodos: () => [],
           getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
         },
+        config: {
+          getWorkspaceFolder: () => ({ uri: { fsPath: "/tmp/workspace" } }),
+        },
+        canvasViewer: {
+          open: async (root: string, view: unknown) => {
+            canvasOpenCalls.push({ root, view });
+          },
+        },
         busy: new BusyIndicator(),
       } as never;
       const context = { subscriptions: [] as vscode.Disposable[] };
@@ -729,11 +736,14 @@ suite("todoModel", () => {
       await showDigest();
       assert.strictEqual(infoMessageCount, 1, "second call should be rejected as already loading");
 
-      // Completing the first run opens exactly one preview and clears the context.
+      // Completing the first run opens exactly one canvas view and clears the context.
       resolveRefresh();
       await first;
 
-      assert.strictEqual(previewCalls.length, 1, "only one preview should open");
+      assert.strictEqual(canvasOpenCalls.length, 1, "only one canvas view should open");
+      const call = canvasOpenCalls[0] as { root: string; view: { kind: string; scope: string } };
+      assert.strictEqual(call.view.kind, "digest");
+      assert.strictEqual(call.view.scope, "todos");
       const loadingTrue = setContextCalls.find(
         (args) => args[0] === "agendo.digestLoading" && args[1] === true,
       );
@@ -2417,15 +2427,11 @@ suite("todoModel", () => {
       assert.deepStrictEqual(previewSteps, []);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
-        2,
-      );
-      assert.ok(
-        previewUris.some((uri) => uri.path.endsWith("agendo-task-digest.md")),
-        "task digest should preview a real file URI",
+        1,
       );
       assert.ok(
         previewUris.every((uri) => !uri.scheme.startsWith("untitled")),
-        "task digest must not use an untitled document",
+        "previews must not use an untitled document",
       );
       assert.ok(executedCommands.includes("setContext"));
       assert.ok(
@@ -2435,6 +2441,7 @@ suite("todoModel", () => {
             "Failed to set group:",
             "Failed to install skill:",
             "Failed to update skill:",
+            "Failed to show task digest:",
           ].some((prefix) => message.startsWith(prefix)),
         ),
       );
