@@ -38,7 +38,7 @@ function makeRepository(todos: Todo[]): TodoRepository {
 }
 
 function extractScript(html: string): string {
-  const match = /<script[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  const match = /<script[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html);
   assert.ok(match, "Expected a <script> block in HTML");
   return match[1];
 }

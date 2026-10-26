@@ -112,8 +112,8 @@ export function todoLocations(workspaceRoot) {
     const config = readJson(join(base, '.agendo-config.json')) ?? {};
     const name = (value, fallback) => (typeof value === 'string' && /^[\w.-]+$/.test(value) ? value : fallback);
     const folders = {
-      backlogged: name(config.backlogFolder, 'backlog'),
-      completed: name(config.completeFolder, 'completed'),
+      backlogged: name(config.backloggedFolder, 'backlog'),
+      completed: name(config.completedFolder, 'completed'),
       cancelled: name(config.cancelledFolder, 'cancelled')
     };
     return [base, join(base, 'code-scanning', 'codeql'), join(base, 'code-scanning', 'sonarqube')]

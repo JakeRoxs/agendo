@@ -360,9 +360,9 @@ describe('Settings button and page', () => {
       workspace: {
         root: 'docs/todos',
         gitignored: true,
-        backlogFolder: 'backlog',
+        backloggedFolder: 'backlog',
         cancelledFolder: 'cancelled',
-        completeFolder: 'completed',
+        completedFolder: 'completed',
         codeScanningEnabled: true
       },
       viewOptions: { groupBy: 'status', sortByDate: true }

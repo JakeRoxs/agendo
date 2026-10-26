@@ -229,7 +229,7 @@ suite("Standalone canvas safety guards", () => {
   test("repeated configured folder paths do not fabricate dependency ambiguity", () => {
     fs.writeFileSync(
       path.join(path.dirname(todoFile), ".agendo-config.json"),
-      JSON.stringify({ completeFolder: "completed", cancelledFolder: "completed" }),
+      JSON.stringify({ completedFolder: "completed", cancelledFolder: "completed" }),
     );
     writeTodo("002", "completed", "p2", "done", "# Done\n", "docs/todos/completed");
     fs.writeFileSync(todoFile, '---\ndependencies: ["002"]\n---\n# First\n');

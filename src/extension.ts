@@ -70,9 +70,9 @@ export async function activate(context: vscode.ExtensionContext) {
         workspace: {
           root: config.root,
           gitignored: config.gitignored,
-          backlogFolder: config.backlogFolder,
+          backloggedFolder: config.backloggedFolder,
           cancelledFolder: config.cancelledFolder,
-          completeFolder: config.completeFolder,
+          completedFolder: config.completedFolder,
           codeScanningEnabled: get<boolean>(Settings.CodeScanningEnabled),
         },
         viewOptions: {

@@ -37,13 +37,13 @@ class ScanningConfig extends ConfigService {
   override getRootUri() {
     return this.uri;
   }
-  override get completeFolder() {
+  override get completedFolder() {
     return "done";
   }
   override get cancelledFolder() {
     return "dropped";
   }
-  override get backlogFolder() {
+  override get backloggedFolder() {
     return "later";
   }
   override async writeConfigFile() {}
@@ -1621,7 +1621,7 @@ suite("native code scanning", () => {
     await fs.mkdir(sourceDir, { recursive: true });
     await fs.writeFile(
       path.join(todoRoot, ".agendo-config.json"),
-      JSON.stringify({ completeFolder: "done" }),
+      JSON.stringify({ completedFolder: "done" }),
     );
     await fs.writeFile(
       path.join(sourceDir, "cql-001-pending-p2-example.md"),

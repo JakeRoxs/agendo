@@ -197,9 +197,9 @@ suite("todoModel", () => {
         if (key === Settings.DefaultPriority) return "p2";
         if (key === Settings.OpenInPreview) return false;
         if (key === Settings.GitignoreTodos) return true;
-        if (key === Settings.CompleteFolder) return "completed";
+        if (key === Settings.CompletedFolder) return "completed";
         if (key === Settings.CancelledFolder) return "cancelled";
-        if (key === Settings.BacklogFolder) return "backlog";
+        if (key === Settings.BackloggedFolder) return "backlog";
         return undefined;
       },
       update: async (key: string, value: unknown, target: number) => {
@@ -316,7 +316,7 @@ suite("todoModel", () => {
       value: () => ({
         get: (key: string) => {
           if (key === Settings.GitignoreTodos) return true;
-          if (key === Settings.BacklogFolder) return "parked";
+          if (key === Settings.BackloggedFolder) return "parked";
           return undefined;
         },
         update: async () => undefined,
@@ -356,7 +356,7 @@ suite("todoModel", () => {
       value: () => ({
         get: (key: string) => {
           if (key === Settings.GitignoreTodos) return true;
-          if (key === Settings.BacklogFolder) return "parked";
+          if (key === Settings.BackloggedFolder) return "parked";
           return undefined;
         },
         update: async () => undefined,
@@ -373,10 +373,10 @@ suite("todoModel", () => {
       );
       const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
       assert.deepStrictEqual(config, {
-        backlogFolder: "parked",
+        backloggedFolder: "parked",
       });
       assert.deepStrictEqual(service.toTodosConfig(), {
-        backlogFolder: "parked",
+        backloggedFolder: "parked",
       });
     } finally {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
@@ -934,8 +934,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -1070,9 +1070,9 @@ suite("todoModel", () => {
     const service = new ConfigService();
     Object.defineProperty(service, "root", { get: () => "docs/todos" });
     Object.defineProperty(service, "gitignored", { get: () => true });
-    Object.defineProperty(service, "backlogFolder", { get: () => "backlog" });
+    Object.defineProperty(service, "backloggedFolder", { get: () => "backlog" });
     Object.defineProperty(service, "cancelledFolder", { get: () => "cancelled" });
-    Object.defineProperty(service, "completeFolder", { get: () => "completed" });
+    Object.defineProperty(service, "completedFolder", { get: () => "completed" });
 
     const rootUri = service.getRootUri();
     const subfolderUri = service.getSubfolderUri("backlog");
@@ -1144,8 +1144,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
@@ -1450,7 +1450,7 @@ suite("todoModel", () => {
 
       await fs.writeFile(
         path.join(todosDir, ".agendo-config.json"),
-        JSON.stringify({ completeFolder: "done" }),
+        JSON.stringify({ completedFolder: "done" }),
       );
       todos.setTodoStatus("001", "completed", root);
       await fs.stat(path.join(todosDir, "done", "001-completed-p2-sample.md"));
@@ -1990,8 +1990,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
@@ -2839,8 +2839,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -2894,8 +2894,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);

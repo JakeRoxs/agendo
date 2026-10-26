@@ -103,9 +103,9 @@ tracking keys are displayed and searchable when present.
 | ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------- |
 | `agendo.root`                              | `docs/todos` | Workspace-relative todo root                                                          |
 | `agendo.defaultPriority`                   | `p3`         | Default priority for new todos                                                        |
-| `agendo.completeFolder`                    | `complete`   | Folder for completed todos                                                            |
+| `agendo.completedFolder`                   | `completed`  | Folder for completed todos                                                            |
 | `agendo.cancelledFolder`                   | `cancelled`  | Folder for cancelled todos                                                            |
-| `agendo.backlogFolder`                     | `backlog`    | Folder for backlogged todos                                                           |
+| `agendo.backloggedFolder`                  | `backlog`    | Folder for backlogged todos                                                           |
 | `agendo.viewMode`                          | `default`    | Open todos using VS Code default behavior, editor, preview, preview editor, or canvas |
 | `agendo.groupBy`                           | `status`     | Group the regular tree by status, priority, group, or not at all                      |
 | `agendo.sortByDate`                        | `false`      | Sort regular todos by modification date                                               |

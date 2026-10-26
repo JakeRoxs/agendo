@@ -10,9 +10,9 @@ import type { BoardReturnTarget } from "./workspaceNavigation";
 export const DEFAULT_TODOS_CONFIG = {
   root: "docs/todos",
   gitignored: true,
-  backlogFolder: "backlog",
+  backloggedFolder: "backlog",
   cancelledFolder: "cancelled",
-  completeFolder: "completed",
+  completedFolder: "completed",
 } as const;
 
 /**
@@ -25,9 +25,9 @@ export const DEFAULT_TODOS_CONFIG = {
 export interface TodosConfig {
   root?: string;
   gitignored?: boolean;
-  backlogFolder?: string;
+  backloggedFolder?: string;
   cancelledFolder?: string;
-  completeFolder?: string;
+  completedFolder?: string;
   codeScanning?: boolean;
 }
 
@@ -103,16 +103,16 @@ export class ConfigService {
     return get<"p1" | "p2" | "p3">(Settings.DefaultPriority) || "p3";
   }
 
-  get completeFolder(): string {
-    return get<string>(Settings.CompleteFolder) || DEFAULT_TODOS_CONFIG.completeFolder;
+  get completedFolder(): string {
+    return get<string>(Settings.CompletedFolder) || DEFAULT_TODOS_CONFIG.completedFolder;
   }
 
   get cancelledFolder(): string {
     return get<string>(Settings.CancelledFolder) || DEFAULT_TODOS_CONFIG.cancelledFolder;
   }
 
-  get backlogFolder(): string {
-    return get<string>(Settings.BacklogFolder) || DEFAULT_TODOS_CONFIG.backlogFolder;
+  get backloggedFolder(): string {
+    return get<string>(Settings.BackloggedFolder) || DEFAULT_TODOS_CONFIG.backloggedFolder;
   }
 
   get codeScanningEnabled(): boolean {
@@ -121,7 +121,7 @@ export class ConfigService {
 
   /** Existing scanning todos stay visible even when fetching is disabled. */
   getTodoFolders(): string[] {
-    const states = ["", this.completeFolder, this.cancelledFolder, this.backlogFolder];
+    const states = ["", this.completedFolder, this.cancelledFolder, this.backloggedFolder];
     return [
       ...new Set([
         ...states,
@@ -230,14 +230,14 @@ export class ConfigService {
     if (this.gitignored !== DEFAULT_TODOS_CONFIG.gitignored) {
       config.gitignored = this.gitignored;
     }
-    if (this.backlogFolder !== DEFAULT_TODOS_CONFIG.backlogFolder) {
-      config.backlogFolder = this.backlogFolder;
+    if (this.backloggedFolder !== DEFAULT_TODOS_CONFIG.backloggedFolder) {
+      config.backloggedFolder = this.backloggedFolder;
     }
     if (this.cancelledFolder !== DEFAULT_TODOS_CONFIG.cancelledFolder) {
       config.cancelledFolder = this.cancelledFolder;
     }
-    if (this.completeFolder !== DEFAULT_TODOS_CONFIG.completeFolder) {
-      config.completeFolder = this.completeFolder;
+    if (this.completedFolder !== DEFAULT_TODOS_CONFIG.completedFolder) {
+      config.completedFolder = this.completedFolder;
     }
     if (this.codeScanningEnabled) {
       config.codeScanning = true;

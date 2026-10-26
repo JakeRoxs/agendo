@@ -84,9 +84,9 @@ defaults to any missing key — or to the whole configuration when the file is a
 | ----------------- | ------------ |
 | `root`            | `docs/todos` |
 | `gitignored`      | `true`       |
-| `backlogFolder`   | `backlog`    |
+| `backloggedFolder`   | `backlog`    |
 | `cancelledFolder` | `cancelled`  |
-| `completeFolder`  | `completed`   |
+| `completedFolder`  | `completed`   |
 | `codeScanning`    | `false`      |
 
 Example of a config with a single non-default setting:
@@ -103,7 +103,7 @@ Honor it as follows:
 - **`gitignored`** — pick a file-discovery strategy:
   - `false` (folder is tracked): workspace glob/search is safe.
   - `true` (folder is git-ignored): list the directory directly (`list_dir`, `Get-ChildItem`, `ls`, `find`) — search indexes exclude ignored files.
-- **`backlogFolder` / `cancelledFolder` / `completeFolder`** — use these subfolder names for the
+- **`backloggedFolder` / `cancelledFolder` / `completedFolder`** — use these subfolder names for the
   corresponding terminal/parked states.
 
 **Degrade gracefully when the file is absent:** fall back to the `docs/todos` default root and the
@@ -114,9 +114,9 @@ layer, not a hard dependency.
 After resolving configuration, use these placeholders throughout this skill:
 
 - **`{root}`** — configured todos root (default `docs/todos`).
-- **`{backlog}`** — `{root}/{backlogFolder}`.
+- **`{backlog}`** — `{root}/{backloggedFolder}`.
 - **`{cancelled}`** — `{root}/{cancelledFolder}`.
-- **`{complete}`** — `{root}/{completeFolder}`.
+- **`{completed}`** — `{root}/{completedFolder}`.
 - **`{skill_dir}`** — directory containing this `SKILL.md` file.
 
 Examples below use placeholders rather than shell variables. Replace them with resolved paths
@@ -130,13 +130,13 @@ three-digit ID; neither is shell brace expansion.
 Agendo can import CodeQL and SonarQube findings natively. Existing scanning todos must always be
 included in discovery, even when `codeScanning` is false (that setting enables fetching, not visibility).
 List `{root}/code-scanning/codeql` and `{root}/code-scanning/sonarqube` directly, plus their own
-configured complete, cancelled, and backlog subfolders. Do not assume search tools index them.
+configured completed, cancelled, and backlog subfolders. Do not assume search tools index them.
 
 Each source has an independent sequence: `cql-001-pending-p1-rule-name.md` and
 `sq-001-pending-p2-rule-name.md`. The full prefixed ID is the `issue_id` and dependency key.
 Regular numeric todos keep their existing sequence; scanner IDs do not advance it. Never reuse an ID.
 On a scanner status change, retain its source root, for example
-`{root}/code-scanning/codeql/{completeFolder}/cql-001-completed-p1-rule-name.md`.
+`{root}/code-scanning/codeql/{completedFolder}/cql-001-completed-p1-rule-name.md`.
 Reopening returns it to `{root}/code-scanning/codeql`, not the main root.
 
 Imports default to one todo per affected file, with optional grouping by rule/type or individual
@@ -204,7 +204,7 @@ Todo files follow this naming pattern:
 | `in-progress` | Actively being worked on                                          | `{root}`      |
 | `ready`       | Likely done, being tweaked/bug-fixed; needs confirmation it works | `{root}`      |
 | `backlogged`  | Deprioritized but still open                                      | `{backlog}`   |
-| `completed`    | Fully finished and verified (terminal)                            | `{complete}`  |
+| `completed`    | Fully finished and verified (terminal)                            | `{completed}`  |
 | `cancelled`   | Abandoned / superseded (terminal)                                 | `{cancelled}` |
 
 **Examples:**
@@ -223,7 +223,7 @@ Todo files follow this naming pattern:
 - **Active** todos (`pending` / `in-progress` / `ready`) live **directly** in `{root}`, NOT in a
   subfolder.
 - Each terminal/parked state has its **own sibling subfolder** under the root:
-  - `complete/` — finished successfully.
+  - `completed/` — finished successfully.
   - `cancelled/` — abandoned or superseded.
   - `backlog/` — deprioritized but still open.
 - Recursive-glob behavior varies by tool: some `**/*.md` implementations include root files and
@@ -231,7 +231,7 @@ Todo files follow this naming pattern:
   configured state subfolder separately. When `gitignored` is `true`, use a direct directory
   listing rather than a workspace search index.
 - Per-todo images live in `assets/{id}/` and **stay in place** even after the todo file moves to
-  `complete/`, `cancelled/`, or `backlog/`. Do not move the assets when the todo moves.
+  `completed/`, `cancelled/`, or `backlog/`. Do not move the assets when the todo moves.
 
 ## File Structure
 
@@ -287,7 +287,7 @@ filename tokens. Frontmatter `status` and `priority` are human-readable mirrors 
 filename. Folder placement is derived from status.
 
 **Keep all three in sync, always.** The filename status/priority tokens, the frontmatter `status`
-and `priority`, and the folder (`{root}`, `{backlog}`, `{complete}`, `{cancelled}`) must describe the
+and `priority`, and the folder (`{root}`, `{backlog}`, `{completed}`, `{cancelled}`) must describe the
 same state at all times. Never change one without the others, and never leave a todo half-transitioned.
 If they disagree, the extension follows the filename, so the stale frontmatter or folder is the bug to
 fix. Verify all three after every transition. Applies to creation, triage, completion, cancelling,
@@ -312,7 +312,7 @@ backlogging, reopening, and priority changes. The order of rename and edit does 
       the real todos root — use it (or confirm with the user) instead of starting a new series.
       Never start at `001` when higher IDs already exist elsewhere in the workspace.
    - GNU/Linux Bash: `find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
-    - PowerShell: `$files = @(); Get-ChildItem "{root}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; Get-ChildItem "{backlog}", "{complete}", "{cancelled}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; ($files | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
+    - PowerShell: `$files = @(); Get-ChildItem "{root}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; Get-ChildItem "{backlog}", "{completed}", "{cancelled}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; ($files | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
 2. Copy the template from the skill directory: `cp "{skill_dir}/assets/todo-template.md" "{root}/{NEXT_ID}-pending-{priority}-{description}.md"`
 3. Edit and fill the core sections:
    - Problem Statement
@@ -446,11 +446,11 @@ grep "^dependencies:" "{root}"/003-*.md
 grep -R -l 'dependencies:.*"002"' "{root}"
 ```
 
-**To verify blockers are complete before starting:**
+**To verify blockers are completed before starting:**
 
 ```bash
 for dep in 001 002 003; do
-  terminal_file=$(find "{complete}" "{cancelled}" -maxdepth 1 -type f \
+  terminal_file=$(find "{completed}" "{cancelled}" -maxdepth 1 -type f \
     \( -name "${dep}-completed-*.md" -o -name "${dep}-cancelled-*.md" \) -print -quit)
   [ -n "$terminal_file" ] || echo "Issue $dep is not terminal"
 done
@@ -527,10 +527,10 @@ metadata.
 `completed` is for work that is fully finished and verified. Only move a `ready` todo here once it
 is confirmed done and functional.
 
-**To mark a todo as complete:**
+**To mark a todo as completed:**
 
 1. Verify all acceptance criteria checked off and the work is confirmed working
-2. Move and rename the file: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-completed-{pri}-{desc}.md"`
+2. Move and rename the file: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{completed}/{file}-completed-{pri}-{desc}.md"`
 3. Set frontmatter `status: ready` → `status: completed` and add the final Work Log entry.
 4. Check for newly unblocked active work: `grep -l 'dependencies:.*"{issue_id}"' "{root}"/*-{pending,in-progress,ready}-*.md`
 
@@ -576,7 +576,7 @@ find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | 
 # Count by status
 for status in pending in-progress ready backlogged completed cancelled; do
   case "$status" in
-    completed) path="{complete}" ;;
+    completed) path="{completed}" ;;
     cancelled) path="{cancelled}" ;;
     backlogged) path="{backlog}" ;;
     *) path="{root}" ;;

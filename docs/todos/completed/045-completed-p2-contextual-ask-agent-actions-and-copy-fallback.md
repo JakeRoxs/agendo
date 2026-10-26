@@ -1,5 +1,5 @@
 ---
-status: complete
+status: completed
 priority: p2
 issue_id: "045"
 tags: [canvas, copilot, prompts, context, ux]

@@ -29,9 +29,9 @@ export class StatusService {
   private folderForStatus(status: TodoStatus): string {
     switch (status) {
       case "backlogged":
-        return this.config.backlogFolder;
+        return this.config.backloggedFolder;
       case "completed":
-        return this.config.completeFolder;
+        return this.config.completedFolder;
       case "cancelled":
         return this.config.cancelledFolder;
       default:
