@@ -7,6 +7,81 @@ import * as vscode from "vscode";
 import { CanvasViewer } from "../todos/canvasViewer";
 
 suite("Native canvas approval lifetime", () => {
+  test("recreates a disposed canvas panel when opening another view", () => {
+    const viewer = new CanvasViewer(vscode.Uri.file(path.resolve(__dirname, "../..")));
+    const state = viewer as unknown as {
+      panel?: vscode.WebviewPanel;
+      show(url: string): void;
+    };
+    const originalCreateWebviewPanel = vscode.window.createWebviewPanel;
+    const panelControls: Array<{ markDisposed(): void; fireDispose(): void }> = [];
+    let created = 0;
+    const createPanel = (): vscode.WebviewPanel => {
+      let disposed = false;
+      let disposeListener: (() => void) | undefined;
+      let html = "";
+      const panel = {
+        title: "Agendo",
+        webview: {
+          get html() {
+            return html;
+          },
+          set html(value: string) {
+            if (disposed) throw new Error("Webview is disposed");
+            html = value;
+          },
+          onDidReceiveMessage: () => new vscode.Disposable(() => {}),
+          postMessage: async () => true,
+        },
+        iconPath: undefined,
+        onDidDispose: (listener: () => void) => {
+          disposeListener = listener;
+          return new vscode.Disposable(() => {});
+        },
+        reveal: () => {},
+        dispose: () => {
+          disposed = true;
+          disposeListener?.();
+        },
+      } as unknown as vscode.WebviewPanel;
+      panelControls.push({
+        markDisposed: () => {
+          disposed = true;
+        },
+        fireDispose: () => disposeListener?.(),
+      });
+      return panel;
+    };
+
+    Object.defineProperty(vscode.window, "createWebviewPanel", {
+      configurable: true,
+      value: () => {
+        created += 1;
+        return createPanel();
+      },
+    });
+    try {
+      state.show("http://localhost:3000/");
+      const oldPanel = state.panel;
+      assert.ok(oldPanel);
+      panelControls[0].markDisposed();
+      state.show("http://localhost:3000/");
+      const replacement = state.panel;
+      assert.strictEqual(created, 2);
+      assert.ok(replacement);
+      assert.notStrictEqual(replacement, oldPanel);
+      assert.strictEqual(panelControls.length, 2);
+      panelControls[0].fireDispose();
+      assert.strictEqual(state.panel, replacement, "late disposal must not clear the replacement");
+    } finally {
+      viewer.dispose();
+      Object.defineProperty(vscode.window, "createWebviewPanel", {
+        configurable: true,
+        value: originalCreateWebviewPanel,
+      });
+    }
+  });
+
   test("closing the panel revokes auto-approval while preserving the todo and review session", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agendo-approval-viewer-"));
     const directory = path.join(root, "docs", "todos");
