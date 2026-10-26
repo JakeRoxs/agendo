@@ -6,6 +6,19 @@
     body: JSON.stringify(payload)
   });
 
+  document.addEventListener('click', event => {
+    const link = event.target instanceof Element ? event.target.closest('a[target="_blank"]') : null;
+    if (!link) return;
+    const url = new URL(link.href, location.href);
+    if (url.protocol !== 'https:') return;
+    event.preventDefault();
+    if (window.parent !== window) {
+      window.parent.postMessage({ type: 'agendo:openExternal', url: url.href }, '*');
+    } else {
+      window.open(url.href, '_blank', 'noopener,noreferrer');
+    }
+  });
+
   for (const box of document.querySelectorAll('input[data-index]')) {
     box.addEventListener('change', async () => {
       box.disabled = true;

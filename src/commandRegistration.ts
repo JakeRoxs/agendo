@@ -9,7 +9,10 @@ import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import {
   fetchCodeQL,
+  fetchCodeQLBranches,
   fetchSonarQube,
+  fetchSonarQubeBranches,
+  fetchSonarQubeCliBranches,
   fetchSonarQubeCli,
   importScanningFindings,
   sonarQubeCliServer,
@@ -262,6 +265,44 @@ async function runCodeScanningImport(
   if (!source) {
     return;
   }
+  const sonar =
+    source.source === "sonarqube"
+      ? await promptSonarQubeSettings(context, workspace.uri)
+      : undefined;
+  if (source.source === "sonarqube" && !sonar) {
+    return;
+  }
+  const branches = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Loading ${source.label} branches...`,
+    },
+    async () => {
+      if (source.source === "codeql") return fetchCodeQLBranches(workspace.uri.fsPath);
+      if (!sonar) throw new Error("SonarQube settings are missing.");
+      return sonar.cli
+        ? fetchSonarQubeCliBranches(workspace.uri.fsPath, sonar.server, sonar.project)
+        : fetchSonarQubeBranches(sonar.server, sonar.project, sonar.token);
+    },
+  );
+  const branchChoice = await vscode.window.showQuickPick(
+    [
+      {
+        label: `${branches.defaultBranch} (default)`,
+        description: "Use the scanner's default branch",
+        branch: undefined,
+      },
+      ...branches.branches
+        .filter((branch) => branch !== branches.defaultBranch)
+        .sort((a, b) => a.localeCompare(b))
+        .map((branch) => ({ label: branch, branch })),
+    ],
+    {
+      title: `Select ${source.label} branch`,
+      placeHolder: `Choose the branch to import from; default is ${branches.defaultBranch}`,
+    },
+  );
+  if (!branchChoice) return;
   const grouping = await vscode.window.showQuickPick(
     [
       {
@@ -289,24 +330,32 @@ async function runCodeScanningImport(
         "Default: by file. Changing grouping creates separate todos; previous imports remain.",
     },
   );
-  if (!grouping) {
-    return;
-  }
-  const sonar =
-    source.source === "sonarqube"
-      ? await promptSonarQubeSettings(context, workspace.uri)
-      : undefined;
-  if (source.source === "sonarqube" && !sonar) {
-    return;
-  }
+  if (!grouping) return;
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
     async () => {
-      const scan = sonar
-        ? sonar.cli
-          ? await fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project)
-          : await fetchSonarQube(sonar.server, sonar.project, sonar.token)
-        : await fetchCodeQL(workspace.uri.fsPath);
+      const scan =
+        source.source === "codeql"
+          ? await fetchCodeQL(workspace.uri.fsPath, undefined, branchChoice.branch)
+          : sonar?.cli
+            ? await fetchSonarQubeCli(
+                workspace.uri.fsPath,
+                sonar.server,
+                sonar.project,
+                undefined,
+                branchChoice.branch,
+              )
+            : sonar
+              ? await fetchSonarQube(
+                  sonar.server,
+                  sonar.project,
+                  sonar.token,
+                  undefined,
+                  undefined,
+                  branchChoice.branch,
+                )
+              : undefined;
+      if (!scan) return;
       const result = await importScanningFindings(
         config,
         repository,
@@ -314,9 +363,10 @@ async function runCodeScanningImport(
         scan.scope,
         scan.findings,
         grouping.grouping,
+        { branch: branchChoice.branch },
       );
       vscode.window.showInformationMessage(
-        `${source.label} (${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
+        `${source.label} (${branchChoice.label}, ${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
       );
     },
   );
@@ -482,11 +532,17 @@ async function refreshCodeQLTodo(
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
     async () => {
-      // biome-ignore lint/style/noNonNullAssertion: workspace validated above
-      const scan = await fetchCodeQL(services.config.getWorkspaceFolder()!.uri.fsPath);
-      if (scan.scope !== provenance.scope) {
+      const workspace = services.config.getWorkspaceFolder();
+      if (workspace?.uri.scheme !== "file") {
+        vscode.window.showWarningMessage(
+          "Open a filesystem workspace before refreshing scanner todos.",
+        );
+        return;
+      }
+      const scan = await fetchCodeQL(workspace.uri.fsPath, undefined, provenance.branch);
+      if (scan.scope !== provenance.scope || scan.branch !== provenance.branch) {
         throw new Error(
-          `Workspace repository is ${scan.scope}, but todo ${todo.id} was imported from ${provenance.scope}.`,
+          `Workspace scanner target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
         );
       }
       const targetFindings = scan.findings.filter((f) => {
@@ -507,7 +563,7 @@ async function refreshCodeQLTodo(
         scan.scope,
         scan.findings,
         provenance.grouping,
-        { target: provenance.target },
+        { target: provenance.target, branch: provenance.branch },
       );
       showScanningImportResult("CodeQL", todo.id, result);
     },
@@ -540,11 +596,20 @@ async function refreshSonarTodo(
             services.config.getWorkspaceFolder()!.uri.fsPath,
             sonar.server,
             sonar.project,
+            undefined,
+            provenance.branch,
           )
-        : await fetchSonarQube(sonar.server, sonar.project, sonar.token);
-      if (scan.scope !== provenance.scope) {
+        : await fetchSonarQube(
+            sonar.server,
+            sonar.project,
+            sonar.token,
+            undefined,
+            undefined,
+            provenance.branch,
+          );
+      if (scan.scope !== provenance.scope || scan.branch !== provenance.branch) {
         throw new Error(
-          `SonarQube scope ${scan.scope} does not match imported scope ${provenance.scope}.`,
+          `SonarQube target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
         );
       }
       const targetFindings = scan.findings.filter((f) => {
@@ -565,7 +630,7 @@ async function refreshSonarTodo(
         scan.scope,
         scan.findings,
         provenance.grouping,
-        { target: provenance.target },
+        { target: provenance.target, branch: provenance.branch },
       );
       showScanningImportResult("SonarQube", todo.id, result);
     },

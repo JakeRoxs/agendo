@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -116,6 +117,12 @@ export class CanvasViewer implements vscode.Disposable {
       this.panel.onDidDispose(() => {
         this.panel = undefined;
       });
+      this.panel.webview.onDidReceiveMessage((message: unknown) => {
+        const url = externalHttpsUrl(message);
+        if (url) {
+          void vscode.env.openExternal(vscode.Uri.parse(url));
+        }
+      });
     }
     this.panel.title = "Agendo";
     this.panel.webview.html = this.html(url);
@@ -126,11 +133,23 @@ export class CanvasViewer implements vscode.Disposable {
   private html(url: string): string {
     const target = new URL(url);
     const origin = target.origin;
+    const nonce = randomBytes(16).toString("base64");
     target.searchParams.set("t", String(Date.now()));
     return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; style-src 'unsafe-inline';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;}</style></head>
-<body><iframe src="${target.toString()}" title="Agendo work session"></iframe></body></html>`;
+<body><iframe src="${target.toString()}" title="Agendo work session"></iframe>
+<script nonce="${nonce}">
+const vscode = acquireVsCodeApi();
+const frame = document.querySelector('iframe');
+window.addEventListener('message', event => {
+  if (event.source !== frame.contentWindow || event.data?.type !== 'agendo:openExternal') return;
+  try {
+    const url = new URL(event.data.url);
+    if (url.protocol === 'https:') vscode.postMessage({ type: 'openExternal', url: url.href });
+  } catch {}
+});
+</script></body></html>`;
   }
 
   private async stopServer(): Promise<void> {
@@ -144,5 +163,20 @@ export class CanvasViewer implements vscode.Disposable {
   dispose(): void {
     this.panel?.dispose();
     void this.stopServer();
+  }
+}
+
+function externalHttpsUrl(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || !("type" in value) || value.type !== "openExternal") {
+    return undefined;
+  }
+  if (!("url" in value) || typeof value.url !== "string") {
+    return undefined;
+  }
+  try {
+    const url = new URL(value.url);
+    return url.protocol === "https:" ? url.href : undefined;
+  } catch {
+    return undefined;
   }
 }

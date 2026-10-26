@@ -8,6 +8,7 @@ export interface ScanningProvenance {
   scope: string;
   grouping: ScanningGrouping;
   target: string;
+  branch?: string;
 }
 
 export interface FindingChanges {
@@ -28,14 +29,16 @@ export interface ScanningSnapshot extends ScanningProvenance {
 const SNAPSHOT = /<!-- agendo:scan-snapshot\n([\s\S]*?)\n-->/;
 
 export function scanningIdentity(provenance: ScanningProvenance): string {
-  const { source, scope, grouping, target } = provenance;
-  return createHash("sha256")
-    .update(
-      JSON.stringify(
-        grouping === "rule" ? [source, scope, target] : [source, scope, grouping, target],
-      ),
-    )
-    .digest("hex");
+  const { source, scope, grouping, target, branch } = provenance;
+  const identity =
+    branch === undefined
+      ? grouping === "rule"
+        ? [source, scope, target]
+        : [source, scope, grouping, target]
+      : grouping === "rule"
+        ? [source, scope, branch, target]
+        : [source, scope, branch, grouping, target];
+  return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
 export function validFinding(finding: ScanningFinding): boolean {
@@ -75,11 +78,13 @@ export function readScanningProvenance(content: string): ScanningProvenance | un
   const scope = field("scan_scope");
   const grouping = field("scan_grouping");
   const target = field("scan_target");
+  const branch = field("scan_branch");
   if (
     !scope ||
     target === undefined ||
     !["codeql", "sonarqube"].includes(source || "") ||
-    !["file", "rule", "finding"].includes(grouping || "")
+    !["file", "rule", "finding"].includes(grouping || "") ||
+    (branch !== undefined && !branch)
   )
     return;
   const provenance = {
@@ -87,6 +92,7 @@ export function readScanningProvenance(content: string): ScanningProvenance | un
     scope,
     grouping: grouping as ScanningGrouping,
     target,
+    ...(branch === undefined ? {} : { branch }),
   };
   if (field("scan_identity") !== scanningIdentity(provenance)) {
     throw new Error(
@@ -107,13 +113,15 @@ export function writeScanningProvenance(
   const lines = header[1]
     .split(/\r?\n/)
     .filter(
-      (line) => !/^scan_(?:source|scope|grouping|target|refreshed_at|review_required):/.test(line),
+      (line) =>
+        !/^scan_(?:source|scope|grouping|target|branch|refreshed_at|review_required):/.test(line),
     );
   lines.push(
     `scan_source: ${snapshot.source}`,
     `scan_scope: ${JSON.stringify(snapshot.scope)}`,
     `scan_grouping: ${snapshot.grouping}`,
     `scan_target: ${JSON.stringify(snapshot.target)}`,
+    ...(snapshot.branch === undefined ? [] : [`scan_branch: ${JSON.stringify(snapshot.branch)}`]),
     `scan_refreshed_at: ${JSON.stringify(snapshot.retrievedAt)}`,
     `scan_review_required: ${review}`,
   );
@@ -134,6 +142,7 @@ export function readScanningSnapshot(
     snapshot.scope !== provenance.scope ||
     snapshot.grouping !== provenance.grouping ||
     snapshot.target !== provenance.target ||
+    snapshot.branch !== provenance.branch ||
     !Array.isArray(snapshot.findings) ||
     !snapshot.findings.every((f) => validFinding(f) && typeof f.returned === "boolean") ||
     new Set(snapshot.findings.map((f) => f.id)).size !== snapshot.findings.length ||

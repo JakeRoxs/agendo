@@ -9,7 +9,10 @@ import { registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import {
   fetchCodeQL,
+  fetchCodeQLBranches,
   fetchSonarQube,
+  fetchSonarQubeBranches,
+  fetchSonarQubeCliBranches,
   fetchSonarQubeCli,
   importScanningFindings,
   type ScanningFinding,
@@ -395,6 +398,7 @@ suite("native code scanning", () => {
     runInNewContext(script, {
       document: {
         body: { dataset: { todoId: "sq-001", status: "pending", percent: "0" } },
+        addEventListener: () => {},
         getElementById: (id: string) =>
           id === "status-message"
             ? { textContent: "" }
@@ -427,6 +431,56 @@ suite("native code scanning", () => {
       storage.get("agendo-section-sq-001-in-progress-scanner-context-0"),
       undefined,
     );
+  });
+
+  test("external canvas links route through the host when embedded", async () => {
+    const script = await fs.readFile(
+      path.resolve(__dirname, "../../resources/canvas/agendo-work-session/assets/page.js"),
+      "utf8",
+    );
+    let onClick: ((event: { target: unknown; preventDefault: () => void }) => void) | undefined;
+    let openedUrl: unknown;
+    let prevented = false;
+    const parent = {
+      postMessage: (message: unknown, targetOrigin: string) => {
+        openedUrl = message;
+        assert.strictEqual(targetOrigin, "*");
+      },
+    };
+    class LinkTarget {
+      closest(selector: string) {
+        assert.strictEqual(selector, 'a[target="_blank"]');
+        return { href: "https://github.com/JakeRoxs/agendo/security/code-scanning/3" };
+      }
+    }
+    runInNewContext(script, {
+      Element: LinkTarget,
+      URL,
+      document: {
+        addEventListener: (event: string, callback: typeof onClick) => {
+          if (event === "click") onClick = callback;
+        },
+        body: { dataset: { todoId: "cql-001", status: "pending", percent: "0" } },
+        getElementById: (id: string) => (id === "status-message" ? { textContent: "" } : null),
+        querySelector: () => null,
+        querySelectorAll: () => [],
+      },
+      location: { href: "http://localhost:1234/" },
+      window: { parent },
+      sessionStorage: { getItem: () => null, setItem: () => {} },
+      setInterval: () => {},
+    });
+    onClick?.({
+      target: new LinkTarget(),
+      preventDefault: () => {
+        prevented = true;
+      },
+    });
+    assert.ok(prevented);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(openedUrl)), {
+      type: "agendo:openExternal",
+      url: "https://github.com/JakeRoxs/agendo/security/code-scanning/3",
+    });
   });
 
   test("scanner IDs round trip independently of regular IDs", () => {
@@ -582,6 +636,7 @@ suite("native code scanning", () => {
       .find((todo) => todo.frontmatter.scan_target === "src/example.ts");
     assert.ok(fileTodo);
     assert.strictEqual(fileTodo.frontmatter.scan_grouping, "file");
+    assert.strictEqual(fileTodo.group, undefined);
     assert.strictEqual(fileTodo.priority, "p1");
     assert.strictEqual(fileTodo.title, "SonarQube: src/example.ts");
     const content = await readText(fileTodo.uri);
@@ -590,6 +645,14 @@ suite("native code scanning", () => {
     assert.match(content, /Second explanation/);
     assert.match(content, /\*\*Rule:\*\* js\/example/);
     assert.match(content, /\*\*Rule:\*\* ts:second/);
+    await new StatusService(config, repository).setGroup(fileTodo, "SonarQube");
+    await repository.refresh();
+    await importScanningFindings(config, repository, "sonarqube", "server#project", findings);
+    assert.strictEqual(
+      repository.getTodos().find((todo) => todo.frontmatter.scan_target === "src/example.ts")
+        ?.group,
+      undefined,
+    );
     assertImportCounts(
       await importScanningFindings(
         config,
@@ -621,6 +684,18 @@ suite("native code scanning", () => {
         "finding",
       ),
       { created: 3, updated: 0 },
+    );
+    assert.ok(
+      repository
+        .getTodos()
+        .filter((todo) => todo.frontmatter.scan_grouping === "finding")
+        .every((todo) => todo.group === "src/example.ts" || todo.group === "src/other.ts"),
+    );
+    assert.ok(
+      repository
+        .getTodos()
+        .filter((todo) => todo.frontmatter.scan_grouping === "rule")
+        .every((todo) => todo.group === undefined),
     );
     assert.strictEqual(repository.getTodos().length, 7);
     assert.strictEqual(
@@ -655,6 +730,10 @@ suite("native code scanning", () => {
     assert.strictEqual(repository.getTodos().length, 2);
     const original = repository.getTodos().find((todo) => todo.frontmatter.scan_target === "42");
     assert.ok(original);
+    assert.strictEqual(original.group, "src/example.ts");
+    const status = new StatusService(config, repository);
+    await status.setGroup(original, "CodeQL");
+    await repository.refresh();
     const result = await importScanningFindings(
       config,
       repository,
@@ -667,7 +746,22 @@ suite("native code scanning", () => {
     const updated = repository.getTodos().find((todo) => todo.id === original.id);
     assert.ok(updated);
     assert.strictEqual(updated.uri.toString(), original.uri.toString());
+    assert.strictEqual(updated.group, "src/moved.ts");
     assert.match(await readText(updated.uri), /File: src\/moved.ts \| Line: 99/);
+
+    await status.setGroup(updated, "Custom group");
+    await repository.refresh();
+    await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [{ ...finding, path: "src/renamed.ts" }],
+      "finding",
+    );
+    const customized = repository.getTodos().find((todo) => todo.id === original.id);
+    assert.ok(customized);
+    assert.strictEqual(customized.group, "Custom group");
   });
 
   test("file grouping handles project-level issues and rejects unknown grouping before writes", async () => {
@@ -709,8 +803,10 @@ suite("native code scanning", () => {
     const callbacks = new Map<string, () => Promise<void>>();
     const subscriptions: vscode.Disposable[] = [];
     const chosen: string[] = [];
+    const chosenBranches: Array<string | undefined> = [];
     const errors: string[] = [];
     let index: number | undefined = 0;
+    let branchIndex = 0;
     let fetches = 0;
     try {
       mock(vscode.workspace, "isTrusted", true);
@@ -721,8 +817,9 @@ suite("native code scanning", () => {
       mock(
         vscode.window,
         "showQuickPick",
-        async (items: Array<{ source?: string; grouping?: string }>) => {
+        async (items: Array<{ source?: string; grouping?: string; branch?: string }>) => {
           if (items[0].source) return items[0];
+          if ("branch" in items[0]) return items[branchIndex];
           assert.deepStrictEqual(
             items.map((item) => item.grouping),
             ["file", "rule", "finding"],
@@ -737,9 +834,13 @@ suite("native code scanning", () => {
       mock(vscode.window, "withProgress", async (_options: unknown, work: () => Promise<void>) =>
         work(),
       );
-      mock(service, "fetchCodeQL", async () => {
+      mock(service, "fetchCodeQLBranches", async () => ({
+        defaultBranch: "main",
+        branches: ["main", "dev"],
+      }));
+      mock(service, "fetchCodeQL", async (_cwd: string, _run: unknown, branch?: string) => {
         fetches++;
-        return { scope: "owner/repo", findings: [finding] };
+        return { scope: "owner/repo", ...(branch ? { branch } : {}), findings: [finding] };
       });
       mock(
         service,
@@ -751,8 +852,10 @@ suite("native code scanning", () => {
           _scope: unknown,
           _findings: unknown,
           grouping: string,
+          options: { branch?: string },
         ) => {
           chosen.push(grouping);
+          chosenBranches.push(options.branch);
           return {
             created: 1,
             updated: 0,
@@ -771,8 +874,12 @@ suite("native code scanning", () => {
       );
       const command = callbacks.get(Command.ImportCodeScanning);
       assert.ok(command);
-      for (index of [0, 1, 2]) await command();
+      for (index of [0, 1, 2]) {
+        branchIndex = index === 2 ? 1 : 0;
+        await command();
+      }
       assert.deepStrictEqual(chosen, ["file", "rule", "finding"]);
+      assert.deepStrictEqual(chosenBranches, [undefined, undefined, "dev"]);
       assert.strictEqual(fetches, 3);
       index = undefined;
       await command();
@@ -867,6 +974,37 @@ suite("native code scanning", () => {
     assert.strictEqual(repository.getTodos().length, 2);
   });
 
+  test("branch imports have independent identities and refresh scopes", async () => {
+    await importScanningFindings(config, repository, "codeql", "owner/repo", [finding]);
+    await importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "file", {
+      branch: "dev",
+    });
+    assert.strictEqual(repository.getTodos().length, 2);
+    assert.strictEqual(
+      repository.getTodos().find((todo) => todo.frontmatter.scan_branch)?.frontmatter.scan_branch,
+      "dev",
+    );
+    assert.strictEqual(
+      repository.getTodos().filter((todo) => todo.frontmatter.scan_branch === undefined).length,
+      1,
+    );
+
+    const branchResult = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [finding],
+      "file",
+      { branch: "dev" },
+    );
+    assert.strictEqual(branchResult.refreshed, 1);
+    const result = await importScanningFindings(config, repository, "codeql", "owner/repo", [
+      finding,
+    ]);
+    assert.strictEqual(result.refreshed, 1);
+  });
+
   test("missing evidence markers are protected instead of overwriting user content", () => {
     assert.throws(() => updateScanningEvidence("# My notes", [finding]), /markers are missing/);
   });
@@ -926,6 +1064,63 @@ suite("native code scanning", () => {
     assert.strictEqual(scan.findings[0].severity, "high");
     assert.ok(calls[1].includes("--slurp"));
     assert.ok(calls[1][1].includes("tool_name=CodeQL"));
+  });
+
+  test("CodeQL adapter filters alerts by the selected branch", async () => {
+    let alertsRequest = "";
+    const scan = await fetchCodeQL(
+      root.fsPath,
+      async (args) => {
+        if (args[0] === "api") alertsRequest = args[1];
+        return {
+          stdout:
+            args[0] === "repo"
+              ? "owner/repo\n"
+              : JSON.stringify([
+                  [
+                    {
+                      number: 7,
+                      rule: { id: "js/rule" },
+                      most_recent_instance: {
+                        location: { path: "src/example.ts" },
+                        message: { text: "Issue" },
+                      },
+                    },
+                  ],
+                ]),
+        };
+      },
+      "feature/branch-selector",
+    );
+    assert.strictEqual(scan.branch, "feature/branch-selector");
+    assert.strictEqual(scan.findings.length, 1);
+    assert.strictEqual(
+      new URL(`https://api.github.com/${alertsRequest}`).searchParams.get("ref"),
+      "refs/heads/feature/branch-selector",
+    );
+    assert.strictEqual(
+      new URL(scan.findings[0].url).searchParams.get("ref"),
+      "refs/heads/feature/branch-selector",
+    );
+  });
+
+  test("CodeQL branch discovery returns the repository default branch", async () => {
+    const calls: string[][] = [];
+    const branches = await fetchCodeQLBranches(root.fsPath, async (args) => {
+      calls.push(args);
+      return {
+        stdout:
+          args[0] === "repo"
+            ? JSON.stringify({
+                nameWithOwner: "owner/repo",
+                defaultBranchRef: { name: "main" },
+              })
+            : JSON.stringify([[{ name: "main" }, { name: "dev" }]]),
+      };
+    });
+    assert.deepStrictEqual(branches, { defaultBranch: "main", branches: ["main", "dev"] });
+    assert.ok(calls[1][1].includes("branches?per_page=100"));
+    assert.ok(calls[1].includes("--paginate"));
   });
 
   test("CodeQL adapter rejects unexpected pagination payloads", async () => {
@@ -1012,11 +1207,16 @@ suite("native code scanning", () => {
         "https://sonar.example/context",
         "org:project",
         "test-token",
+        undefined,
+        undefined,
+        "feature/branch-selector",
       );
+      assert.strictEqual(result.branch, "feature/branch-selector");
       assert.strictEqual(result.findings.length, 2);
       assert.strictEqual(result.findings[0].path, "src/example.ts");
       assert.strictEqual(requests[0].pathname, "/context/api/issues/search");
       assert.strictEqual(requests[1].searchParams.get("p"), "2");
+      assert.strictEqual(requests[0].searchParams.get("branch"), "feature/branch-selector");
       assert.strictEqual(requests[0].searchParams.get("componentKeys"), "org:project");
       assert.strictEqual(
         requests.length,
@@ -1026,13 +1226,30 @@ suite("native code scanning", () => {
       const ruleRequest = requests.find((r) => r.pathname.endsWith("/api/rules/show"));
       assert.strictEqual(ruleRequest?.searchParams.get("key"), "ts:S1");
       assert.strictEqual(result.findings[0].ruleTitle, "Use a comparison function");
+      assert.strictEqual(
+        new URL(result.findings[0].url).searchParams.get("branch"),
+        "feature/branch-selector",
+      );
       assert.match(result.findings[0].ruleDescription || "", /Why this matters/);
       assert.match(
         result.findings[0].ruleDescription || "",
         /```\nitems.sort\(\(a, b\) => a - b\);\n```/,
       );
-      await importScanningFindings(config, repository, "sonarqube", result.scope, result.findings);
+      await importScanningFindings(
+        config,
+        repository,
+        "sonarqube",
+        result.scope,
+        result.findings,
+        "file",
+        { branch: result.branch },
+      );
       const content = await readText(repository.getTodos()[0].uri);
+      assert.strictEqual(
+        repository.getTodos()[0].frontmatter.scan_branch,
+        "feature/branch-selector",
+      );
+      assert.match(content, /\*\*Branch:\*\* feature\/branch-selector/);
       assert.match(content, /### Rule: Use a comparison function/);
       assert.match(content, /Why this matters/);
       const updated = updateScanningEvidence(
@@ -1043,6 +1260,30 @@ suite("native code scanning", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  test("SonarQube branch discovery includes the main branch and encoded project key", async () => {
+    let request: URL | undefined;
+    const branches = await fetchSonarQubeBranches(
+      "https://sonar.example/context",
+      "org:project & test",
+      "test-token",
+      async (url) => {
+        request = url;
+        return {
+          branches: [
+            { name: "main", isMain: true },
+            { name: "feature/branch-selector", isMain: false },
+          ],
+        };
+      },
+    );
+    assert.strictEqual(request?.pathname, "/context/api/project_branches/list");
+    assert.strictEqual(request?.searchParams.get("project"), "org:project & test");
+    assert.deepStrictEqual(branches, {
+      defaultBranch: "main",
+      branches: ["main", "feature/branch-selector"],
+    });
   });
 
   test("SonarQube rule context supports legacy descriptions and rejects invalid rule responses", async () => {
@@ -1149,16 +1390,54 @@ suite("native code scanning", () => {
       "https://sonar.example/context/",
       "org:project & test",
       run,
+      "feature/branch-selector",
     );
     const callTypes = calls.map((args) => args[0]);
     assert.strictEqual(callTypes.filter((t) => t === "auth").length, 8);
     assert.strictEqual(callTypes.filter((t) => t === "api").length, 4);
     assert.strictEqual(result.scope, "https://sonar.example/context/#org:project & test");
+    assert.strictEqual(result.branch, "feature/branch-selector");
     assert.strictEqual(result.findings.length, 2);
     assert.strictEqual(result.findings[0].path, "src/example.ts");
     assert.strictEqual(result.findings[0].ruleDescription, "Rule explanation");
     assert.strictEqual(new URL(result.findings[0].url).pathname, "/context/project/issues");
     assert.strictEqual(new URL(calls[4][2], "https://sonar.example").searchParams.get("p"), "2");
+    assert.strictEqual(
+      new URL(calls[1][2], "https://sonar.example").searchParams.get("branch"),
+      "feature/branch-selector",
+    );
+    assert.strictEqual(
+      new URL(result.findings[0].url).searchParams.get("branch"),
+      "feature/branch-selector",
+    );
+  });
+
+  test("SonarQube CLI lists branches through its active connection", async () => {
+    const calls: string[][] = [];
+    const branches = await fetchSonarQubeCliBranches(
+      root.fsPath,
+      "https://sonar.example/context",
+      "project",
+      async (args) => {
+        calls.push(args);
+        if (args[0] === "auth") {
+          return JSON.stringify({ status: "connected", server: "https://sonar.example/context/" });
+        }
+        return JSON.stringify({
+          branches: [
+            { name: "main", isMain: true },
+            { name: "dev", isMain: false },
+          ],
+        });
+      },
+    );
+    assert.deepStrictEqual(branches, { defaultBranch: "main", branches: ["main", "dev"] });
+    const apiCall = calls.find((args) => args[0] === "api");
+    assert.ok(apiCall);
+    assert.strictEqual(
+      new URL(apiCall[2], "https://sonar.example").pathname,
+      "/api/project_branches/list",
+    );
   });
 
   test("SonarQube CLI connection changes during or between pages prevent all todo writes", async () => {
@@ -1499,6 +1778,7 @@ suite("native code scanning", () => {
     runInNewContext(script, {
       document: {
         body: { dataset: { todoId: "cql-001", status: "pending", percent: "0" } },
+        addEventListener: () => {},
         getElementById: (id: string) => (id === "status-message" ? message : null),
         querySelectorAll: () => [],
         querySelector: (selector: string) => (selector === "[data-edit]" ? button : null),

@@ -11,9 +11,11 @@ src/**
 out/test/**
 out/reports/**
 out/**/*.map
-node_modules/**
-!node_modules/@modelcontextprotocol/**
-!node_modules/turndown/**
+node_modules/**/test/**
+node_modules/**/.yarn/**
+node_modules/**/.git*
+node_modules/**/.mocharc*
+node_modules/**/.nvmrc
 docs/**
 .gitignore
 .gitattributes

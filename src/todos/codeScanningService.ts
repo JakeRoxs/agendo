@@ -17,7 +17,14 @@ import {
   validFinding,
   writeScanningProvenance,
 } from "./scanningSnapshot";
-import { buildFileName, getTodoSource, SCANNING_ID_PREFIX, type TodoPriority } from "./todoModel";
+import {
+  buildFileName,
+  getTodoSource,
+  parseFrontmatter,
+  SCANNING_ID_PREFIX,
+  splitFrontmatter,
+  type TodoPriority,
+} from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
 
 export type ScanningSource = "codeql" | "sonarqube";
@@ -117,6 +124,49 @@ function text(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}[\]<>#|!]/g, "\\$&");
 }
 
+function replaceGroup(content: string, group: string | undefined): string {
+  const match = /^---(\r?\n)([\s\S]*?)\r?\n---/.exec(content);
+  if (!match) return content;
+  const lineEnding = match[1];
+  const lines = match[2].split(/\r?\n/);
+  const groupIndex = lines.findIndex((line) => /^group\s*:/.test(line));
+  if (group === undefined) {
+    if (groupIndex < 0) return content;
+    lines.splice(groupIndex, 1);
+  } else if (groupIndex >= 0) {
+    lines[groupIndex] = `group: ${JSON.stringify(group)}`;
+  } else {
+    lines.push(`group: ${JSON.stringify(group)}`);
+  }
+  const replacement = `---${lineEnding}${lines.join(lineEnding)}${lineEnding}---`;
+  return content.slice(0, match.index) + replacement + content.slice(match.index + match[0].length);
+}
+
+function updateImportedGroup(
+  content: string,
+  source: ScanningSource,
+  grouping: ScanningGrouping,
+  target: string,
+  findings: ScanningFinding[],
+  previous: ScanningSnapshot | undefined,
+): string {
+  const current = parseFrontmatter(splitFrontmatter(content).data).group;
+  if (typeof current !== "string") return content;
+  const sourceGroup = source === "codeql" ? "CodeQL" : "SonarQube";
+  if (current === sourceGroup) {
+    const priorFinding = previous?.findings.find((finding) => finding.id === target);
+    const finding = findings[0] || priorFinding;
+    const group =
+      grouping === "finding" && finding ? finding.path || "Project-level findings" : undefined;
+    return replaceGroup(content, group);
+  }
+  if (grouping !== "finding" || findings.length === 0) return content;
+  const priorFinding = previous?.findings.find((finding) => finding.id === target);
+  const priorGroup = priorFinding?.path || "Project-level findings";
+  if (!priorFinding || current !== priorGroup) return content;
+  return replaceGroup(content, findings[0].path || "Project-level findings");
+}
+
 function findingCriterionLine(finding: ScanningFinding, met: boolean, returned: boolean): string {
   const location = finding.path
     ? finding.line
@@ -205,7 +255,7 @@ function evidence(findings: ScanningFinding[], snapshot?: ScanningSnapshot): str
         `#### File: ${text(finding.path || "Project-level finding")} | Line: ${finding.line || "not reported"}\n\n**Rule:** ${text(finding.rule)}\n\n**Problem:** ${text(finding.message)}\n\n**Severity:** ${text(finding.severity)}\n\n${missing.has(finding.id) ? "**Observation:** Not returned in the latest successful result; resolution is not verified.\n\n" : ""}[View finding ${text(finding.id)}](<${finding.url.replace(/[<>\r\n]/g, "")}>)`,
     );
   const refresh = snapshot
-    ? `**Retrieved:** ${snapshot.retrievedAt}\n\n${findings.length - missing.size} reported; ${missing.size} not returned. This retrieves existing scanner results, not a new analysis.\n\n`
+    ? `**Retrieved:** ${snapshot.retrievedAt}\n\n**Branch:** ${text(snapshot.branch || "Default branch")}\n\n${findings.length - missing.size} reported; ${missing.size} not returned. This retrieves existing scanner results, not a new analysis.\n\n`
     : "";
   const baseline = snapshot ? `\n\n${serializeScanningSnapshot(snapshot)}` : "";
   return `${START}\n## Scanner Evidence\n\n${refresh}### Affected Locations\n\n${rows.join("\n\n")}${problem}${baseline}\n${END}`;
@@ -248,13 +298,65 @@ export function validateSonarUrl(value: string): URL {
   return url;
 }
 
+type GitHubRunner = (
+  args: string[],
+  options: { cwd: string; timeout: number; maxBuffer?: number },
+) => Promise<{ stdout: string }>;
+
+export interface ScanningBranches {
+  defaultBranch: string;
+  branches: string[];
+}
+
+const runGitHub = (args: string[], options: Parameters<GitHubRunner>[1]) =>
+  exec("gh", args, options);
+
+export async function fetchCodeQLBranches(
+  cwd: string,
+  run: GitHubRunner = runGitHub,
+): Promise<ScanningBranches> {
+  const { stdout: repoOutput } = await run(
+    ["repo", "view", "--json", "nameWithOwner,defaultBranchRef"],
+    { cwd, timeout: 30_000 },
+  );
+  const repo = JSON.parse(repoOutput) as {
+    nameWithOwner?: unknown;
+    defaultBranchRef?: { name?: unknown } | null;
+  };
+  if (
+    typeof repo.nameWithOwner !== "string" ||
+    !/^[\w.-]+\/[\w.-]+$/.test(repo.nameWithOwner) ||
+    typeof repo.defaultBranchRef?.name !== "string"
+  ) {
+    throw new Error("Unable to determine the GitHub repository's default branch.");
+  }
+  const { stdout } = await run(
+    ["api", `repos/${repo.nameWithOwner}/branches?per_page=100`, "--paginate", "--slurp"],
+    { cwd, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 },
+  );
+  const pages: unknown = JSON.parse(stdout);
+  if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
+    throw new Error("Unexpected GitHub branches response.");
+  }
+  const branches = pages.flatMap((page: unknown[]) =>
+    page.map((branch: unknown) =>
+      branch && typeof branch === "object" && "name" in branch ? branch.name : undefined,
+    ),
+  );
+  if (!branches.every((branch): branch is string => typeof branch === "string")) {
+    throw new Error("Unexpected GitHub branch entry.");
+  }
+  if (!branches.includes(repo.defaultBranchRef.name)) {
+    throw new Error("GitHub did not return the repository's default branch.");
+  }
+  return { defaultBranch: repo.defaultBranchRef.name, branches };
+}
+
 export async function fetchCodeQL(
   cwd: string,
-  run: (
-    args: string[],
-    options: { cwd: string; timeout: number; maxBuffer?: number },
-  ) => Promise<{ stdout: string }> = (args, options) => exec("gh", args, options),
-): Promise<{ scope: string; findings: ScanningFinding[] }> {
+  run: GitHubRunner = runGitHub,
+  branch?: string,
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
   const { stdout: repoOutput } = await run(
     ["repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
     { cwd, timeout: 30_000 },
@@ -263,13 +365,10 @@ export async function fetchCodeQL(
   if (!/^[\w.-]+\/[\w.-]+$/.test(scope)) {
     throw new Error("Unable to determine the GitHub repository from gh.");
   }
+  const query = new URLSearchParams({ state: "open", per_page: "100", tool_name: "CodeQL" });
+  if (branch) query.set("ref", `refs/heads/${branch}`);
   const { stdout } = await run(
-    [
-      "api",
-      `repos/${scope}/code-scanning/alerts?state=open&per_page=100&tool_name=CodeQL`,
-      "--paginate",
-      "--slurp",
-    ],
+    ["api", `repos/${scope}/code-scanning/alerts?${query}`, "--paginate", "--slurp"],
     { cwd, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 },
   );
   const pages = JSON.parse(stdout) as Array<
@@ -285,16 +384,20 @@ export async function fetchCodeQL(
   if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
     throw new Error("Unexpected GitHub code-scanning response.");
   }
-  const findings = pages.flat().map((alert) => ({
-    id: String(alert.number),
-    rule: alert.rule.id,
-    severity: alert.rule.security_severity_level || alert.rule.severity || "warning",
-    message: alert.most_recent_instance.message.text,
-    path: alert.most_recent_instance.location.path,
-    line: alert.most_recent_instance.location.start_line,
-    url: `https://github.com/${scope}/security/code-scanning/${alert.number}`,
-  }));
-  return { scope, findings };
+  const findings = pages.flat().map((alert) => {
+    const url = new URL(`https://github.com/${scope}/security/code-scanning/${alert.number}`);
+    if (branch) url.searchParams.set("ref", `refs/heads/${branch}`);
+    return {
+      id: String(alert.number),
+      rule: alert.rule.id,
+      severity: alert.rule.security_severity_level || alert.rule.severity || "warning",
+      message: alert.most_recent_instance.message.text,
+      path: alert.most_recent_instance.location.path,
+      line: alert.most_recent_instance.location.start_line,
+      url: url.toString(),
+    };
+  });
+  return { scope, ...(branch ? { branch } : {}), findings };
 }
 
 type SonarCliRunner = (args: string[], cwd: string) => Promise<string>;
@@ -331,7 +434,23 @@ export async function fetchSonarQubeCli(
   server: string,
   project: string,
   run: SonarCliRunner = runSonarCli,
-): Promise<{ scope: string; findings: ScanningFinding[] }> {
+  branch?: string,
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
+  return fetchSonarQube(
+    server,
+    project,
+    "",
+    createSonarCliRequest(cwd, server, run),
+    undefined,
+    branch,
+  );
+}
+
+function createSonarCliRequest(
+  cwd: string,
+  server: string,
+  run: SonarCliRunner,
+): (url: URL) => Promise<unknown> {
   const base = validateSonarUrl(server);
   const expectedServer = base.toString();
   const checkConnection = async () => {
@@ -339,7 +458,7 @@ export async function fetchSonarQubeCli(
       throw new Error("SonarQube CLI connection changed. Start the import again.");
     }
   };
-  return fetchSonarQube(server, project, "", async (url) => {
+  return async (url) => {
     await checkConnection();
     // sonar api routes relative endpoints against the active connection, including its context path.
     const output = await run(
@@ -348,7 +467,48 @@ export async function fetchSonarQubeCli(
     );
     await checkConnection();
     return JSON.parse(output);
-  });
+  };
+}
+
+export async function fetchSonarQubeBranches(
+  server: string,
+  project: string,
+  token: string,
+  request?: (url: URL) => Promise<unknown>,
+): Promise<ScanningBranches> {
+  const base = validateSonarUrl(server);
+  const url = new URL("api/project_branches/list", base);
+  url.search = new URLSearchParams({ project }).toString();
+  const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
+    branches?: Array<{ name?: unknown; isMain?: unknown }>;
+  };
+  const branches = Array.isArray(payload?.branches)
+    ? payload.branches.filter((branch): branch is { name: string; isMain: boolean } =>
+        Boolean(
+          branch &&
+            typeof branch === "object" &&
+            typeof branch.name === "string" &&
+            typeof branch.isMain === "boolean",
+        ),
+      )
+    : [];
+  if (!Array.isArray(payload?.branches) || branches.length !== payload.branches.length) {
+    throw new Error("Unexpected SonarQube project branches response.");
+  }
+  const mainBranch = branches.find((branch) => branch.isMain);
+  if (!mainBranch?.name) {
+    throw new Error("SonarQube did not return the project's main branch.");
+  }
+  return { defaultBranch: mainBranch.name, branches: branches.map((branch) => branch.name) };
+}
+
+export async function fetchSonarQubeCliBranches(
+  cwd: string,
+  server: string,
+  project: string,
+  run: SonarCliRunner = runSonarCli,
+): Promise<ScanningBranches> {
+  return fetchSonarQubeBranches(server, project, "", createSonarCliRequest(cwd, server, run));
 }
 
 export async function fetchSonarQube(
@@ -357,18 +517,21 @@ export async function fetchSonarQube(
   token: string,
   request?: (url: URL) => Promise<unknown>,
   duplicationThreshold?: number,
-): Promise<{ scope: string; findings: ScanningFinding[] }> {
+  branch?: string,
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
   const base = validateSonarUrl(server);
   const threshold = duplicationThreshold ?? 0.05;
   const findings: ScanningFinding[] = [];
   for (let page = 1; ; page++) {
     const url = new URL("api/issues/search", base);
-    url.search = new URLSearchParams({
+    const params = new URLSearchParams({
       componentKeys: project,
       resolved: "false",
       ps: "500",
       p: String(page),
-    }).toString();
+    });
+    if (branch) params.set("branch", branch);
+    url.search = params.toString();
     const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
       issues: Array<{
         key: string;
@@ -389,7 +552,9 @@ export async function fetchSonarQube(
     }
     for (const issue of payload.issues) {
       const link = new URL("project/issues", base);
-      link.search = new URLSearchParams({ id: project, issues: issue.key }).toString();
+      const linkParams = new URLSearchParams({ id: project, issues: issue.key });
+      if (branch) linkParams.set("branch", branch);
+      link.search = linkParams.toString();
       findings.push({
         id: issue.key,
         rule: issue.rule,
@@ -470,6 +635,7 @@ export async function fetchSonarQube(
       url.search = new URLSearchParams({
         component: `${project}:${filePath}`,
         metricKeys: "duplicated_lines,duplicated_lines_density",
+        ...(branch ? { branch } : {}),
       }).toString();
       const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
         component?: { measures?: Array<{ metric: string; value: string | number }> };
@@ -482,11 +648,13 @@ export async function fetchSonarQube(
       const duplicatedLines = linesMeasure ? Number(linesMeasure.value) : 0;
       if (density >= threshold && duplicatedLines > 0) {
         const link = new URL("project/issues", base);
-        link.search = new URLSearchParams({
+        const linkParams = new URLSearchParams({
           id: project,
           view: "duplications",
           file: filePath,
-        }).toString();
+        });
+        if (branch) linkParams.set("branch", branch);
+        link.search = linkParams.toString();
         findings.push({
           id: `dup-${project}-${filePath}`,
           rule: duplicationRuleKey,
@@ -503,7 +671,7 @@ export async function fetchSonarQube(
     }
   }
 
-  return { scope: `${base.toString()}#${project}`, findings };
+  return { scope: `${base.toString()}#${project}`, ...(branch ? { branch } : {}), findings };
 }
 
 async function fetchSonarQubePage(url: URL, token: string): Promise<unknown> {
@@ -536,7 +704,7 @@ export async function importScanningFindings(
   scope: string,
   findings: ScanningFinding[],
   grouping: ScanningGrouping = "file",
-  options: { target?: string } = {},
+  options: { target?: string; branch?: string } = {},
 ): Promise<ScanningImportResult> {
   if (!["file", "rule", "finding"].includes(grouping)) {
     throw new Error("Choose a supported scanner import grouping.");
@@ -547,6 +715,9 @@ export async function importScanningFindings(
   }
   if (!["codeql", "sonarqube"].includes(source) || !scope || /[\r\n]/.test(scope)) {
     throw new Error("Invalid scanner source or scope.");
+  }
+  if (options.branch !== undefined && (!options.branch.trim() || /[\r\n]/.test(options.branch))) {
+    throw new Error("Invalid scanner branch.");
   }
   if (scope.includes("://")) validateSonarUrl(scope.split("#")[0]);
   await repository.refresh();
@@ -568,7 +739,8 @@ export async function importScanningFindings(
     if (
       getTodoSource(todo) !== source ||
       todo.frontmatter.scan_scope !== scope ||
-      todo.frontmatter.scan_grouping !== grouping
+      todo.frontmatter.scan_grouping !== grouping ||
+      todo.frontmatter.scan_branch !== options.branch
     )
       continue;
     const provenance = readScanningProvenance(await readText(todo.uri));
@@ -592,7 +764,13 @@ export async function importScanningFindings(
   const writes: Array<{ uri: vscode.Uri; before?: string; after: string }> = [];
   const retrievedAt = new Date().toISOString();
   for (const [key, alerts] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
-    const provenance = { source, scope, grouping, target: key };
+    const provenance = {
+      source,
+      scope,
+      grouping,
+      target: key,
+      ...(options.branch === undefined ? {} : { branch: options.branch }),
+    };
     const identity = scanningIdentity(provenance);
     const matches = existing.filter(
       (candidate) => candidate.frontmatter.scan_identity === identity,
@@ -634,12 +812,13 @@ export async function importScanningFindings(
       ruleDescription: rules.get(finding.rule)?.description,
     }));
     if (todo && before !== undefined) {
+      const updatedContent = updateImportedGroup(before, source, grouping, key, alerts, previous);
       writes.push({
         uri: todo.uri,
         before,
         after: writeScanningProvenance(
           updateFindingsChecklist(
-            updateScanningEvidence(before, observations, snapshot),
+            updateScanningEvidence(updatedContent, observations, snapshot),
             observations,
             snapshot,
           ),
@@ -659,6 +838,7 @@ export async function importScanningFindings(
           : `${alerts[0].path || "Project"}${alerts[0].line ? `:${alerts[0].line}` : ""} - ${alerts[0].rule}`;
     const id = `${SCANNING_ID_PREFIX[source]}-${String(nextId++).padStart(3, "0")}`;
     const priority = alerts.map((alert) => scanningPriority(alert.severity)).sort()[0];
+    const group = grouping === "finding" ? alerts[0].path || "Project-level findings" : undefined;
     const folder = vscode.Uri.joinPath(root, "code-scanning", source);
     const uri = vscode.Uri.joinPath(folder, buildFileName(id, "pending", priority, title));
     const content = [
@@ -667,7 +847,7 @@ export async function importScanningFindings(
       `priority: ${priority}`,
       `issue_id: "${id}"`,
       `tags: [code-scanning, ${source}]`,
-      `group: ${source === "codeql" ? "CodeQL" : "SonarQube"}`,
+      ...(group ? [`group: ${JSON.stringify(group)}`] : []),
       "dependencies: []",
       `scan_identity: ${identity}`,
       `scan_source: ${source}`,

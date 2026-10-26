@@ -54,6 +54,7 @@ suite("scanningSnapshot", () => {
     assert.notStrictEqual(id, scanningIdentity({ ...PROVENANCE, scope: "other/repo" }));
     assert.notStrictEqual(id, scanningIdentity({ ...PROVENANCE, target: "src/other.ts" }));
     assert.notStrictEqual(id, scanningIdentity({ ...PROVENANCE, source: "sonarqube" }));
+    assert.notStrictEqual(id, scanningIdentity({ ...PROVENANCE, branch: "dev" }));
   });
 
   test("scanningIdentity for rule grouping omits grouping from hash", () => {
@@ -116,6 +117,20 @@ scan_identity: ${identity}
     assert.deepStrictEqual(result, PROVENANCE);
   });
 
+  test("readScanningProvenance retains a selected branch", () => {
+    const provenance = { ...PROVENANCE, branch: "feature/branch-selector" };
+    const content = `---
+scan_source: codeql
+scan_scope: "owner/repo"
+scan_grouping: file
+scan_target: "src/example.ts"
+scan_branch: "feature/branch-selector"
+scan_identity: ${scanningIdentity(provenance)}
+---
+`;
+    assert.deepStrictEqual(readScanningProvenance(content), provenance);
+  });
+
   test("readScanningProvenance rejects mismatched identity", () => {
     const identity = scanningIdentity({ ...PROVENANCE, scope: "wrong/repo" });
     const content = `---
@@ -153,12 +168,16 @@ custom_field: preserved
 # Body
 User content here
 `;
-    const snapshot = makeSnapshot([BASE_FINDING]);
+    const snapshot = makeSnapshot([BASE_FINDING], NOW, {
+      ...PROVENANCE,
+      branch: "feature/branch-selector",
+    });
     const written = writeScanningProvenance(content, snapshot, true);
     assert.ok(written.includes("scan_source: codeql"));
     assert.ok(written.includes('scan_scope: "owner/repo"'));
     assert.ok(written.includes("scan_grouping: file"));
     assert.ok(written.includes('scan_target: "src/example.ts"'));
+    assert.ok(written.includes('scan_branch: "feature/branch-selector"'));
     assert.ok(written.includes("scan_review_required: true"));
     assert.ok(written.includes("title: My Todo"));
     assert.ok(written.includes("custom_field: preserved"));
@@ -172,6 +191,7 @@ scan_source: old-source
 scan_scope: "old-scope"
 scan_grouping: finding
 scan_target: "old-target"
+scan_branch: "old-branch"
 scan_refreshed_at: "2020-01-01T00:00:00Z"
 scan_review_required: false
 ---
@@ -180,6 +200,7 @@ scan_review_required: false
     const written = writeScanningProvenance(content, snapshot, false);
     assert.ok(!written.includes("old-source"));
     assert.ok(!written.includes("old-scope"));
+    assert.ok(!written.includes("old-branch"));
     assert.ok(written.includes("scan_source: codeql"));
     assert.ok(written.includes("scan_review_required: false"));
   });

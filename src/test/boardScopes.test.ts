@@ -34,6 +34,10 @@ function makeRepository(todos: Todo[]): TodoRepository {
   } as unknown as TodoRepository;
 }
 
+function extractScript(html: string): string | undefined {
+  return /<script[^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1];
+}
+
 suite("board view scope", () => {
   const regularTodo = fixture("001", "");
   const codeqlTodo = fixture("cql-001", "code-scanning/codeql");
@@ -569,7 +573,7 @@ suite("board view scope", () => {
       );
       board.open();
       const html = panels.get("agendo.board")?.html ?? "";
-      const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
+      const script = extractScript(html);
       assert.ok(script);
       assert.doesNotThrow(() => new Script(script));
       assert.ok(script.includes("workSession.disabled = Boolean(todo.collision)"));
@@ -581,6 +585,10 @@ suite("board view scope", () => {
         value: originalPanel,
       });
     }
+  });
+
+  test("webview script extraction accepts uppercase script tags", () => {
+    assert.strictEqual(extractScript("<SCRIPT>test()</SCRIPT>"), "test()");
   });
 
   test("boards coexist with isolated preferences, source-local limits, and scoped command validation", async () => {
@@ -737,7 +745,7 @@ suite("board view scope", () => {
       });
       assert.strictEqual(statusChanges, 0);
       const html = panels.get("agendo.codeScanning.board")?.html ?? "";
-      const script = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html)?.[1];
+      const script = extractScript(html);
       assert.ok(script);
       assert.doesNotThrow(() => new Script(script));
       assert.ok(script.includes("columnElement.parentElement.children"));

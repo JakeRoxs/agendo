@@ -76,11 +76,18 @@ suite("scanning refresh command", () => {
     target: string,
     grouping: string,
     scope: string,
+    branch?: string,
   ): Promise<{ todo: any; id: string }> {
     const sourceDir = path.join(root.fsPath, "code-scanning", source);
     await fs.mkdir(sourceDir, { recursive: true });
     const id = `${source === "codeql" ? "cql" : "sq"}-001`;
-    const provenance = { source, scope, grouping: grouping as any, target };
+    const provenance = {
+      source,
+      scope,
+      grouping: grouping as any,
+      target,
+      ...(branch ? { branch } : {}),
+    };
     const identity = scanningIdentity(provenance);
     const fileName = buildFileName(id, "pending", "p1", "test");
     const filePath = path.join(sourceDir, fileName);
@@ -96,6 +103,7 @@ suite("scanning refresh command", () => {
       `scan_scope: ${JSON.stringify(scope)}`,
       `scan_grouping: ${grouping}`,
       `scan_target: ${JSON.stringify(target)}`,
+      ...(branch ? [`scan_branch: ${JSON.stringify(branch)}`] : []),
       "---",
       `# Test ${id}`,
       "",
@@ -140,23 +148,39 @@ suite("scanning refresh command", () => {
   });
 
   test("resolves todo from board todoId argument", async () => {
-    const { id } = await createScanningTodo("codeql", "src/test.ts", "file", "owner/repo");
+    const { id } = await createScanningTodo("codeql", "src/test.ts", "file", "owner/repo", "dev");
+    let fetchedBranch: string | undefined;
+    let importedBranch: string | undefined;
     mock(
       require("../todos/codeScanningService"),
       "fetchCodeQL",
-      async () => ({ scope: "owner/repo", findings: [codeqlFinding] }),
+      async (_cwd: string, _run: unknown, branch?: string) => {
+        fetchedBranch = branch;
+        return { scope: "owner/repo", branch, findings: [codeqlFinding] };
+      },
       restore,
     );
     mock(
       require("../todos/codeScanningService"),
       "importScanningFindings",
-      async () => ({
-        created: 0,
-        updated: 1,
-        refreshed: 0,
-        changes: { added: 0, changed: 1, unchanged: 0, notReturned: 0, uncompared: 0 },
-        reviewRequired: [],
-      }),
+      async (
+        _config: unknown,
+        _repository: unknown,
+        _source: unknown,
+        _scope: unknown,
+        _findings: unknown,
+        _grouping: unknown,
+        options: { branch?: string },
+      ) => {
+        importedBranch = options.branch;
+        return {
+          created: 0,
+          updated: 1,
+          refreshed: 0,
+          changes: { added: 0, changed: 1, unchanged: 0, notReturned: 0, uncompared: 0 },
+          reviewRequired: [],
+        };
+      },
       restore,
     );
     mock(
@@ -186,6 +210,8 @@ suite("scanning refresh command", () => {
     );
     const handler = callbacks.get(Command.RefreshScanningTodo) as any;
     await handler({ todoId: id });
+    assert.strictEqual(fetchedBranch, "dev");
+    assert.strictEqual(importedBranch, "dev");
   });
 
   test("rejects non-scanner todo for refresh", async () => {
@@ -634,16 +660,26 @@ suite("scanning refresh command", () => {
 
   test("Sonar refresh uses fixed server/project from provenance", async () => {
     const scope = "https://sonar.example.com/#project";
-    const { id } = await createScanningTodo("sonarqube", "AYE123", "finding", scope);
+    const { id } = await createScanningTodo("sonarqube", "AYE123", "finding", scope, "dev");
     let capturedServer: string | undefined;
     let capturedProject: string | undefined;
+    let capturedBranch: string | undefined;
+    let importedBranch: string | undefined;
     mock(
       require("../todos/codeScanningService"),
       "fetchSonarQube",
-      async (server: string, project: string, _token: string) => {
+      async (
+        server: string,
+        project: string,
+        _token: string,
+        _request: unknown,
+        _threshold: unknown,
+        branch?: string,
+      ) => {
         capturedServer = server;
         capturedProject = project;
-        return { scope, findings: [sonarFinding] };
+        capturedBranch = branch;
+        return { scope, branch, findings: [sonarFinding] };
       },
       restore,
     );
@@ -677,8 +713,9 @@ suite("scanning refresh command", () => {
         _scope: string,
         _findings: ScanningFinding[],
         _grouping: string,
-        _options?: { target?: string },
+        options?: { target?: string; branch?: string },
       ) => {
+        importedBranch = options?.branch;
         return {
           created: 0,
           updated: 2,
@@ -744,6 +781,8 @@ suite("scanning refresh command", () => {
     await handler({ kind: "todo", todo: repository.getTodos().find((t) => t.id === id) as any });
     assert.strictEqual(capturedServer, "https://sonar.example.com/");
     assert.strictEqual(capturedProject, "project");
+    assert.strictEqual(capturedBranch, "dev");
+    assert.strictEqual(importedBranch, "dev");
   });
 
   test("Sonar CLI mismatch aborts before fetch", async () => {
