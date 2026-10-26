@@ -6,6 +6,37 @@ All notable changes to the Agendo extension are documented here.
 
 ### Added
 
+- Targeted scanner refresh for individual imported todos via **Refresh Scanning Todo** context menu and command, using stored provenance to re-fetch only the relevant scope
+- Finding-level change accounting on refresh: reports new, changed, unchanged, and no-longer-returned findings per todo, with stable finding IDs across location moves
+- Scanner provenance and snapshot metadata persisted per todo, enabling precise refresh and change detection without full re-import
+- Per-finding acceptance checklists in imported scanner todos: each finding becomes a trackable work item with its rule, location, and source link, while users can add their own refactor and verification criteria
+- Refresh preserves locally checked findings and marks not-returned findings without clearing progress or silently deleting work items
+- SonarQube CLI authentication for code-scanning imports through `sonar api`, reusing the active CLI connection without extracting its stored credentials
+- SonarQube import defaults from environment URL/token variables and the workspace root's `sonar-project.properties` project key, with blank-token reuse and secure storage
+- SonarQube rule titles, explanations, code examples, and references in scanner-owned evidence, fetched once per rule for CLI and direct-token imports
+- Import grouping choice for CodeQL and SonarQube: by file (default), by rule/type, or by individual scanner issue, with grouping-aware identities and metadata
+
+### Changed
+
+- Refresh of ready or completed scanner todos surfaces a review-required warning without automatically reopening or changing lifecycle
+- Refresh validates scope and provenance before fetching, aborting on mismatch to prevent cross-repo or cross-project data corruption
+- Work-session canvas version 0.1.6 shows scanner problem context and evidence, prioritizes triage for pending todos, and remembers section expansion separately for each todo and status
+- Scanner evidence leads with explicit file/line locations, problem messages, severities, and source links before the general rule explanation; canvas headings use a consistent hierarchy instead of shrinking below body text
+- Scanner canvas includes a rule/count overview, a contents index grouped into affected files and rule context, collapsible per-file findings, and independently collapsed explanations, examples, and references
+- Canvas titles, dependencies, history options, and recent pills show short scanner IDs beside source indicators instead of repeating source prefixes in IDs and titles; navigation retains full IDs
+- Multi-rule scanner todos retain each rule's explanation, associate findings with rule IDs, and group canvas references and context by rule type
+- Bundled Agendo skill version 1.5.1 documents file-default imports and the optional grouping choices
+
+### Fixed
+
+- Keep environment URL/token variable families paired and require a matching server before reusing an environment token
+- Verify the active SonarQube CLI server before and after every page request, aborting imports when a connection change is detected
+- Scanner evidence is no longer hidden in the canvas or mistaken for user-owned sections and editable acceptance criteria; scanner issue links open correctly
+
+## [0.2.0] - 2026-10-25
+
+### Added
+
 - Duplicate-ID warnings in regular and scanning trees and boards, with hover details listing all conflicting records even when filters hide some of them
 - Clickable tree warning actions and board warnings focus the matching tree/board on the colliding records; section badges show collision counts, and Clear Filters exits focus without changing saved board layouts
 - **Copy ID Collision Reconciliation Context** action for individual collisions or all collisions, producing an approval-gated Agendo skill prompt with exact file paths

@@ -167,6 +167,14 @@ export function buildFileName(
 
 function unquote(value: string): string {
   const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const decoded: unknown = JSON.parse(trimmed);
+      if (typeof decoded === "string") return decoded;
+    } catch {
+      // Keep permissive handling for non-JSON YAML quoted strings.
+    }
+  }
   if (
     (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
     (trimmed.startsWith("'") && trimmed.endsWith("'"))

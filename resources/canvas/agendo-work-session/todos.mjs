@@ -177,16 +177,25 @@ export function findTodoFile(todoId, workspaceRoot) {
 
 // Locate a "## Heading" section as [start, end) over raw file lines.
 function findSection(lines, heading) {
-  const start = lines.findIndex(l => l.trim() === `## ${heading}`);
-  if (start === -1) return null;
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    if (/^## /.test(lines[i])) {
-      end = i;
-      break;
+  let start = -1;
+  let scanner = false;
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (line === '<!-- agendo:scan-evidence:start -->') { scanner = true; continue; }
+    if (line === '<!-- agendo:scan-evidence:end -->') { scanner = false; continue; }
+    if (scanner) continue;
+    const marker = line.match(/^(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      continue;
     }
+    if (fence) continue;
+    if (start === -1 && line === `## ${heading}`) start = i;
+    else if (start !== -1 && /^## /.test(lines[i])) return { start, end: i };
   }
-  return { start, end };
+  return start === -1 ? null : { start, end: lines.length };
 }
 
 export function loadTodo(todoId, workspaceRoot) {
@@ -196,7 +205,11 @@ export function loadTodo(todoId, workspaceRoot) {
     throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
   }
 
-  const { frontmatter, body } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
+  const { frontmatter, body: rawBody } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
+  const scannerBlock = rawBody.match(/<!-- agendo:scan-evidence:start -->([\s\S]*?)<!-- agendo:scan-evidence:end -->/);
+  const scannerEvidence = scannerBlock?.[1].replace(/<!-- agendo:scan-snapshot\n[\s\S]*?\n-->/g, '').replace(/^\s*## Scanner Evidence\s*/, '').trim() || null;
+  // Scanner explanations may contain headings and example checkboxes, not user-owned sections.
+  const body = scannerBlock ? rawBody.replace(scannerBlock[0], '') : rawBody;
   const bodyLines = body.split(/\r?\n/);
   const sectionText = heading => {
     const range = findSection(bodyLines, heading);
@@ -239,6 +252,7 @@ export function loadTodo(todoId, workspaceRoot) {
     criteria,
     workLog,
     description,
+    scannerEvidence,
     resumeContext: sectionText('Resume Context'),
     triage: ['Findings', 'Proposed Solutions', 'Recommended Action']
       .map(heading => ({ heading, text: sectionText(heading) }))

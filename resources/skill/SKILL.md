@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.5.0
+version: 1.5.1
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -138,6 +138,12 @@ Regular numeric todos keep their existing sequence; scanner IDs do not advance i
 On a scanner status change, retain its source root, for example
 `{root}/code-scanning/codeql/{completeFolder}/cql-001-complete-p1-rule-name.md`.
 Reopening returns it to `{root}/code-scanning/codeql`, not the main root.
+
+Imports default to one todo per affected file, with optional grouping by rule/type or individual
+scanner issue. File-based todos may contain several rules; review every finding and its rule
+context. New todos record `scan_grouping` and `scan_target`. Changing grouping creates separate
+todos, not a migration; do not silently merge or remove the previous grouping. IDs share the
+same source-specific sequence across grouping choices.
 
 Scanner imports manage only the marked Scanner Evidence block and `scan_identity` is the stable
 import identity. Preserve these markers and metadata. Keep work logs, decisions, and notes outside

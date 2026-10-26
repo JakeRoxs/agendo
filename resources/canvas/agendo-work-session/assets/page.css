@@ -1,7 +1,9 @@
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:20px;background:#1e1e1e;color:#d4d4d4;margin:0;line-height:1.5;}
 h1{font-size:1.8em;color:#fff;margin:0 0 8px;overflow-wrap:anywhere;}
-h2{color:#aaa;font-size:1.05em;margin-top:24px;border-bottom:1px solid #333;padding-bottom:5px;}
-h4,h5,h6{color:#ccc;margin:12px 0 4px;}
+h2{color:#eee;font-size:1.3em;margin-top:24px;border-bottom:1px solid #444;padding-bottom:7px;}
+h3{color:#e3e3e3;font-size:1.15em;margin:18px 0 8px;}
+h4{color:#ddd;font-size:1.05em;margin:16px 0 6px;}
+h5,h6{color:#d4d4d4;font-size:1em;margin:14px 0 6px;}
 a{color:#4da3ff;}
 code{background:#2d2d2d;padding:1px 5px;border-radius:4px;font-size:0.9em;}
 pre{background:#252525;padding:10px;border-radius:6px;overflow-x:auto;}
@@ -42,8 +44,7 @@ button:hover{background:#3d3d3d;}
 .celebration-banner{position:fixed;top:30%;left:50%;transform:translateX(-50%);font-size:2em;font-weight:700;color:#fff;text-shadow:0 2px 12px #000;z-index:10000;pointer-events:none;transition:opacity 1s;}
 @media (prefers-reduced-motion:reduce){.progress-fill{transition:none;}}
 
-.box h3{margin:10px 0 4px;font-size:0.95em;color:#aaa;}
-.box h3:first-child{margin-top:0;}
+.box :is(h3,h4,h5,h6):first-child{margin-top:0;}
 .summary{font-size:0.85em;color:#999;margin:0 0 6px;}
 .summary.warn{color:#ffbf7f;}
 .summary.ok{color:#7fff7f;}
@@ -75,14 +76,36 @@ button:disabled{opacity:0.4;cursor:default;}
 
 details.collapsible>summary{cursor:pointer;list-style:none;}
 details.collapsible>summary::-webkit-details-marker{display:none;}
-details.collapsible>summary h2{display:flex;align-items:center;gap:8px;}
-details.collapsible>summary h2::before{content:'\25B8';display:inline-block;transition:transform 0.15s;}
-details.collapsible[open]>summary h2::before{transform:rotate(90deg);}
+details.collapsible>summary :is(h2,h3,h4){display:flex;align-items:center;gap:8px;overflow-wrap:anywhere;}
+details.collapsible>summary :is(h2,h3,h4)::before{content:'\25B8';display:inline-block;flex-shrink:0;transition:transform 0.15s;}
+details.collapsible[open]>summary :is(h2,h3,h4)::before{transform:rotate(90deg);}
 .hint{font-size:0.8em;font-weight:400;color:#8a8a8a;}
-@media (prefers-reduced-motion:reduce){details.collapsible>summary h2::before{transition:none;}}
+@media (prefers-reduced-motion:reduce){details.collapsible>summary :is(h2,h3,h4)::before{transition:none;}}
 .badge-select{display:inline-flex;}
 select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:600;appearance:none;-webkit-appearance:none;padding:3px 10px;field-sizing:content;text-align:center;text-align-last:center;}
 select.badge:disabled{opacity:0.6;cursor:progress;}
 select.badge option{background:#2d2d2d;color:#e6e6e6;}
 .edit-button{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;min-height:32px;padding:5px 10px;font:inherit;font-size:0.85em;}
 .edit-button svg{flex-shrink:0;}
+.triage-guide{border-left:3px solid #ffd36b;background:#2b281f;padding:12px 16px;margin:20px 0;border-radius:0 6px 6px 0;}
+.triage-guide h2{margin:0 0 6px;padding:0;border:0;color:#ffd36b;}
+.triage-guide p{margin:0;color:#d4d0c4;}
+.scanner-evidence{overflow-wrap:anywhere;}
+.scanner-evidence pre{overflow-wrap:normal;max-width:100%;box-sizing:border-box;}
+.scanner-evidence h4{overflow-wrap:anywhere;}
+.scanner-overview{padding:14px 16px;background:#252525;border-radius:6px;}
+.scanner-overview h3{margin:0 0 6px;}
+.scanner-overview p{margin:0;color:#aaa;}
+.scanner-toc{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;padding:14px 16px;margin:12px 0;border:1px solid #3a3a3a;border-radius:6px;}
+.scanner-toc .toc-label{margin:0 0 8px;font-weight:600;color:#ccc;}
+.scanner-toc ul{list-style:none;padding:0;margin:0;}
+.scanner-toc li{margin:6px 0;}
+.scanner-toc ul ul{padding-left:14px;border-left:1px solid #444;margin:6px 0;}
+.scanner-toc a{overflow-wrap:anywhere;}
+.scanner-files>section,.scanner-context>section{margin:10px 0;border:1px solid #3a3a3a;border-radius:6px;padding:0 14px 12px;scroll-margin-top:16px;}
+.scanner-files summary h3,.scanner-context summary :is(h3,h4){margin:12px 0 0;flex-wrap:wrap;}
+.scanner-context details>section{margin:10px 0 0 12px;padding-left:12px;border-left:1px solid #444;}
+.scanner-finding{margin-top:16px;}
+.scanner-finding h4{color:#ffbf7f;margin-bottom:8px;}
+.scanner-context .box{margin-top:12px;}
+@media(max-width:600px){.scanner-toc{grid-template-columns:minmax(0,1fr);gap:12px;}}

@@ -3,7 +3,7 @@
   "displayName": "Agendo",
   "icon": "resources/images/agendo-icon.png",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -410,6 +410,12 @@
         "command": "agendo.expandNode",
         "title": "Expand",
         "category": "Agendo"
+      },
+      {
+        "command": "agendo.refreshScanningTodo",
+        "title": "Refresh Imported Todo",
+        "category": "Agendo",
+        "icon": "$(sync)"
       }
     ],
     "menus": {
@@ -621,6 +627,11 @@
           "command": "agendo.openCanvas",
           "when": "(webviewId == 'agendo.board' || webviewId == 'agendo.codeScanning.board') && webviewSection == 'todoCard'",
           "group": "1_open@1"
+        },
+        {
+          "command": "agendo.refreshScanningTodo",
+          "when": "webviewId == 'agendo.codeScanning.board' && webviewSection == 'todoCard'",
+          "group": "5_scanning@1"
         }
       ],
       "view/item/context": [
@@ -703,6 +714,11 @@
           "command": "agendo.deleteTodo",
           "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "4_delete@1"
+        },
+        {
+          "command": "agendo.refreshScanningTodo",
+          "when": "view == agendo.codeScanning && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "5_scanning@1"
         }
       ]
     },
@@ -832,6 +848,7 @@
     "@biomejs/biome": "^2.5.15",
     "@types/mocha": "^10.0.10",
     "@types/node": "26.x",
+    "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.103.0",
     "@vscode/test-electron": "^3.1.0",
     "c8": "^12.0.0",
@@ -839,5 +856,8 @@
     "mocha": "^12.0.3",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "turndown": "^7.2.4"
   }
 }

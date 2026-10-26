@@ -59,4 +59,5 @@ export enum Command {
   ExpandNode = "agendo.expandNode",
   ImportFromClipboard = "agendo.importFromClipboard",
   ImportFromClipboardLoading = "agendo.importFromClipboard.loading",
+  RefreshScanningTodo = "agendo.refreshScanningTodo",
 }

@@ -86,10 +86,23 @@
   // toggle is remembered per todo, so each todo keeps its own layout when you come back to it.
   const currentTodo = document.body.dataset.todoId;
   for (const section of document.querySelectorAll('details.collapsible')) {
-    const key = 'agendo-section-' + currentTodo + '-' + section.dataset.section;
+    const key = 'agendo-section-' + currentTodo + '-' + document.body.dataset.status + '-' + section.dataset.section;
     const saved = sessionStorage.getItem(key);
     if (saved !== null) section.open = saved === '1';
     section.addEventListener('toggle', () => sessionStorage.setItem(key, section.open ? '1' : '0'));
+  }
+
+  for (const link of document.querySelectorAll('[data-section-link]')) {
+    link.addEventListener('click', event => {
+      const target = document.getElementById(link.dataset.sectionLink);
+      if (!target) return;
+      event.preventDefault();
+      for (let section = target; section; section = section.parentElement?.closest('details')) {
+        section.open = true;
+      }
+      target.querySelector('summary')?.focus();
+      target.scrollIntoView({ block: 'start' });
+    });
   }
 
   const logs = document.getElementById('work-log-entries');

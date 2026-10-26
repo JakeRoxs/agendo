@@ -9,7 +9,11 @@ import type { CanvasManager } from "./todos/canvasManager";
 import {
   fetchCodeQL,
   fetchSonarQube,
+  fetchSonarQubeCli,
   importScanningFindings,
+  sonarQubeCliServer,
+  sonarQubeDefaults,
+  sonarQubeEnvironmentToken,
   validateSonarUrl,
 } from "./todos/codeScanningService";
 import {
@@ -21,11 +25,17 @@ import {
 import { buildTodoDigest } from "./todos/digestService";
 import type { FilterService } from "./todos/filterService";
 import type { LinkService } from "./todos/linkService";
+import {
+  type FindingChanges,
+  readScanningProvenance,
+  type ScanningProvenance,
+} from "./todos/scanningSnapshot";
 import type { SkillManager } from "./todos/skillManager";
 import type { StatusService } from "./todos/statusService";
 import { buildCollisionReconcileContext, findTodoCollisions } from "./todos/todoCollisions";
 import {
   buildFileName,
+  getTodoSource,
   matchesTodoScope,
   type ScanningSource,
   TERMINAL_STATUSES,
@@ -156,6 +166,25 @@ export function registerCommands(
       scanning = false;
     }
   });
+  register(Command.RefreshScanningTodo, async (arg: unknown) => {
+    if (scanning) {
+      return;
+    }
+    scanning = true;
+    try {
+      try {
+        await runScanningTodoRefresh(context, services, arg);
+      } finally {
+        await services.repository.refresh();
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Scanner refresh failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      scanning = false;
+    }
+  });
 }
 
 async function runCodeScanningImport(
@@ -204,7 +233,40 @@ async function runCodeScanningImport(
   if (!source) {
     return;
   }
-  const sonar = source.source === "sonarqube" ? await promptSonarQubeSettings(context) : undefined;
+  const grouping = await vscode.window.showQuickPick(
+    [
+      {
+        label: "By file (default)",
+        description: "One todo per affected file",
+        detail: "Keep related changes together, with separate context for each rule.",
+        grouping: "file" as const,
+      },
+      {
+        label: "By rule/type",
+        description: "One todo per rule across files",
+        detail: "Review or resolve the same kind of issue across the project.",
+        grouping: "rule" as const,
+      },
+      {
+        label: "By individual issue",
+        description: "One todo per scanner issue or alert",
+        detail: "Track each finding independently, including multiple findings on the same line.",
+        grouping: "finding" as const,
+      },
+    ],
+    {
+      title: "Group imported findings",
+      placeHolder:
+        "Default: by file. Changing grouping creates separate todos; previous imports remain.",
+    },
+  );
+  if (!grouping) {
+    return;
+  }
+  const sonar =
+    source.source === "sonarqube"
+      ? await promptSonarQubeSettings(context, workspace.uri)
+      : undefined;
   if (source.source === "sonarqube" && !sonar) {
     return;
   }
@@ -212,7 +274,9 @@ async function runCodeScanningImport(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
     async () => {
       const scan = sonar
-        ? await fetchSonarQube(sonar.server, sonar.project, sonar.token)
+        ? sonar.cli
+          ? await fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project)
+          : await fetchSonarQube(sonar.server, sonar.project, sonar.token)
         : await fetchCodeQL(workspace.uri.fsPath);
       const result = await importScanningFindings(
         config,
@@ -220,9 +284,10 @@ async function runCodeScanningImport(
         source.source,
         scan.scope,
         scan.findings,
+        grouping.grouping,
       );
       vscode.window.showInformationMessage(
-        `${source.label}: ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
+        `${source.label} (${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
       );
     },
   );
@@ -230,52 +295,290 @@ async function runCodeScanningImport(
 
 async function promptSonarQubeSettings(
   context: vscode.ExtensionContext,
-): Promise<{ server: string; project: string; token: string } | undefined> {
-  const urlInput = await vscode.window.showInputBox({
-    prompt: "SonarQube server URL",
-    value: get<string>(Settings.SonarQubeUrl) || "",
-    validateInput: (value) => {
-      try {
-        validateSonarUrl(value);
-        return undefined;
-      } catch {
-        return "Enter an HTTPS URL, or HTTP on loopback";
+  workspace: vscode.Uri,
+  fixed?: { server: string; project: string },
+): Promise<{ server: string; project: string; token: string; cli: boolean } | undefined> {
+  const defaults = await sonarQubeDefaults(workspace);
+  const auth = await vscode.window.showQuickPick(
+    [
+      { label: "SonarQube CLI", description: "Reuse sonar auth login (no token entry)", cli: true },
+      {
+        label: "Direct token",
+        description: "Use a saved, environment, or entered token",
+        cli: false,
+      },
+    ],
+    { placeHolder: "Choose SonarQube authentication" },
+  );
+  if (!auth) {
+    return;
+  }
+  let server: string;
+  let project: string;
+  if (fixed) {
+    server = validateSonarUrl(fixed.server).toString();
+    project = fixed.project;
+    if (auth.cli) {
+      const active = await sonarQubeCliServer(workspace.fsPath);
+      if (active !== server) {
+        throw new Error(
+          `SonarQube CLI is connected to a different server (${active}). Log in to ${server} and retry.`,
+        );
       }
-    },
-  });
-  if (!urlInput) {
-    return;
+    }
+  } else {
+    const urlInput = auth.cli
+      ? await sonarQubeCliServer(workspace.fsPath)
+      : await vscode.window.showInputBox({
+          prompt: "SonarQube server URL",
+          value: get<string>(Settings.SonarQubeUrl) || defaults.server,
+          validateInput: (value) => {
+            try {
+              validateSonarUrl(value);
+              return undefined;
+            } catch {
+              return "Enter an HTTPS URL, or HTTP on loopback";
+            }
+          },
+        });
+    if (!urlInput) {
+      return;
+    }
+    server = validateSonarUrl(urlInput).toString();
+    const projectInput = await vscode.window.showInputBox({
+      prompt: `SonarQube project key (${server})`,
+      value: get<string>(Settings.SonarQubeProjectKey) || defaults.project,
+      validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
+    });
+    if (!projectInput) {
+      return;
+    }
+    project = projectInput.trim();
   }
-  const server = validateSonarUrl(urlInput).toString();
-  const projectInput = await vscode.window.showInputBox({
-    prompt: "SonarQube project key",
-    value: get<string>(Settings.SonarQubeProjectKey) || "",
-    validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
-  });
-  if (!projectInput) {
-    return;
+  if (auth.cli) {
+    return { server, project, token: "", cli: true };
   }
-  const project = projectInput.trim();
   const secretKey = `agendo.sonarqube:${server}`;
   const saved = await context.secrets.get(secretKey);
+  const environmentToken = sonarQubeEnvironmentToken(server, defaults);
   const tokenInput = await vscode.window.showInputBox({
     prompt: saved
       ? "SonarQube token (leave blank to reuse saved token)"
-      : "SonarQube user token (stored securely in VS Code)",
+      : environmentToken
+        ? "SonarQube token (leave blank to import environment token into secure storage)"
+        : "SonarQube user token (stored securely in VS Code)",
     password: true,
     ignoreFocusOut: true,
   });
   if (tokenInput === undefined) {
     return;
   }
-  const token = tokenInput.trim() || saved || "";
+  const token = tokenInput.trim() || saved || environmentToken;
   if (!token) {
     return;
   }
   await context.secrets.store(secretKey, token);
   await set(Settings.SonarQubeUrl, server);
   await set(Settings.SonarQubeProjectKey, project);
-  return { server, project, token };
+  return { server, project, token, cli: false };
+}
+
+async function runScanningTodoRefresh(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  arg: unknown,
+): Promise<void> {
+  const { repository } = services;
+  if (!vscode.workspace.isTrusted) {
+    vscode.window.showWarningMessage("Trust this workspace before refreshing scanner todos.");
+    return;
+  }
+  const workspace = services.config.getWorkspaceFolder();
+  if (workspace?.uri.scheme !== "file") {
+    vscode.window.showWarningMessage(
+      "Open a filesystem workspace before refreshing scanner todos.",
+    );
+    return;
+  }
+  const scanningTodos = repository.getTodos().filter((t) => matchesTodoScope(t, "code-scanning"));
+  let todo = resolveRefreshableTodo(arg, repository.getTodos());
+  if (!todo && arg === undefined) {
+    const picked = await vscode.window.showQuickPick(
+      scanningTodos.map((t) => ({
+        label: `${t.id} · ${t.title}`,
+        description: `[${t.status}] ${t.folder}`,
+        todo: t,
+      })),
+      { placeHolder: "Select an imported scanner todo to refresh" },
+    );
+    todo = picked?.todo;
+  }
+  if (!todo) {
+    return;
+  }
+  const expectedSource = getTodoSource(todo);
+  if (!expectedSource) {
+    vscode.window.showErrorMessage(`Todo ${todo.id} is not a scanner-imported todo.`);
+    return;
+  }
+  const content = await vscode.workspace.fs.readFile(todo.uri);
+  const textContent = Buffer.from(content).toString("utf8");
+  let provenance: ScanningProvenance | undefined;
+  try {
+    provenance = readScanningProvenance(textContent);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Cannot refresh ${todo.id}: ${error instanceof Error ? error.message : "invalid provenance"}. Re-import the original scope and grouping instead.`,
+    );
+    return;
+  }
+  if (!provenance) {
+    vscode.window.showErrorMessage(
+      `Todo ${todo.id} has no scanner provenance. Re-import the original scope and grouping to update it.`,
+    );
+    return;
+  }
+  if (provenance.source === "codeql") {
+    await refreshCodeQLTodo(services, todo, provenance);
+  } else {
+    await refreshSonarTodo(context, services, todo, provenance);
+  }
+}
+
+async function refreshCodeQLTodo(
+  services: CommandServices,
+  todo: Todo,
+  provenance: ScanningProvenance,
+): Promise<void> {
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
+    async () => {
+      // biome-ignore lint/style/noNonNullAssertion: workspace validated above
+      const scan = await fetchCodeQL(services.config.getWorkspaceFolder()!.uri.fsPath);
+      if (scan.scope !== provenance.scope) {
+        throw new Error(
+          `Workspace repository is ${scan.scope}, but todo ${todo.id} was imported from ${provenance.scope}.`,
+        );
+      }
+      const targetFindings = scan.findings.filter((f) => {
+        if (provenance.grouping === "finding") return f.id === provenance.target;
+        if (provenance.grouping === "file") return f.path === provenance.target;
+        return f.rule === provenance.target;
+      });
+      if (!targetFindings.length) {
+        vscode.window.showInformationMessage(
+          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
+        );
+        return;
+      }
+      const result = await importScanningFindings(
+        services.config,
+        services.repository,
+        "codeql",
+        scan.scope,
+        scan.findings,
+        provenance.grouping,
+        { target: provenance.target },
+      );
+      showScanningImportResult("CodeQL", todo.id, result);
+    },
+  );
+}
+
+async function refreshSonarTodo(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  todo: Todo,
+  provenance: ScanningProvenance,
+): Promise<void> {
+  const parts = provenance.scope.split("#");
+  const server = validateSonarUrl(parts[0]).toString();
+  const project = parts.slice(1).join("#");
+  // biome-ignore lint/style/noNonNullAssertion: workspace validated above
+  const sonar = await promptSonarQubeSettings(context, services.config.getWorkspaceFolder()!.uri, {
+    server,
+    project,
+  });
+  if (!sonar) {
+    return;
+  }
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
+    async () => {
+      const scan = sonar.cli
+        ? await fetchSonarQubeCli(
+            // biome-ignore lint/style/noNonNullAssertion: workspace validated above
+            services.config.getWorkspaceFolder()!.uri.fsPath,
+            sonar.server,
+            sonar.project,
+          )
+        : await fetchSonarQube(sonar.server, sonar.project, sonar.token);
+      if (scan.scope !== provenance.scope) {
+        throw new Error(
+          `SonarQube scope ${scan.scope} does not match imported scope ${provenance.scope}.`,
+        );
+      }
+      const targetFindings = scan.findings.filter((f) => {
+        if (provenance.grouping === "finding") return f.id === provenance.target;
+        if (provenance.grouping === "file") return f.path === provenance.target;
+        return f.rule === provenance.target;
+      });
+      if (!targetFindings.length) {
+        vscode.window.showInformationMessage(
+          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
+        );
+        return;
+      }
+      const result = await importScanningFindings(
+        services.config,
+        services.repository,
+        "sonarqube",
+        scan.scope,
+        scan.findings,
+        provenance.grouping,
+        { target: provenance.target },
+      );
+      showScanningImportResult("SonarQube", todo.id, result);
+    },
+  );
+}
+
+function showScanningImportResult(
+  source: string,
+  todoId: string,
+  result: {
+    created: number;
+    updated: number;
+    refreshed: number;
+    changes: FindingChanges;
+    reviewRequired: string[];
+  },
+): void {
+  const parts = [
+    `${source} refresh for ${todoId}:`,
+    `${result.created} created, ${result.updated} updated, ${result.refreshed} refreshed`,
+    `findings: ${result.changes.added} added, ${result.changes.changed} changed, ${result.changes.unchanged} unchanged, ${result.changes.notReturned} no longer returned, ${result.changes.uncompared} uncompared`,
+  ];
+  if (result.reviewRequired.length) {
+    parts.push(
+      `Requires review: ${result.reviewRequired.join(", ")}. These are not auto-marked; update status when you've addressed them.`,
+    );
+  }
+  parts.push("Import retrieves current scanner results; it does not trigger a new scan.");
+  vscode.window.showInformationMessage(parts.join("\n"));
+}
+
+function resolveRefreshableTodo(arg: unknown, todos: readonly Todo[]): Todo | undefined {
+  const node = resolveTodo(arg);
+  if (node) {
+    return node;
+  }
+  const matches = resolveBoardTodo(arg, todos);
+  if (matches) {
+    return matches;
+  }
+  vscode.window.showErrorMessage("Could not resolve the todo to refresh.");
+  return undefined;
 }
 
 /**
