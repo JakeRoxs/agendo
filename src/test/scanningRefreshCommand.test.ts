@@ -743,6 +743,12 @@ suite("scanning refresh command", () => {
       restore,
     );
     mock(
+      require("../todos/codeScanningService"),
+      "sonarQubeCliServer",
+      async () => "https://other-server.example.com/",
+      restore,
+    );
+    mock(
       vscode.window,
       "showErrorMessage",
       async (msg: string) => {
