@@ -24,7 +24,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
   "in-progress": "In Progress",
   ready: "Ready",
   backlogged: "Backlog",
-  complete: "Complete",
+  completed: "Completed",
   cancelled: "Cancelled",
 };
 
@@ -33,7 +33,7 @@ const STATUS_ICON: Record<TodoStatus, string> = {
   "in-progress": "pulse",
   ready: "play-circle",
   backlogged: "archive",
-  complete: "pass-filled",
+  completed: "pass-filled",
   cancelled: "circle-slash",
 };
 
@@ -984,7 +984,7 @@ export class BoardViewProvider implements vscode.Disposable {
         [this.keyFor(BOARD_TERMINAL_CARD_LIMIT_KEY)]: "25",
       },
       focus: {
-        [this.keyFor(BOARD_HIDDEN_STATUSES_KEY)]: ["backlogged", "complete", "cancelled"],
+        [this.keyFor(BOARD_HIDDEN_STATUSES_KEY)]: ["backlogged", "completed", "cancelled"],
         [this.keyFor(BOARD_SORT_KEY)]: "priority",
         [this.keyFor(BOARD_HIDE_EMPTY_COLUMNS_KEY)]: true,
         [this.keyFor(BOARD_COLUMN_WIDTH_KEY)]: "wide",

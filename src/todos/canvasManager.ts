@@ -11,6 +11,9 @@ const META_FILE = ".canvas-meta.json";
 
 /** Relative files that make up the bundled canvas. */
 const CANVAS_FILES = [
+  "agent-requests.mjs",
+  "proposals.mjs",
+  "approval.mjs",
   "board.html",
   "board.mjs",
   "copilot-extension.json",

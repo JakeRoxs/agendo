@@ -18,7 +18,7 @@ rule that filename, frontmatter, and folder always stay in sync. Resolve the `.a
 - **Keep filename, frontmatter `status`/`priority`, and folder in sync** for any lifecycle change,
   and route every transition through the Agendo lifecycle. This is the same rule SKILL.md applies
   to every status change.
-- **`complete` only with verified acceptance criteria.** Recommend `complete` only when every
+- **`completed` only with verified acceptance criteria.** Recommend `completed` only when every
   acceptance criterion is demonstrably satisfied and the work is confirmed working. If the boxes
   are stale, include checking them in the proposed update before the status transition.
 - **`ready` when implemented but unconfirmed.** Recommend `ready` when the implementation appears
@@ -37,7 +37,7 @@ as a request to review the **whole todo repository**. The user should not need t
 or repeatedly request the next batch.
 
 - Fully review every non-terminal todo: `pending`, `in-progress`, `ready`, and `backlogged`.
-- Inventory `complete` and `cancelled` todos so they can provide dependency, replacement, and
+- Inventory `completed` and `cancelled` todos so they can provide dependency, replacement, and
   supersession evidence, but do not semantically re-review terminal history unless an integrity
   problem or an explicit user request points to it.
 - A narrower request (one ID, active todos only, backlog only, a group, or an explicit ID range)
@@ -80,13 +80,13 @@ verify that `Reviewed` and `Remaining` partition the original manifest, `Remaini
 each manifest ID was reviewed exactly once. Then merge the batch findings into one report grouped
 by outcome, with one subsection per todo:
 
-- Recommend `complete`
+- Recommend `completed`
 - Recommend `cancelled` / superseded
 - Keep current status
 - Needs investigation
 
 Do not create an `archive` status or folder. In this workflow, "archive old todos" means reconciling
-stale non-terminal records and proposing the existing `complete` or `cancelled` lifecycle transition.
+stale non-terminal records and proposing the existing `completed` or `cancelled` lifecycle transition.
 
 ## Pass 1 — Deterministic integrity checks (no model required)
 
@@ -96,7 +96,7 @@ These checks catch structural problems and run entirely on file contents and fol
   - Filename status token matches the frontmatter `status`.
   - Filename priority token matches the frontmatter `priority`.
   - Folder placement matches the status: active states in `{root}`, `backlogged` in `{backlog}`,
-    `complete` in `{complete}`, `cancelled` in `{cancelled}`.
+    `completed` in `{complete}`, `cancelled` in `{cancelled}`.
     For scanner todos, these locations are relative to their `code-scanning/{source}` root.
 - **IDs**
   - No duplicate issue IDs across the root and every state subfolder.
@@ -105,7 +105,7 @@ These checks catch structural problems and run entirely on file contents and fol
 - **Dependencies**
   - Every ID in `dependencies:` points to a real todo that exists.
   - A todo with dependencies is correctly flagged as blocked when any dependency is not yet
-    terminal (`complete` or `cancelled`).
+    terminal (`completed` or `cancelled`).
   - If a dependency is `cancelled`, flag it: the dependency will not be delivered, so dependent work
     must be reassessed rather than left mechanically blocked.
 - **Structure**
@@ -191,7 +191,7 @@ Example:
 ### 032 · Todo templates — pending (confidence: medium)
 - **What**: Resume Context `Next step` references a completed prerequisite; update to reflect current state.
 - **Evidence**:
-  - {complete}/031-complete-p3-prerequisite.md — Status is `complete`; 032 lists it as a pending dependency
+  - {complete}/031-completed-p3-prerequisite.md — Status is `completed`; 032 lists it as a pending dependency
 - **Recommended edit**: Update Resume Context `Next step` from "wait for 031" to "begin template design"
 - **Action**: approve wording update
 ```

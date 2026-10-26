@@ -894,7 +894,7 @@ suite("native code scanning", () => {
   test("reimport preserves edits, terminal lifecycle, and identity after moves", async () => {
     await importScanningFindings(config, repository, "codeql", "owner/repo", [finding]);
     const status = new StatusService(config, repository);
-    const completed = await status.setStatus(repository.getTodos()[0], "complete");
+    const completed = await status.setStatus(repository.getTodos()[0], "completed");
     assert.ok(completed?.path.includes("/code-scanning/codeql/done/"));
     await repository.refresh();
     const prioritized = await status.setPriority(repository.getTodos()[0], "p3");
@@ -908,7 +908,7 @@ suite("native code scanning", () => {
     ]);
     assertImportCounts(result, { created: 0, updated: 1 });
     const todo = repository.getTodos()[0];
-    assert.strictEqual(todo.status, "complete");
+    assert.strictEqual(todo.status, "completed");
     assert.strictEqual(todo.priority, "p3");
     assert.strictEqual(todo.folder, "code-scanning/codeql/done");
     const content = await readText(todo.uri);
@@ -1316,7 +1316,7 @@ suite("native code scanning", () => {
       assert.match(scan.findings[0].ruleDescription || "", /Explanation/);
       assert.match(scan.findings[0].ruleDescription || "", /const x = <value>;/);
       assert.match(scan.findings[0].ruleDescription || "", /https:\/\/example.com\/rule/);
-      assert.doesNotMatch(scan.findings[0].ruleDescription || "", /alert|<script>/);
+      assert.doesNotMatch(scan.findings[0].ruleDescription || "", /alert|<script>/i);
       if ("htmlDesc" in description)
         assert.match(scan.findings[0].ruleDescription || "", /##### Exceptions/);
     }
@@ -1633,11 +1633,11 @@ suite("native code scanning", () => {
         .href,
     );
     assert.ok(canvas.listTodoSummaries(workspace).has("cql-001"));
-    canvas.setTodoStatus("cql-001", "complete", workspace);
+    canvas.setTodoStatus("cql-001", "completed", workspace);
     assert.ok(
       canvas
         .findTodoFile("cql-001", workspace)
-        .endsWith("code-scanning/codeql/done/cql-001-complete-p2-example.md"),
+        .endsWith("code-scanning/codeql/done/cql-001-completed-p2-example.md"),
     );
     canvas.setTodoStatus("cql-001", "ready", workspace);
     assert.strictEqual(canvas.loadTodo("cql-001", workspace).status, "ready");

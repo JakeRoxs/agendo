@@ -29,7 +29,7 @@ export function renderSettingsPage(info) {
           <dt>Gitignored</dt><dd>${ws.gitignored ? 'Yes' : 'No'}</dd>
           <dt>Backlog folder</dt><dd><code>${escapeHtml(ws.backlogFolder || 'backlog')}</code></dd>
           <dt>Cancelled folder</dt><dd><code>${escapeHtml(ws.cancelledFolder || 'cancelled')}</code></dd>
-          <dt>Complete folder</dt><dd><code>${escapeHtml(ws.completeFolder || 'complete')}</code></dd>
+          <dt>Complete folder</dt><dd><code>${escapeHtml(ws.completeFolder || 'completed')}</code></dd>
           <dt>Code scanning</dt><dd>${ws.codeScanningEnabled ? 'Enabled' : 'Disabled'}</dd>
         </dl>
       </section>`;

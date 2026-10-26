@@ -134,14 +134,14 @@ suite("Shared workspace host boundary", () => {
       },
     });
     for (const [route, body] of [
-      ["/status", { status: "complete" }],
+      ["/status", { status: "completed" }],
       ["/priority", { priority: "p1" }],
       ["/group", { group: "other" }],
     ] as const) {
       assert.strictEqual((await post(entry, route, body)).status, 200);
     }
     assert.deepStrictEqual(calls, [
-      ["status", "001", "complete"],
+      ["status", "001", "completed"],
       ["priority", "001", "p1"],
       ["group", "001", "other"],
     ]);
@@ -158,7 +158,7 @@ suite("Shared workspace host boundary", () => {
       },
     });
     assert.strictEqual((await post(entry, "/toggle", { index: 0, met: true })).status, 500);
-    assert.strictEqual((await post(entry, "/status", { status: "complete" })).status, 500);
+    assert.strictEqual((await post(entry, "/status", { status: "completed" })).status, 500);
     assert.match(fs.readFileSync(todoFile(), "utf8"), /- \[ \] Done/);
     assert.strictEqual((await post(entry, "/open", null)).status, 400);
   });

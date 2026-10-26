@@ -4,6 +4,9 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CanvasError } from './errors.mjs';
+import { buildAgentPrompt } from './agent-requests.mjs';
+import { createProposalStore } from './proposals.mjs';
+import { createApprovalController } from './approval.mjs';
 
 import { renderCanvas, renderGroupCanvas } from './page.mjs';
 import { renderBoardCanvas } from './board.mjs';
@@ -165,6 +168,32 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
   const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
   const hasBoard = typeof actions.getBoardSnapshot === 'function' && typeof actions.handleBoardMessage === 'function';
   entry.hasBoard = hasBoard;
+  entry.proposals = createProposalStore(workspaceRoot);
+  entry.approval = createApprovalController({
+    proposals: entry.proposals, workspaceRoot, getView: () => entry.view,
+    assertWritable: actions.assertWritable
+  });
+  entry.resetApproval = () => entry.approval.setPolicy({ mode: 'manual' });
+  entry.disposeProposals = () => entry.approval.dispose();
+  const proposalVersion = () => JSON.stringify({
+    policy: entry.approval.getPolicy(),
+    proposals: entry.todoId ? entry.approval.list(entry.todoId).map(proposal =>
+      [proposal.id, proposal.state, proposal.changes.map(change => change.state), proposal.approval]) : []
+  });
+  let agentPreview;
+  const agentState = () => actions.getAgentState?.() ?? { supported: false, status: 'unavailable' };
+  const agentSelection = () => ({ view: entry.view, filters: entry.filters });
+  const agentPrompt = intent => {
+    let todos;
+    if (entry.view?.kind === 'todo') todos = [loadTodo(entry.todoId, workspaceRoot)];
+    else if (entry.view?.kind === 'group') {
+      todos = loadGroupTodos(entry.groupName, workspaceRoot).filter(todo =>
+        (!entry.filters.status || todo.status === entry.filters.status) &&
+        (!entry.filters.priority || todo.priority === entry.filters.priority) &&
+        (!entry.filters.group || todo.group === entry.filters.group));
+    } else throw new CanvasError('unsupported', 'Select a todo or group before requesting agent help');
+    return buildAgentPrompt({ intent, todos, selection: agentSelection() });
+  };
   const boardScope = () => {
     if (!hasBoard || entry.view?.kind !== 'board') throw new CanvasError('unsupported', 'Board view is not available in this host');
     return entry.view.scope;
@@ -183,7 +212,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
       if (req.method === 'GET' && ASSETS[path]) {
         send(res, 200, ASSETS[path].type, readFileSync(join(assetsDir, ASSETS[path].file)));
       } else if (req.method === 'GET' && path === '/version') {
-        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${JSON.stringify(entry.filters)}|${todoFingerprint(workspaceRoot)}`);
+        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${JSON.stringify(entry.filters)}|${todoFingerprint(workspaceRoot)}|${proposalVersion()}`);
       } else if (req.method === 'GET' && path === '/board-snapshot') {
         const snapshot = await actions.getBoardSnapshot(boardScope());
         send(res, 200, 'application/json', JSON.stringify(snapshot));
@@ -201,7 +230,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         if (!actions.handleSettingsAction) throw new CanvasError('unsupported', 'Settings actions are not available in this host');
         const result = await actions.handleSettingsAction(payload);
         send(res, 200, 'application/json', JSON.stringify(result ?? { success: true }));
-      } else if (req.method === 'POST' && ['/toggle', '/open', '/nav', '/status', '/priority', '/group', '/edit', '/return-board', '/board-message', '/context'].includes(path)) {
+      } else if (req.method === 'POST' && ['/toggle', '/open', '/nav', '/status', '/priority', '/group', '/edit', '/return-board', '/board-message', '/context', '/agent/preview', '/agent/send', '/agent/state', '/report/preview', '/report/generate', '/proposals/create', '/proposals/list', '/proposals/apply', '/proposals/reject', '/proposals/policy'].includes(path)) {
         // The custom header forces a CORS preflight, so other web pages cannot trigger writes.
         if (req.headers['x-agendo-canvas'] !== '1') {
           send(res, 403, 'text/plain', 'Forbidden');
@@ -209,7 +238,106 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         }
         const payload = JSON.parse(await readBody(req));
         if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new CanvasError('invalid_input', 'Expected an object');
-        if (path === '/board-message') {
+        if (path.startsWith('/proposals/')) {
+          // Revoking automation must remain available even if navigation made the visible page stale.
+          if (path === '/proposals/policy' && payload.policy?.mode === 'manual') {
+            entry.approval.setPolicy(payload.policy);
+            return send(res, 200, 'application/json', JSON.stringify(entry.approval.getPolicy()));
+          }
+          const todoId = assertTodoId(entry.todoId);
+          if (viewKey(normalizeView(payload.view)) !== viewKey(entry.view)) throw new CanvasError('stale_selection', 'Select the proposal target again before reviewing changes');
+          let result;
+          if (path === '/proposals/policy') {
+            entry.approval.setPolicy(payload.policy);
+            result = entry.approval.getPolicy();
+          } else if (path === '/proposals/create') {
+            result = await entry.approval.create({ todoId, changes: payload.changes, requestId: payload.requestId });
+          } else if (path === '/proposals/list') {
+            result = { proposals: entry.approval.list(todoId), canApply: typeof actions.assertWritable === 'function', policy: entry.approval.getPolicy() };
+          } else {
+            if (!entry.proposals.list(todoId).some(proposal => proposal.id === payload.proposalId)) throw new CanvasError('invalid_input', 'No proposal for this selection');
+            if (path === '/proposals/reject') result = entry.proposals.reject(payload.proposalId, payload.changeIds);
+            else result = await entry.proposals.apply(payload.proposalId, payload.changeIds, {
+              assertWritable: typeof actions.assertWritable === 'function' ? async id => {
+                await actions.assertWritable(id);
+                if (entry.todoId !== todoId) throw new CanvasError('stale_selection', 'The selected todo changed before application');
+              } : undefined
+            });
+            entry.approval.noteManual(payload.proposalId, path === '/proposals/reject' ? 'rejected' : 'applied');
+          }
+          return send(res, 200, 'application/json', JSON.stringify(result));
+        } else if (path === '/agent/state') {
+          return send(res, 200, 'application/json', JSON.stringify(agentState()));
+        } else if (path === '/agent/preview') {
+          if (agentPreview?.status === 'sending') throw new CanvasError('busy', 'A request is already being submitted');
+          if (viewKey(normalizeView(payload.view)) !== viewKey(entry.view)) throw new CanvasError('stale_selection', 'The selection changed. Reload and preview again');
+          const prompt = agentPrompt(payload.intent);
+          agentPreview = {
+            requestId: randomBytes(24).toString('hex'), intent: payload.intent, prompt,
+            selection: JSON.stringify(agentSelection()), createdAt: Date.now(), status: 'preview'
+          };
+          return send(res, 200, 'application/json', JSON.stringify({
+            requestId: agentPreview.requestId, prompt, state: agentState()
+          }));
+        } else if (path === '/agent/send') {
+          const preview = agentPreview;
+          if (!preview || payload.requestId !== preview.requestId) throw new CanvasError('invalid_input', 'Preview this request before sending');
+          if (preview.result) return send(res, 200, 'application/json', JSON.stringify(preview.result));
+          if (preview.status === 'sending') throw new CanvasError('busy', 'This request is already being submitted');
+          if (Date.now() - preview.createdAt > 300_000 || preview.selection !== JSON.stringify(agentSelection()) || preview.prompt !== agentPrompt(preview.intent)) {
+            throw new CanvasError('stale_selection', 'The selection or evidence changed. Preview again before sending');
+          }
+          if (typeof actions.sendAgentRequest !== 'function') return send(res, 200, 'application/json', JSON.stringify({
+            success: false, reason: 'unsupported', message: 'Direct sending is unavailable in this host. Use Copy Request.'
+          }));
+          preview.status = 'sending';
+          try {
+            const result = await actions.sendAgentRequest({ prompt: preview.prompt });
+            // Only a confirmed admission consumes the token; busy/failed sends can be retried explicitly.
+            if (result.success) preview.result = result;
+            return send(res, 200, 'application/json', JSON.stringify(result));
+          } finally {
+            preview.status = 'preview';
+          }
+        } else if (path === '/report/preview') {
+          // Build a report packet for the current selection (group/filter or period)
+          const view = normalizeView(payload?.view ?? entry.view);
+          let reportTodos = [];
+          if (view.kind === 'group' && view.groupName) {
+            const members = loadGroupTodos(view.groupName, workspaceRoot, entry.filters);
+            reportTodos = members.filter(t => t.status === 'completed');
+          } else if (view.kind === 'board' && view.scope) {
+            const summaries = listTodoSummaries(workspaceRoot);
+            reportTodos = summaries.filter(t => t.status === 'completed' && t.group === view.scope);
+          } else if (view.kind === 'todo' && view.todoId) {
+            const todo = loadTodo(view.todoId, workspaceRoot);
+            reportTodos = todo.status === 'completed' ? [todo] : [];
+          }
+          const matched = reportTodos.length;
+          const included = reportTodos.slice(0, 25);
+          const omitted = matched - included.length;
+          const prompt = buildAgentPrompt({
+            intent: 'report',
+            todos: included,
+            selection: {
+              view: { kind: view.kind, todoId: view.todoId, groupName: view.groupName },
+              filters: entry.filters
+            }
+          });
+          return send(res, 200, 'application/json', JSON.stringify({
+            matched, included: included.length, omitted, prompt, state: agentState()
+          }));
+        } else if (path === '/report/generate') {
+          const preview = payload;
+          if (!preview?.prompt || typeof preview.prompt !== 'string') {
+            throw new CanvasError('invalid_input', 'Report preview required before generation');
+          }
+          if (typeof actions.sendAgentRequest !== 'function') return send(res, 200, 'application/json', JSON.stringify({
+            success: false, reason: 'unsupported', message: 'Direct sending is unavailable in this host. Use Copy Request.'
+          }));
+          const result = await actions.sendAgentRequest({ prompt: preview.prompt });
+          return send(res, 200, 'application/json', JSON.stringify(result));
+        } else if (path === '/board-message') {
           const scope = boardScope();
           if (typeof payload.type !== 'string') throw new CanvasError('invalid_input', 'Expected a typed board message');
           await actions.handleBoardMessage(scope, payload);
@@ -302,7 +430,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           }
           const nav = buildNav(entry, workspaceRoot);
           if (!actions.returnToBoard && !hasBoard) nav.returnTo = undefined;
-          html = renderCanvas(todo, relations, nav, actions, groups);
+          html = renderCanvas(todo, relations, nav, actions, groups, todo ? entry.approval.list(todo.id) : [], entry.approval.getPolicy());
         }
         send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': CSP });
       } else {
@@ -320,6 +448,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
     }
   });
 
+  entry.server.once('close', entry.disposeProposals);
   return entry;
 }
 

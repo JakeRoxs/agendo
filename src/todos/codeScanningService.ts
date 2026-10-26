@@ -802,7 +802,7 @@ export async function importScanningFindings(
       JSON.stringify({ ...previous, retrievedAt: "" }) !==
         JSON.stringify({ ...snapshot, retrievedAt: "" });
     const review = Boolean(
-      todo && ["ready", "complete"].includes(todo.status) && (changed || alerts.length),
+      todo && ["ready", "completed"].includes(todo.status) && (changed || alerts.length),
     );
     if (review && todo) result.reviewRequired.push(todo.id);
     const rules = new Map(snapshot.rules.map((rule) => [rule.id, rule]));

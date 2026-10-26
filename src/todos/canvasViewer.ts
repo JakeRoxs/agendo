@@ -14,6 +14,8 @@ const CANVAS_NAME = "agendo-work-session";
 interface InstanceServer {
   url: string;
   server: Server;
+  resetApproval?: () => void;
+  disposeProposals?: () => void;
 }
 
 interface CanvasServerModule {
@@ -103,30 +105,65 @@ export class CanvasViewer implements vscode.Disposable {
   }
 
   private show(url: string): void {
-    if (!this.panel) {
-      this.panel = vscode.window.createWebviewPanel(
-        "agendo.workSessionCanvas",
-        "Agendo",
-        vscode.ViewColumn.Active,
-        { enableScripts: true, retainContextWhenHidden: true },
-      );
-      this.panel.iconPath = {
-        light: vscode.Uri.joinPath(this.extensionUri, "resources", "images", "agendo-icon.svg"),
-        dark: vscode.Uri.joinPath(this.extensionUri, "resources", "images", "agendo-icon.svg"),
-      };
-      this.panel.onDidDispose(() => {
+    const html = this.html(url);
+    if (this.panel && this.tryShow(this.panel, html)) {
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel(
+      "agendo.workSessionCanvas",
+      "Agendo",
+      vscode.ViewColumn.Active,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    this.panel = panel;
+    panel.iconPath = {
+      light: vscode.Uri.joinPath(this.extensionUri, "resources", "images", "agendo-icon.svg"),
+      dark: vscode.Uri.joinPath(this.extensionUri, "resources", "images", "agendo-icon.svg"),
+    };
+    panel.onDidDispose(() => {
+      if (this.panel === panel) {
         this.panel = undefined;
-      });
-      this.panel.webview.onDidReceiveMessage((message: unknown) => {
+        this.entry?.resetApproval?.();
+      }
+    });
+    panel.webview.onDidReceiveMessage((message: unknown) => {
+      if (typeof message !== "object" || !message) return;
+      const msg = message as { type?: string; url?: string; text?: string };
+      if (msg.type === "openExternal") {
         const url = externalHttpsUrl(message);
         if (url) {
           void vscode.env.openExternal(vscode.Uri.parse(url));
         }
-      });
+      } else if (msg.type === "copyToClipboard" && typeof msg.text === "string") {
+        void vscode.env.clipboard.writeText(msg.text).then(
+          () => {
+            this.panel?.webview.postMessage({ type: "clipboardResult", success: true });
+          },
+          (err) => {
+            out`Canvas clipboard copy failed: ${err}`;
+            this.panel?.webview.postMessage({ type: "clipboardResult", success: false });
+          },
+        );
+      }
+    });
+    this.showPanel(panel, html);
+  }
+
+  private tryShow(panel: vscode.WebviewPanel, html: string): boolean {
+    try {
+      this.showPanel(panel, html);
+      return true;
+    } catch (error) {
+      if (!isDisposedWebviewError(error)) throw error;
+      if (this.panel === panel) this.panel = undefined;
+      return false;
     }
-    this.panel.title = "Agendo";
-    this.panel.webview.html = this.html(url);
-    this.panel.reveal(undefined, false);
+  }
+
+  private showPanel(panel: vscode.WebviewPanel, html: string): void {
+    panel.title = "Agendo";
+    panel.webview.html = html;
+    panel.reveal(undefined, false);
   }
 
   // The cache-busting query makes an already-open panel reload to the newly selected todo at once.
@@ -143,11 +180,15 @@ export class CanvasViewer implements vscode.Disposable {
 const vscode = acquireVsCodeApi();
 const frame = document.querySelector('iframe');
 window.addEventListener('message', event => {
-  if (event.source !== frame.contentWindow || event.data?.type !== 'agendo:openExternal') return;
-  try {
-    const url = new URL(event.data.url);
-    if (url.protocol === 'https:') vscode.postMessage({ type: 'openExternal', url: url.href });
-  } catch {}
+  if (event.source !== frame.contentWindow) return;
+  if (event.data?.type === 'agendo:openExternal') {
+    try {
+      const url = new URL(event.data.url);
+      if (url.protocol === 'https:') vscode.postMessage({ type: 'openExternal', url: url.href });
+    } catch {}
+  } else if (event.data?.type === 'agendo:copyToClipboard') {
+    vscode.postMessage({ type: 'copyToClipboard', text: event.data.text });
+  }
 });
 </script></body></html>`;
   }
@@ -156,14 +197,21 @@ window.addEventListener('message', event => {
     const entry = this.entry;
     this.entry = undefined;
     if (entry) {
+      entry.disposeProposals?.();
       await new Promise<void>((resolve) => entry.server.close(() => resolve()));
     }
   }
 
   dispose(): void {
-    this.panel?.dispose();
+    const panel = this.panel;
+    this.panel = undefined;
+    panel?.dispose();
     void this.stopServer();
   }
+}
+
+function isDisposedWebviewError(error: unknown): boolean {
+  return String(error).toLowerCase().includes("webview is disposed");
 }
 
 function externalHttpsUrl(value: unknown): string | undefined {

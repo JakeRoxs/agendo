@@ -23,7 +23,7 @@ const STATUS_ORDER: TodoStatus[] = [
   "in-progress",
   "pending",
   "backlogged",
-  "complete",
+  "completed",
   "cancelled",
 ];
 
@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
   "in-progress": "In Progress",
   pending: "Pending",
   backlogged: "Backlogged",
-  complete: "Complete",
+  completed: "Completed",
   cancelled: "Cancelled",
 };
 
@@ -41,7 +41,7 @@ const STATUS_ICON: Record<TodoStatus, string> = {
   "in-progress": "pulse",
   pending: "circle-outline",
   backlogged: "archive",
-  complete: "pass-filled",
+  completed: "pass-filled",
   cancelled: "circle-slash",
 };
 

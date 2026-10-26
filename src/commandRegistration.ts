@@ -8,6 +8,7 @@ import { get, Settings, set, setDefault } from "./configuration";
 import { buildAccomplishmentsPacket } from "./todos/accomplishmentsService";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
+import type { CanvasViewer } from "./todos/canvasViewer";
 import {
   fetchCodeQL,
   fetchCodeQLBranches,
@@ -71,6 +72,7 @@ export interface CommandServices {
   links: LinkService;
   skill: SkillManager;
   canvas: CanvasManager;
+  canvasViewer: CanvasViewer;
   busy: BusyIndicator;
   treeProvider: TodoTreeProvider;
   boardViewProvider: BoardViewProvider;
@@ -712,7 +714,13 @@ function registerBoardCommands(
     async () => {
       await busy.run(
         "Opening board…",
-        async () => services.boardViewProvider.open(),
+        async () => {
+          const root = services.config.getWorkspaceFolder()?.uri.fsPath;
+          if (!root) {
+            return;
+          }
+          await services.canvasViewer.open(root, { kind: "board", scope });
+        },
         `${prefix}.openingBoard`,
       );
     },

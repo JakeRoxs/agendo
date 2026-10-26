@@ -48,7 +48,7 @@ suite("todo ID collision diagnostics", () => {
       cancelled,
       cql,
       sq,
-      fixture("sq-003", "complete", "code-scanning/sonarqube/complete"),
+      fixture("sq-003", "completed", "code-scanning/sonarqube/complete"),
     ]);
     assert.strictEqual(collisions.length, 2);
     assert.deepStrictEqual(collisions.map((item) => item.source).sort(), ["sonarqube", "todo"]);
@@ -142,7 +142,7 @@ suite("todo ID collision diagnostics", () => {
       active,
       cancelled,
       fixture("sq-003", "pending", "code-scanning/sonarqube"),
-      fixture("sq-003", "complete", "code-scanning/sonarqube/complete"),
+      fixture("sq-003", "completed", "code-scanning/sonarqube/complete"),
     ];
     Object.defineProperty(vscode.commands, "registerCommand", {
       configurable: true,
@@ -328,7 +328,7 @@ suite("todo ID collision diagnostics", () => {
     try {
       await (
         board as unknown as { handleMessage: (message: unknown) => Promise<void> }
-      ).handleMessage({ type: "setStatus", todoId: "003", status: "complete" });
+      ).handleMessage({ type: "setStatus", todoId: "003", status: "completed" });
       assert.strictEqual(mutations, 0);
       assert.ok(warnings[0].includes("Duplicate todo ID 003"));
     } finally {

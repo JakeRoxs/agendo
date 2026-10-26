@@ -166,13 +166,39 @@
     location.href = '/settings';
   });
 
+  let clipboardResolve = null;
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'clipboardResult') {
+        clipboardResolve?.(event.data.success);
+        clipboardResolve = null;
+      }
+    });
+  }
+
   async function copyText(text) {
+    // Try VS Code extension host clipboard first (reliable in webviews)
+    if (typeof window !== 'undefined' && window.parent) {
+      try {
+        const success = await new Promise((resolve) => {
+          clipboardResolve = resolve;
+          window.parent.postMessage({ type: 'agendo:copyToClipboard', text }, '*');
+          // Fallback timer: if no response in 500ms, assume unsupported
+          setTimeout(() => { resolve(false); }, 500);
+        });
+        if (success) return true;
+      } catch { /* fall through to browser APIs */ }
+    }
+
+    // Browser clipboard API
     try {
       await navigator.clipboard.writeText(text);
       return true;
     } catch {
       // Webviews can deny the async clipboard API; try the legacy path next.
     }
+
+    // Legacy execCommand fallback
     const area = document.createElement('textarea');
     area.value = text;
     area.setAttribute('readonly', '');
@@ -241,6 +267,237 @@
       button.disabled = false;
     }
   });
+
+  const agentDialog = document.querySelector('[data-agent-dialog]');
+  const agentMessage = document.querySelector('[data-agent-message]');
+  const agentPrompt = document.querySelector('[data-agent-prompt]');
+  const agentSend = document.querySelector('[data-agent-send]');
+  const agentSession = document.querySelector('[data-agent-session]');
+  let agentRequestId;
+  let agentSubmitted = false;
+  let agentSending = false;
+  let agentStale = false;
+  const requestJson = async (path, payload) => {
+    const res = await post(path, payload);
+    if (!res.ok) throw new Error(await res.text());
+    return res.json();
+  };
+  const showAgentState = state => {
+    agentSend.disabled = agentStale || agentSubmitted || agentSending || !state.supported || ['busy', 'sending', 'queued', 'closed'].includes(state.status);
+    agentSession.textContent = !state.supported
+      ? 'Direct sending is unavailable in this host. Use Copy Request with your preferred agent.'
+      : state.message || `Owning session: ${state.status}. Sending admits a request, not proof that work started or finished.`;
+  };
+  document.querySelector('[data-agent-preview]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const view = document.body.dataset.todoId
+        ? { kind: 'todo', todoId: document.body.dataset.todoId }
+        : { kind: 'group', groupName: document.body.dataset.group };
+      const preview = await requestJson('/agent/preview', { view, intent: document.querySelector('[data-agent-intent]').value });
+      agentRequestId = preview.requestId;
+      agentSubmitted = false;
+      agentStale = false;
+      agentMessage.textContent = '';
+      agentPrompt.value = preview.prompt;
+      showAgentState(preview.state);
+      agentDialog.showModal();
+    } catch (err) {
+      message.textContent = 'Could not preview request: ' + err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+  agentSend?.addEventListener('click', async () => {
+    if (!agentRequestId || agentSending || agentSubmitted) return;
+    agentSending = true;
+    agentSend.disabled = true;
+    agentMessage.textContent = 'Submitting request. Agent work has not been confirmed.';
+    try {
+      const result = await requestJson('/agent/send', { requestId: agentRequestId });
+      agentSubmitted = result.success === true;
+      agentMessage.textContent = result.message;
+    } catch (err) {
+      agentMessage.textContent = 'Could not submit request: ' + err.message + '. Preview again if the selection changed.';
+    } finally {
+      agentSending = false;
+      agentSend.disabled = agentStale || agentSubmitted;
+    }
+  });
+  document.querySelector('[data-agent-copy]')?.addEventListener('click', async () => {
+    agentMessage.textContent = await copyText(agentPrompt.value)
+      ? 'Request copied. Paste it into your chosen agent session.'
+      : 'Clipboard unavailable. Select the request text above and copy it manually.';
+    if (agentMessage.textContent.startsWith('Clipboard')) {
+      agentPrompt.focus();
+      agentPrompt.select();
+    }
+  });
+  document.querySelector('[data-agent-close]')?.addEventListener('click', () => agentDialog.close());
+
+  const reportDialog = document.querySelector('[data-report-dialog]');
+  const reportPrompt = document.querySelector('[data-report-prompt]');
+  const reportSummary = document.querySelector('[data-report-summary]');
+  const reportMessage = document.querySelector('[data-report-message]');
+  const reportGenerate = document.querySelector('[data-report-generate]');
+  let reportPreviewData = null;
+  let reportGenerating = false;
+
+  document.querySelector('[data-report-preview]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const view = document.body.dataset.todoId
+        ? { kind: 'todo', todoId: document.body.dataset.todoId }
+        : { kind: 'group', groupName: document.body.dataset.group };
+      const preview = await requestJson('/report/preview', { view });
+      reportPreviewData = preview;
+      reportSummary.textContent = `Matched: ${preview.matched} completed todo(s) | Included: ${preview.included} | Omitted: ${preview.omitted}`;
+      reportPrompt.value = preview.prompt;
+      reportMessage.textContent = '';
+      reportGenerate.disabled = !preview.matched;
+      reportDialog.showModal();
+    } catch (err) {
+      message.textContent = 'Could not preview report: ' + err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  reportGenerate?.addEventListener('click', async () => {
+    if (!reportPreviewData || reportGenerating) return;
+    reportGenerating = true;
+    reportGenerate.disabled = true;
+    reportMessage.textContent = 'Generating report. The agent will respond in the owning session.';
+    try {
+      const result = await requestJson('/report/generate', { prompt: reportPreviewData.prompt });
+      reportMessage.textContent = result.message;
+    } catch (err) {
+      reportMessage.textContent = 'Could not generate report: ' + err.message;
+    } finally {
+      reportGenerating = false;
+      reportGenerate.disabled = true;
+    }
+  });
+
+  document.querySelector('[data-report-copy]')?.addEventListener('click', async () => {
+    if (!reportPreviewData) return;
+    const ok = await copyText(reportPreviewData.prompt);
+    reportMessage.textContent = ok
+      ? 'Report request copied. Paste it into your chosen agent session.'
+      : 'Clipboard unavailable. Select the request text above and copy it manually.';
+    if (!ok) { reportPrompt.focus(); reportPrompt.select(); }
+  });
+
+  document.querySelector('[data-report-close]')?.addEventListener('click', () => reportDialog?.close());
+
+  const proposalView = () => ({ kind: 'todo', todoId: document.body.dataset.todoId });
+  const setApproval = async policy => {
+    await requestJson('/proposals/policy', { view: proposalView(), policy });
+    location.reload();
+  };
+  for (const button of document.querySelectorAll('[data-approval-set], [data-approval-pause]')) {
+    button.addEventListener('click', async () => {
+      button.disabled = true;
+      try {
+        const choice = button.hasAttribute('data-approval-pause') ? 'manual' : document.querySelector('[data-approval-choice]').value;
+        await setApproval(choice === 'manual' ? { mode: 'manual' } : { mode: 'auto', scope: choice === 'auto-todo' ? 'todo' : 'workspace' });
+      } catch (err) {
+        message.textContent = 'Could not change approval mode: ' + err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
+  let proposalSubmission;
+  document.querySelector('[data-proposal-import]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {
+      const text = document.querySelector('[data-proposal-input]').value;
+      const input = JSON.parse(text);
+      if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Expected an object containing changes');
+      if (!proposalSubmission || proposalSubmission.text !== text) {
+        proposalSubmission = { text, requestId: [...crypto.getRandomValues(new Uint8Array(16))].map(byte => byte.toString(16).padStart(2, '0')).join('') };
+        try {
+          const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+          const fingerprint = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+          const key = 'agendo-proposal-retry-' + document.body.dataset.todoId;
+          const cached = JSON.parse(sessionStorage.getItem(key) || 'null');
+          if (cached?.fingerprint === fingerprint && /^[a-f0-9]{32}$/.test(cached.requestId)) proposalSubmission.requestId = cached.requestId;
+          // Cache only a digest and replay ID, never proposal evidence or approval authority.
+          sessionStorage.setItem(key, JSON.stringify({ fingerprint, requestId: proposalSubmission.requestId }));
+          proposalSubmission.retryKey = key;
+        } catch { /* In-memory retry protection still works when browser storage is unavailable. */ }
+      }
+      await requestJson('/proposals/create', { view: proposalView(), changes: input.changes, requestId: proposalSubmission.requestId });
+      try { if (proposalSubmission.retryKey) sessionStorage.removeItem(proposalSubmission.retryKey); } catch { /* ignore unavailable storage */ }
+      location.reload();
+    } catch (err) {
+      message.textContent = 'Could not submit proposal: ' + err.message + '. Check the change record before retrying.';
+    } finally {
+      button.disabled = false;
+    }
+  });
+  for (const card of document.querySelectorAll('[data-proposal-id]')) {
+    const panel = card.closest('[data-proposals]');
+    const apply = card.querySelector('[data-proposal-apply]');
+    const reject = card.querySelector('[data-proposal-reject]');
+    const confirmation = card.querySelector('[data-proposal-confirm]');
+    const status = card.querySelector('[data-proposal-message]');
+    const selected = () => [...card.querySelectorAll('[data-proposal-change]:checked:not(:disabled)')].map(box => box.dataset.proposalChange);
+    let pending = false;
+    const updateButtons = () => {
+      apply.disabled = pending || panel.dataset.canApply !== 'true' || !confirmation?.checked || !selected().length;
+      reject.disabled = pending || !selected().length;
+    };
+    card.addEventListener('change', updateButtons);
+    updateButtons();
+    for (const [button, path] of [[apply, '/proposals/apply'], [reject, '/proposals/reject']]) {
+      button.addEventListener('click', async () => {
+        if (pending || button.disabled) return;
+        const changeIds = selected();
+        pending = true;
+        updateButtons();
+        status.textContent = path.endsWith('apply') ? 'Applying only the selected checkbox changes...' : 'Rejecting only the selected changes...';
+        try {
+          await requestJson(path, { view: proposalView(), proposalId: card.dataset.proposalId, changeIds });
+          location.reload();
+        } catch (err) {
+          status.textContent = 'Could not process proposal: ' + err.message + '. Inspect the current todo before retrying.';
+          if (confirmation) confirmation.checked = false;
+        } finally {
+          pending = false;
+          updateButtons();
+        }
+      });
+    }
+    card.querySelector('[data-proposal-copy]')?.addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await requestJson('/proposals/list', { view: proposalView() });
+        const proposal = result.proposals.find(item => item.id === card.dataset.proposalId);
+        if (!proposal) throw new Error('Proposal is no longer available');
+        const text = [
+          `Proposal for ${proposal.todoId}: ${proposal.title} (${proposal.state})`,
+          `Workspace: ${proposal.workspaceRoot}`, `File: ${proposal.revision.path}`, `Revision: ${proposal.revision.content}`,
+          `Approval: ${proposal.approval?.mode ?? 'manual'} / ${proposal.approval?.outcome ?? proposal.state}`,
+          proposal.approval?.message ?? '',
+          proposal.approval?.manualAction ? `Later manual decision: ${proposal.approval.manualAction}` : '',
+          'This record is not authorization to reapply changes. Applied entries are history. Local progress does not establish remote verification.',
+          ...proposal.changes.map(change => `\nCriterion ${change.criterionIndex + 1}: ${change.text}\n${change.before ? 'Met' : 'Not met'} -> ${change.after ? 'Met' : 'Not met'} (${change.state})\nRationale: ${change.rationale}\nEvidence: ${change.evidence}`)
+        ].join('\n');
+        if (await copyText(text)) status.textContent = 'Change record copied. Applied entries should not be repeated.';
+        else showManualCopy(text);
+      } catch (err) {
+        status.textContent = 'Could not copy proposal: ' + err.message;
+      } finally {
+        button.disabled = false;
+      }
+    });
+  }
 
   // Recent views dropdown
   const titleButton = document.querySelector('[data-toggle-recent]');
@@ -390,22 +647,56 @@
   const key = 'agendo-last-' + todoId;
   const last = JSON.parse(sessionStorage.getItem(key) || 'null');
   if (last) {
-    if (status === 'complete' && last.status !== 'complete') {
+    if (status === 'completed' && last.status !== 'completed') {
       // Only celebrate completion if criteria haven't already hit 100 (which would
       // have fired its own celebration on the previous load).
       if (last.percent < 100) celebrate('Todo complete! 🎉');
-    } else if (Number(percent) === 100 && last.percent < 100 && status !== 'complete') {
+    } else if (Number(percent) === 100 && last.percent < 100 && status !== 'completed') {
       celebrate('All criteria met! ✅');
     }
   }
   sessionStorage.setItem(key, JSON.stringify({ status, percent: Number(percent) }));
 
+  const activityEl = document.querySelector('[data-agent-activity]');
+  const activityDot = document.querySelector('[data-agent-dot]');
+  const activityText = document.querySelector('[data-agent-status-text]');
+
+  function updateActivityIndicator(state) {
+    if (!activityEl || !activityDot || !activityText) return;
+    const statusMap = {
+      'unknown': { text: 'Session status unknown', class: '' },
+      'queued': { text: 'Request admitted, awaiting agent', class: 'queued' },
+      'busy': { text: 'Agent is working', class: 'busy' },
+      'idle': { text: 'Agent is idle', class: 'idle' },
+      'sending': { text: 'Sending request', class: 'sending' },
+      'failed': { text: 'Session error occurred', class: 'failed' },
+      'closed': { text: 'Session closed', class: 'closed' },
+      'disconnected': { text: 'Disconnected from session', class: 'disconnected' },
+      'no-response': { text: 'No response since request; check owning chat', class: 'no-response' }
+    };
+    const info = statusMap[state.status] ?? statusMap['unknown'];
+    activityText.textContent = !state.supported ? 'Agent unavailable on this host' : info.text;
+    activityDot.className = 'agent-activity-dot' + (info.class ? ' ' + info.class : '');
+  }
+
   let version = null;
   setInterval(async () => {
     try {
       const next = await (await fetch('/version')).text();
-      if (version !== null && next !== version) location.reload();
+      if (version !== null && next !== version) {
+        // Keep the inspected packet visible; the server rejects stale submissions.
+        if (agentDialog?.open) {
+          agentStale = true;
+          agentSend.disabled = true;
+          agentMessage.textContent = 'The selection or workspace changed. Close and preview again before sending.';
+          return;
+        }
+        location.reload();
+      }
       version = next;
+      const state = await requestJson('/agent/state', {});
+      updateActivityIndicator(state);
+      if (agentDialog?.open && !agentStale) showAgentState(state);
     } catch {
       // Server is gone; the host will reopen the canvas
     }

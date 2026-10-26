@@ -1,13 +1,14 @@
 import { CanvasError } from './errors.mjs';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, closeSync, fchmodSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, parse, resolve } from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
 
 const TODO_DIRS = ['docs/todos', 'todos'];
-const FILENAME_RE = /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-.*\.md$/;
+const FILENAME_RE = /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|completed|cancelled)-(p[123])-.*\.md$/;
 const CRITERION_RE = /^(\s*-\s*\[)([ xX])(\]\s*)(.+)$/;
 const TODO_ID_RE = /^(?:(?:cql|sq)-)?\d{3,}$/;
 // Both satisfy a dependency; a cancelled blocker will never be delivered, so the UI flags it.
-const SATISFYING_STATUSES = new Set(['complete', 'cancelled']);
+const SATISFYING_STATUSES = new Set(['completed', 'cancelled']);
 
 export function assertTodoId(todoId) {
   if (typeof todoId !== 'string' || !TODO_ID_RE.test(todoId)) {
@@ -112,7 +113,7 @@ export function todoLocations(workspaceRoot) {
     const name = (value, fallback) => (typeof value === 'string' && /^[\w.-]+$/.test(value) ? value : fallback);
     const folders = {
       backlogged: name(config.backlogFolder, 'backlog'),
-      complete: name(config.completeFolder, 'complete'),
+      completed: name(config.completeFolder, 'completed'),
       cancelled: name(config.cancelledFolder, 'cancelled')
     };
     return [base, join(base, 'code-scanning', 'codeql'), join(base, 'code-scanning', 'sonarqube')]
@@ -241,7 +242,7 @@ export function loadGroupTodos(groupName, workspaceRoot) {
     }
   }
   // Sort by status order, then by ID
-  const statusOrder = { 'in-progress': 0, 'pending': 1, 'ready': 2, 'backlogged': 3, 'complete': 4, 'cancelled': 5 };
+  const statusOrder = { 'in-progress': 0, 'pending': 1, 'ready': 2, 'backlogged': 3, 'completed': 4, 'cancelled': 5 };
   members.sort((a, b) => {
     const sa = statusOrder[a.status] ?? 6;
     const sb = statusOrder[b.status] ?? 6;
@@ -295,6 +296,28 @@ function findSection(lines, heading) {
   return start === -1 ? null : { start, end: lines.length };
 }
 
+function criterionLineIndices(lines) {
+  const range = findSection(lines, 'Acceptance Criteria');
+  const indices = [];
+  let scanner = false;
+  let fence = null;
+  if (!range) return indices;
+  for (let i = range.start + 1; i < range.end; i++) {
+    const line = lines[i].trim();
+    if (line === '<!-- agendo:scan-evidence:start -->') { scanner = true; continue; }
+    if (line === '<!-- agendo:scan-evidence:end -->') { scanner = false; continue; }
+    if (scanner) continue;
+    const marker = line.match(/^(`{3,}|~{3,})/);
+    if (marker) {
+      if (!fence) fence = marker[1];
+      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      continue;
+    }
+    if (!fence && CRITERION_RE.test(lines[i])) indices.push(i);
+  }
+  return indices;
+}
+
 export function loadTodo(todoId, workspaceRoot) {
   assertTodoId(todoId);
   const filePath = findTodoFile(todoId, workspaceRoot);
@@ -313,14 +336,10 @@ export function loadTodo(todoId, workspaceRoot) {
     return range ? bodyLines.slice(range.start + 1, range.end).join('\n').trim() : null;
   };
 
-  const criteria = [];
-  const criteriaRange = findSection(bodyLines, 'Acceptance Criteria');
-  if (criteriaRange) {
-    for (const line of bodyLines.slice(criteriaRange.start + 1, criteriaRange.end)) {
-      const match = line.match(CRITERION_RE);
-      if (match) criteria.push({ met: match[2].toLowerCase() === 'x', text: match[4].trim() });
-    }
-  }
+  const criteria = criterionLineIndices(bodyLines).map(index => {
+    const match = bodyLines[index].match(CRITERION_RE);
+    return { met: match[2].toLowerCase() === 'x', text: match[4].trim() };
+  });
 
   // Text under the title before the first section, then the Problem Statement.
   const titleIndex = bodyLines.findIndex(line => /^#\s+/.test(line));
@@ -402,50 +421,140 @@ export function loadTodo(todoId, workspaceRoot) {
   };
 }
 
-// Edit only the targeted checkbox line, then replace the file atomically so a
-// concurrent reader or the Agendo file watcher never sees a partial write.
-export function setCriterionMet(todoId, index, met, workspaceRoot) {
+// Revision: exact content hash + resolved path for optimistic concurrency.
+export function getTodoRevision(todoId, workspaceRoot) {
   assertTodoId(todoId);
-  if (typeof met !== 'boolean') {
-    throw new CanvasError('invalid_input', 'met must be a boolean');
+  const filePath = findTodoFile(todoId, workspaceRoot);
+  if (!filePath) {
+    throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
   }
+  const content = readFileSync(filePath, 'utf-8');
+  return {
+    content: createHash('sha256').update(content, 'utf-8').digest('hex'),
+    path: filePath
+  };
+}
+
+// Shared validated criterion-editing operation. Applies a set of {criterionIndex, met} changes
+// atomically via temp file + rename, with EOL preservation and an optimistic revision recheck
+// performed AFTER temp write and immediately BEFORE rename.
+export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRevision) {
+  assertTodoId(todoId);
+  if (!Array.isArray(changes) || changes.length === 0) {
+    throw new CanvasError('invalid_input', 'changes must be a non-empty array');
+  }
+
+  // Detect duplicate criterion indices
+  const seen = new Set();
+  for (const ch of changes) {
+    if (!ch || typeof ch !== 'object' || Array.isArray(ch)) throw new CanvasError('invalid_input', 'Each criterion change must be an object');
+    if (seen.has(ch.criterionIndex)) {
+      throw new CanvasError('invalid_input', `duplicate criterion index ${ch.criterionIndex}`);
+    }
+    seen.add(ch.criterionIndex);
+    if (!Number.isInteger(ch.criterionIndex) || ch.criterionIndex < 0) {
+      throw new CanvasError('invalid_input', `criterionIndex must be a non-negative integer`);
+    }
+    if (typeof ch.met !== 'boolean') {
+      throw new CanvasError('invalid_input', 'met must be a boolean');
+    }
+  }
+
   const filePath = findTodoFile(todoId, workspaceRoot);
   if (!filePath) {
     throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
   }
 
+  // Read content and compute baseline revision from the actual bytes
   const content = readFileSync(filePath, 'utf-8');
-  const eol = content.includes('\r\n') ? '\r\n' : '\n';
-  const lines = content.split(/\r?\n/);
-  const range = findSection(lines, 'Acceptance Criteria');
+  const baselineRevision = {
+    content: createHash('sha256').update(content, 'utf-8').digest('hex'),
+    path: filePath
+  };
 
-  const criterionLines = [];
-  if (range) {
-    for (let i = range.start + 1; i < range.end; i++) {
-      if (CRITERION_RE.test(lines[i])) criterionLines.push(i);
+  // Verify expected revision matches both path and content
+  if (expectedRevision) {
+    if (expectedRevision.path !== filePath) {
+      throw new CanvasError('stale_revision', `Todo ${todoId} file has moved`);
+    }
+    if (expectedRevision.content !== baselineRevision.content) {
+      throw new CanvasError('stale_revision', `Todo ${todoId} has changed since revision was captured`);
     }
   }
-  if (!Number.isInteger(index) || index < 0 || index >= criterionLines.length) {
-    throw new CanvasError('invalid_index', `Criterion index ${index} out of range`);
+
+  const separators = content.match(/\r?\n/g) ?? [];
+  const lines = content.split(/\r?\n/);
+  const criterionLines = criterionLineIndices(lines);
+  for (const ch of changes) {
+    if (ch.criterionIndex >= criterionLines.length) {
+      throw new CanvasError('invalid_index', `Criterion index ${ch.criterionIndex} out of range`);
+    }
+  }
+  const mode = statSync(filePath).mode & 0o777;
+
+  // Apply changes to the in-memory lines
+  for (const ch of changes) {
+    const lineIndex = criterionLines[ch.criterionIndex];
+    lines[lineIndex] = lines[lineIndex].replace(CRITERION_RE, `$1${ch.met ? 'x' : ' '}$3$4`);
+  }
+  const nextContent = lines.map((line, index) => line + (separators[index] ?? '')).join('');
+  const revision = { content: createHash('sha256').update(nextContent, 'utf-8').digest('hex'), path: filePath };
+
+  // Write to a unique crypto-random temp file with exclusive creation (O_EXCL)
+  const tempName = `.${basename(filePath)}.tmp.${randomBytes(12).toString('hex')}`;
+  const temp = join(dirname(filePath), tempName);
+  let fd = null;
+  try {
+    fd = openSync(temp, 'wx', mode);
+    fchmodSync(fd, mode);
+    writeFileSync(fd, nextContent, 'utf-8');
+    closeSync(fd);
+    fd = null;
+
+    // Optimistic final revision recheck: read current file again, compare
+    // BEFORE renaming temp over it. No async work between this read and rename.
+    const currentContent = readFileSync(filePath, 'utf-8');
+    const currentRevision = {
+      content: createHash('sha256').update(currentContent, 'utf-8').digest('hex'),
+      path: filePath
+    };
+    if (currentRevision.content !== baselineRevision.content || findTodoFile(todoId, workspaceRoot) !== filePath) {
+      throw new CanvasError('stale_revision', `Todo ${todoId} changed during apply`);
+    }
+
+    // Atomic rename
+    renameSync(temp, filePath);
+  } catch (e) {
+    if (fd !== null) {
+      try { closeSync(fd); } catch { /* ignore */ }
+    }
+    try { unlinkSync(temp); } catch { /* already gone */ }
+    if (e instanceof CanvasError) throw e;
+    throw new CanvasError('apply_failed', `Failed to write todo: ${e.message}`);
   }
 
-  const lineIndex = criterionLines[index];
-  lines[lineIndex] = lines[lineIndex].replace(CRITERION_RE, `$1${met ? 'x' : ' '}$3$4`);
-
-  const temp = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(temp, lines.join(eol), 'utf-8');
-  renameSync(temp, filePath);
-
-  const todo = loadTodo(todoId, workspaceRoot);
   return {
     success: true,
-    message: `Criterion ${index + 1} marked as ${met ? 'met' : 'not met'}`,
-    completed: todo.criteria.filter(c => c.met).length,
-    total: todo.criteria.length
+    applied: changes.length,
+    revision,
+    completed: criterionLines.filter(index => lines[index].match(CRITERION_RE)[2].toLowerCase() === 'x').length,
+    total: criterionLines.length
   };
 }
 
-export const STATUSES = ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'];
+// Edit only the targeted checkbox line, then replace the file atomically so a
+// concurrent reader or the Agendo file watcher never sees a partial write.
+export function setCriterionMet(todoId, index, met, workspaceRoot) {
+  const result = applyCriteriaChanges(todoId, [{ criterionIndex: index, met }], workspaceRoot, null);
+  return {
+    success: true,
+    message: `Criterion ${index + 1} marked as ${met ? 'met' : 'not met'}`,
+    completed: result.completed,
+    total: result.total
+  };
+}
+
+export const STATUSES = ['pending', 'in-progress', 'ready', 'backlogged', 'completed', 'cancelled'];
 export const PRIORITIES = ['p1', 'p2', 'p3'];
 const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[^\n]*\n?(?:\r?\n)?/m;
 

@@ -38,7 +38,7 @@ function makeRepository(todos: Todo[]): TodoRepository {
 }
 
 function extractScript(html: string): string {
-  const match = /<script[^>]*>([\s\S]*?)<\/script>/.exec(html);
+  const match = /<script[^>]*>([\s\S]*?)<\/script>/i.exec(html);
   assert.ok(match, "Expected a <script> block in HTML");
   return match[1];
 }
@@ -107,7 +107,7 @@ suite("shared board presentation", () => {
     assert.ok(template.includes("in-progress"), "Missing in-progress status");
     assert.ok(template.includes("ready"), "Missing ready status");
     assert.ok(template.includes("backlogged"), "Missing backlogged status");
-    assert.ok(template.includes("complete"), "Missing complete status");
+    assert.ok(template.includes("completed"), "Missing complete status");
     assert.ok(template.includes("cancelled"), "Missing cancelled status");
     assert.ok(template.includes("source-section"), "Missing source section rendering");
     assert.ok(template.includes("terminalCardLimit"), "Missing terminal card limit");
@@ -379,7 +379,7 @@ suite("shared board presentation", () => {
       const id = String(100 + i).padStart(3, "0");
       return {
         ...fixture(id, ""),
-        status: "complete" as const,
+        status: "completed" as const,
       };
     });
     const state = memoryState();
@@ -393,7 +393,7 @@ suite("shared board presentation", () => {
         terminalCardLimit: "10",
       });
       const snapshot = board.getSnapshot();
-      const completeColumn = snapshot.columns.find((c) => c.status === "complete");
+      const completeColumn = snapshot.columns.find((c) => c.status === "completed");
       assert.ok(completeColumn);
       assert.strictEqual(completeColumn.todos.length, 10, "Limited to 10 cards");
       assert.strictEqual(completeColumn.totalCount, 15, "Total count preserved");
@@ -480,11 +480,11 @@ suite("shared board presentation", () => {
     try {
       await board.handleCanvasMessage({
         type: "reorderStatuses",
-        statuses: ["complete", "pending", "in-progress", "ready", "backlogged", "cancelled"],
+        statuses: ["completed", "pending", "in-progress", "ready", "backlogged", "cancelled"],
       });
       const snapshot = board.getSnapshot();
       const statuses = snapshot.columns.map((c) => c.status);
-      assert.strictEqual(statuses[0], "complete");
+      assert.strictEqual(statuses[0], "completed");
       assert.strictEqual(statuses[1], "pending");
     } finally {
       board.dispose();
