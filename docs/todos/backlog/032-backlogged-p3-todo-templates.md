@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: backlogged
 priority: p3
 issue_id: "032"
 tags: [vscode, extension, ux, templates]

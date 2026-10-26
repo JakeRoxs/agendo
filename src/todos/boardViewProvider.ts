@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { Command } from "../commands";
+import { type CanvasHostActions, createCanvasHostActions } from "./canvasHostActions";
 import type { FilterService } from "./filterService";
 import type { StatusService } from "./statusService";
 import { collisionDetails, findTodoCollisions } from "./todoCollisions";
@@ -428,11 +431,12 @@ export function buildBoardSnapshot(
   };
 }
 
-interface BoardMessage {
+export interface BoardMessage {
   type:
     | "focusCollision"
     | "ready"
     | "open"
+    | "openCanvas"
     | "delete"
     | "setStatus"
     | "hideStatus"
@@ -459,7 +463,8 @@ interface BoardMessage {
     | "setPriority"
     | "openExternalKey"
     | "resetBoardSettings"
-    | "scopedCommand";
+    | "scopedCommand"
+    | "settings";
   todoId?: string;
   collisionSource?: string;
   status?: TodoStatus;
@@ -488,6 +493,7 @@ interface BoardMessage {
 
 /** Renders the file-backed todo board in a reusable editor webview panel. */
 export class BoardViewProvider implements vscode.Disposable {
+  private readonly taskActions: CanvasHostActions;
   private panel: vscode.WebviewPanel | undefined;
   private readonly repositorySubscription: vscode.Disposable;
   private readonly scope: TodoViewScope;
@@ -498,7 +504,9 @@ export class BoardViewProvider implements vscode.Disposable {
     private readonly status: StatusService,
     private readonly state: vscode.Memento,
     scope: TodoViewScope = "todos",
+    taskActions?: CanvasHostActions,
   ) {
+    this.taskActions = taskActions ?? createCanvasHostActions({ repository, status });
     this.scope = scope;
     this.repositorySubscription = repository.onDidChange(() => this.sendSnapshot());
   }
@@ -506,6 +514,55 @@ export class BoardViewProvider implements vscode.Disposable {
   /** Public refresh that re-sends the current snapshot. */
   refresh(): void {
     this.sendSnapshot();
+  }
+
+  /** The same validated host operations serve the native webview and HTTP canvas. */
+  async handleCanvasMessage(value: unknown): Promise<void> {
+    if (
+      !value ||
+      typeof value !== "object" ||
+      Array.isArray(value) ||
+      typeof (value as Record<string, unknown>).type !== "string"
+    ) {
+      throw new Error("Expected a board message object");
+    }
+    const message = value as BoardMessage;
+    const supported = new Set<BoardMessage["type"]>([
+      "ready",
+      "open",
+      "openCanvas",
+      "openExternalKey",
+      "delete",
+      "setStatus",
+      "setPriority",
+      "hideStatus",
+      "showStatus",
+      "reorderStatuses",
+      "setCardFieldVisibility",
+      "reorderCardFields",
+      "setCardDensity",
+      "setBoardSort",
+      "setDescriptionPreview",
+      "setHideEmptyColumns",
+      "setMetadataLabels",
+      "setDateFormat",
+      "setTagLimit",
+      "setTitleWrapping",
+      "setMissingValueBehavior",
+      "setCardAccent",
+      "setColumnWidth",
+      "setTerminalCardLimit",
+      "setColumnSort",
+      "setGrouping",
+      "setWipLimit",
+      "applyPreset",
+      "resetBoardSettings",
+      "scopedCommand",
+      "focusCollision",
+      "settings",
+    ]);
+    if (!supported.has(message.type)) throw new Error("Unsupported board action");
+    await this.handleMessage(message);
   }
 
   open(): void {
@@ -560,6 +617,11 @@ export class BoardViewProvider implements vscode.Disposable {
       return;
     }
 
+    if (message.type === "settings") {
+      await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:agendo.agendo`);
+      return;
+    }
+
     if (message.type === "scopedCommand" && message.command) {
       const prefix = this.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
       const allowed = ["refresh", "filter", "search", "clearFilters", "clearSearch"].map(
@@ -603,6 +665,12 @@ export class BoardViewProvider implements vscode.Disposable {
       case "open":
         await this.openTodo(todo);
         break;
+      case "openCanvas":
+        await vscode.commands.executeCommand(Command.OpenCanvas, {
+          todoId: todo.id,
+          returnTo: { kind: "board", scope: this.scope },
+        });
+        break;
       case "setStatus":
         await this.setTodoStatus(todo, message.status);
         break;
@@ -625,7 +693,17 @@ export class BoardViewProvider implements vscode.Disposable {
   private async deleteTodo(todo: Todo): Promise<void> {
     this.postBusy(todo.id);
     try {
-      await this.status.deleteTodo(todo);
+      await this.taskActions.assertWritable(todo.id);
+      const choice = await vscode.window.showWarningMessage(
+        `Delete todo ${todo.id} (${todo.title})? This cannot be undone.`,
+        { modal: true },
+        "Delete",
+      );
+      if (choice !== "Delete") return;
+      await this.taskActions.assertWritable(todo.id);
+      const current = this.repository.getTodos().find((candidate) => candidate.id === todo.id);
+      if (!current) throw new Error("Todo no longer exists");
+      await this.status.deleteTodo(current);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to delete todo: ${error}`);
     } finally {
@@ -639,7 +717,7 @@ export class BoardViewProvider implements vscode.Disposable {
     }
     this.postBusy(todo.id);
     try {
-      await this.status.setStatus(todo, status);
+      await this.taskActions.setStatus(todo.id, status);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to move todo: ${error}`);
     } finally {
@@ -653,7 +731,7 @@ export class BoardViewProvider implements vscode.Disposable {
     }
     this.postBusy(todo.id);
     try {
-      await this.status.setPriority(todo, priority);
+      await this.taskActions.setPriority(todo.id, priority);
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update priority: ${error}`);
     } finally {
@@ -955,6 +1033,11 @@ export class BoardViewProvider implements vscode.Disposable {
     if (!this.panel) {
       return;
     }
+    void this.panel.webview.postMessage({ type: "snapshot", snapshot: this.getSnapshot() });
+  }
+
+  /** Host-prepared snapshot; UI renderers never duplicate filtering or preference rules. */
+  getSnapshot(): BoardSnapshot {
     const snapshot = buildBoardSnapshot(
       this.repository.getTodos(),
       this.repository.getDependencyGraph(),
@@ -1026,10 +1109,7 @@ export class BoardViewProvider implements vscode.Disposable {
       }));
     }
 
-    void this.panel.webview.postMessage({
-      type: "snapshot",
-      snapshot,
-    });
+    return snapshot;
   }
 
   private keyFor(regularKey: string): string {
@@ -1171,721 +1251,16 @@ export class BoardViewProvider implements vscode.Disposable {
   private getHtml(): string {
     const nonce = randomBytes(16).toString("hex");
     const csp = `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';`;
-    return String.raw`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy" content="${csp}">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    :root { color-scheme: light dark; }
-    body { color: var(--vscode-foreground); background: var(--vscode-sideBar-background); font-family: var(--vscode-font-family); margin: 0; padding: 12px; }
-    .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; padding-bottom: 8px; }
-    .toolbar-label { color: var(--vscode-descriptionForeground); font-size: 0.85em; }
-    .settings-toggle { margin-left: auto; }
-    button { background: var(--vscode-button-secondaryBackground); border: 0; color: var(--vscode-button-secondaryForeground); cursor: pointer; padding: 4px 8px; }
-    button:hover { background: var(--vscode-button-secondaryHoverBackground); }
-    .settings-panel { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; margin: 0 0 10px auto; max-width: 400px; padding: 10px; }
-    .settings-panel[hidden] { display: none; }
-    .settings-title { font-size: 0.95em; font-weight: 600; margin-bottom: 2px; }
-    .settings-hint { color: var(--vscode-descriptionForeground); font-size: 0.8em; margin-bottom: 8px; }
-    .settings-section-title { font-size: 0.85em; font-weight: 600; margin: 12px 0 4px; }
-    .setting-control { align-items: center; display: grid; gap: 10px; grid-template-columns: 1fr minmax(130px, auto); margin: 6px 0; }
-    select { background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border); color: var(--vscode-dropdown-foreground); padding: 3px 5px; }
-    .reset-settings { margin-top: 10px; width: 100%; }
-    .setting-row { align-items: center; border: 1px solid transparent; cursor: grab; display: flex; gap: 8px; padding: 5px; user-select: none; }
-    .setting-row:hover { background: var(--vscode-list-hoverBackground); }
-    .setting-row.drop-target { border-color: var(--vscode-focusBorder); }
-    .setting-row:active { cursor: grabbing; }
-    .board { display: grid; gap: 10px; grid-template-columns: repeat(var(--column-count, 1), minmax(150px, 1fr)); min-width: 780px; }
-    .board[data-column-width="narrow"] { grid-template-columns: repeat(var(--column-count, 1), minmax(120px, 1fr)); min-width: 650px; }
-    .board[data-column-width="wide"] { grid-template-columns: repeat(var(--column-count, 1), minmax(220px, 1fr)); min-width: 1100px; }
-    .column { background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 6px; min-height: 180px; padding: 8px; }
-    .column.over-wip { border-color: var(--vscode-charts-red); }
-    .column.drop-target { border-color: var(--vscode-focusBorder); background: var(--vscode-list-hoverBackground); }
-    .column-header { align-items: center; cursor: grab; display: flex; font-weight: 600; gap: 6px; justify-content: space-between; margin-bottom: 8px; user-select: none; }
-    .column-header:active { cursor: grabbing; }
-    .column-actions { align-items: center; display: flex; gap: 6px; }
-    .hide-column { font-size: 0.8em; }
-    .count { color: var(--vscode-descriptionForeground); font-size: 0.9em; font-weight: 400; }
-    .count.over-wip { color: var(--vscode-charts-red); font-weight: 600; }
-    .group-header { color: var(--vscode-descriptionForeground); font-size: 0.78em; font-weight: 600; margin: 10px 2px 3px; text-transform: uppercase; }
-    .card { background: var(--vscode-sideBarSectionHeader-background); border: 1px solid var(--vscode-panel-border); border-left: 3px solid var(--vscode-panel-border); border-radius: 4px; cursor: grab; margin: 6px 0; padding: 8px; }
-    .board[data-density="compact"] .card { margin: 3px 0; padding: 5px; }
-    .board[data-density="compact"] .card-meta { margin-top: 2px; }
-    .board[data-density="spacious"] .card { margin: 9px 0; padding: 12px; }
-    .board[data-density="spacious"] .card-meta { margin-top: 7px; }
-    .card:active { cursor: grabbing; }
-    .card { position: relative; }
-    .card-busy { align-items: center; background: color-mix(in srgb, var(--vscode-sideBar-background) 72%, transparent); border-radius: 4px; display: none; inset: 0; justify-content: center; position: absolute; }
-    .card-busy::before { animation: agendo-spin 0.7s linear infinite; border: 2px solid var(--vscode-descriptionForeground); border-radius: 50%; border-top-color: transparent; height: 18px; width: 18px; }
-    .card.busy .card-busy { display: flex; }
-    @keyframes agendo-spin { to { transform: rotate(360deg); } }
-    .card.accent-priority-p1, .card.accent-status-cancelled, .card.accent-blocked { border-left-color: var(--vscode-charts-red); }
-    .card.accent-priority-p2 { border-left-color: var(--vscode-charts-yellow); }
-    .card.accent-priority-p3, .card.accent-status-ready { border-left-color: var(--vscode-charts-blue); }
-    .card.accent-status-pending { border-left-color: var(--vscode-descriptionForeground); }
-    .card.accent-status-in-progress { border-left-color: var(--vscode-charts-orange); }
-    .card.accent-status-backlogged { border-left-color: var(--vscode-charts-purple); }
-    .card.accent-status-complete { border-left-color: var(--vscode-charts-green); }
-    .card.blocked { box-shadow: inset 0 0 0 1px var(--vscode-charts-red); }
-    .collision-warning { color: var(--vscode-editorWarning-foreground); font-size: 0.85em; margin: 4px 0; }
-    .source-section { margin-bottom: 20px; overflow-x: auto; padding-bottom: 8px; }
-    .board.source-sections { display: block; min-width: 0; }
-    .source-section-title { font-size: 1.1em; font-weight: 700; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--vscode-panel-border); }
-    .card-title { display: -webkit-box; font-weight: 600; overflow: hidden; -webkit-box-orient: vertical; }
-    .card-title.oneLine { -webkit-line-clamp: 1; }
-    .card-title.twoLines { -webkit-line-clamp: 2; }
-    .card-title.unlimited { display: block; overflow: visible; }
-    .card-description { color: var(--vscode-descriptionForeground); display: -webkit-box; font-size: 0.9em; margin-top: 5px; overflow: hidden; -webkit-box-orient: vertical; }
-    .card-description.oneLine { -webkit-line-clamp: 1; }
-    .card-description.twoLines { -webkit-line-clamp: 2; }
-    .card-meta { color: var(--vscode-descriptionForeground); font-size: 0.85em; margin-top: 5px; }
-    .card-actions { display: none; gap: 4px; margin-top: 7px; }
-    .card:hover .card-actions, .card:focus-within .card-actions { display: flex; }
-    .card-actions select, .card-actions button { font-size: 0.78em; min-width: 0; padding: 2px 4px; }
-    .empty { color: var(--vscode-descriptionForeground); font-size: 0.9em; padding: 12px 4px; }
-    @media (max-width: 900px) { .board { grid-template-columns: repeat(5, minmax(130px, 1fr)); } }
-  </style>
-</head>
-<body>
-  <div id="toolbar" class="toolbar" aria-label="Board controls"></div>
-  <section id="settings" class="settings-panel" aria-label="Board card settings" hidden></section>
-  <main id="board" class="board" aria-label="Agendo task board"></main>
-  <script nonce="${nonce}">
-    const vscode = acquireVsCodeApi();
-    const toolbar = document.getElementById("toolbar");
-    const settings = document.getElementById("settings");
-    const board = document.getElementById("board");
-    let draggedTodoId;
-    let draggedStatus;
-    let draggedCardField;
-    let settingsOpen = false;
-
-    function renderToolbar(snapshot) {
-      toolbar.replaceChildren();
-      if (snapshot.hiddenStatuses.length) {
-        const label = document.createElement("span");
-        label.className = "toolbar-label";
-        label.textContent = "Hidden:";
-        toolbar.append(label);
-        for (const status of snapshot.hiddenStatuses) {
-          const button = document.createElement("button");
-          button.type = "button";
-          button.textContent = "Show " + status;
-          button.addEventListener("click", () => vscode.postMessage({ type: "showStatus", status }));
-          toolbar.append(button);
-        }
-      }
-      const prefix = snapshot.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
-      for (const [label, action] of [["Refresh", "refresh"], ["Filter", "filter"], ["Search", "search"], ["Clear Filters", "clearFilters"]]) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.textContent = label;
-        button.addEventListener("click", () => vscode.postMessage({ type: "scopedCommand", command: prefix + "." + action }));
-        toolbar.append(button);
-      }
-      const settingsToggle = document.createElement("button");
-      settingsToggle.className = "settings-toggle";
-      settingsToggle.type = "button";
-      settingsToggle.textContent = settingsOpen ? "Close card settings" : "Card settings";
-      settingsToggle.setAttribute("aria-expanded", String(settingsOpen));
-      settingsToggle.addEventListener("click", () => {
-        settingsOpen = !settingsOpen;
-        renderToolbar(snapshot);
-        renderSettings(snapshot);
-      });
-      toolbar.append(settingsToggle);
-    }
-
-    function renderSettings(snapshot) {
-      settings.hidden = !settingsOpen;
-      settings.replaceChildren();
-      if (!settingsOpen) return;
-
-      const title = document.createElement("div");
-      title.className = "settings-title";
-      title.textContent = "Board settings";
-      const hint = document.createElement("div");
-      hint.className = "settings-hint";
-      hint.textContent = "Appearance preferences are stored for this workspace.";
-      settings.append(title, hint);
-
-      settings.append(
-        createSelectSetting("Apply preset", "", [
-          ["", "Choose preset…"],
-          ["default", "Default"],
-          ["compact", "Compact"],
-          ["focus", "Focus"],
-          ["review", "Review"],
-        ], "applyPreset", "preset"),
-        createSelectSetting("Card density", snapshot.cardDensity, [
-          ["compact", "Compact"],
-          ["comfortable", "Comfortable"],
-          ["spacious", "Spacious"],
-        ], "setCardDensity", "density"),
-        createSelectSetting("Sort cards", snapshot.sort, [
-          ["default", "Default"],
-          ["priority", "Priority"],
-          ["id", "Agendo ID"],
-          ["title", "Title"],
-          ["createdAt", "Recently created"],
-          ["updatedAt", "Recently modified"],
-        ], "setBoardSort", "sort"),
-        createSelectSetting("Description", snapshot.descriptionPreview, [
-          ["hidden", "Hidden"],
-          ["oneLine", "One line"],
-          ["twoLines", "Two lines"],
-        ], "setDescriptionPreview", "descriptionPreview"),
-        createCheckboxSetting(
-          "Hide empty columns",
-          snapshot.hideEmptyColumns,
-          "setHideEmptyColumns",
-        ),
-        createCheckboxSetting(
-          "Show metadata labels",
-          snapshot.showMetadataLabels,
-          "setMetadataLabels",
-        ),
-        createSelectSetting("Date format", snapshot.dateFormat, [
-          ["relative", "Relative"],
-          ["short", "Short"],
-          ["full", "Full"],
-        ], "setDateFormat", "dateFormat"),
-        createSelectSetting("Tag limit", snapshot.tagLimit, [
-          ["all", "All"],
-          ["1", "1 tag"],
-          ["2", "2 tags"],
-          ["3", "3 tags"],
-          ["5", "5 tags"],
-        ], "setTagLimit", "tagLimit"),
-        createSelectSetting("Title wrapping", snapshot.titleWrapping, [
-          ["oneLine", "One line"],
-          ["twoLines", "Two lines"],
-          ["unlimited", "Unlimited"],
-        ], "setTitleWrapping", "titleWrapping"),
-        createSelectSetting("Missing values", snapshot.missingValueBehavior, [
-          ["omit", "Omit"],
-          ["placeholder", "Show placeholder"],
-        ], "setMissingValueBehavior", "missingValueBehavior"),
-        createSelectSetting("Card accent", snapshot.cardAccent, [
-          ["priority", "Priority"],
-          ["status", "Status"],
-          ["blocked", "Blocked state"],
-          ["none", "None"],
-        ], "setCardAccent", "cardAccent"),
-        createSelectSetting("Column width", snapshot.columnWidth, [
-          ["narrow", "Narrow"],
-          ["standard", "Standard"],
-          ["wide", "Wide"],
-        ], "setColumnWidth", "columnWidth"),
-        createSelectSetting("Complete/cancelled limit", snapshot.terminalCardLimit, [
-          ["all", "Show all"],
-          ["10", "10 per column"],
-          ["25", "25 per column"],
-          ["50", "50 per column"],
-          ["100", "100 per column"],
-        ], "setTerminalCardLimit", "terminalCardLimit"),
-        createSelectSetting("Group cards", snapshot.grouping, [
-          ["none", "None"],
-          ["priority", "Priority"],
-          ["group", "Group"],
-          ["epic", "Epic"],
-        ], "setGrouping", "grouping"),
-      );
-
-      const columnRulesTitle = document.createElement("div");
-      columnRulesTitle.className = "settings-section-title";
-      columnRulesTitle.textContent = "Column rules";
-      settings.append(columnRulesTitle);
-      for (const status of ["pending", "in-progress", "ready", "backlogged", "complete", "cancelled"]) {
-        settings.append(createSelectSetting(
-          status + " sort",
-          snapshot.columnSorts[status] || "global",
-          [
-            ["global", "Use global sort"],
-            ["default", "Default"],
-            ["priority", "Priority"],
-            ["id", "Agendo ID"],
-            ["title", "Title"],
-            ["createdAt", "Recently created"],
-            ["updatedAt", "Recently modified"],
-          ],
-          "setColumnSort",
-          "columnSort",
-          { status },
-        ));
-      }
-      settings.append(
-        createNumberSetting("Pending WIP limit", snapshot.wipLimits.pending || 0, "pending"),
-        createNumberSetting("In Progress WIP limit", snapshot.wipLimits["in-progress"] || 0, "in-progress"),
-        createNumberSetting("Ready WIP limit", snapshot.wipLimits.ready || 0, "ready"),
-      );
-
-      const metadataTitle = document.createElement("div");
-      metadataTitle.className = "settings-section-title";
-      metadataTitle.textContent = "Card metadata";
-      const metadataHint = document.createElement("div");
-      metadataHint.className = "settings-hint";
-      metadataHint.textContent = "Choose visible fields and drag rows to reorder them.";
-      settings.append(metadataTitle, metadataHint);
-
-      for (const preference of snapshot.cardFields) {
-        const row = document.createElement("div");
-        row.className = "setting-row";
-        row.dataset.field = preference.field;
-        row.draggable = true;
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = preference.visible;
-        checkbox.setAttribute("aria-label", "Show " + preference.label);
-        checkbox.addEventListener("change", () => vscode.postMessage({
-          type: "setCardFieldVisibility",
-          field: preference.field,
-          visible: checkbox.checked,
-        }));
-        const label = document.createElement("span");
-        label.textContent = preference.label;
-        row.append(checkbox, label);
-        row.addEventListener("dragstart", (event) => {
-          if (event.target === checkbox) {
-            event.preventDefault();
-            return;
-          }
-          draggedCardField = preference.field;
-        });
-        row.addEventListener("dragover", (event) => {
-          event.preventDefault();
-          row.classList.add("drop-target");
-        });
-        row.addEventListener("dragleave", () => row.classList.remove("drop-target"));
-        row.addEventListener("dragend", () => { draggedCardField = undefined; });
-        row.addEventListener("drop", (event) => {
-          event.preventDefault();
-          row.classList.remove("drop-target");
-          if (!draggedCardField || draggedCardField === preference.field) return;
-          const fields = Array.from(settings.querySelectorAll(".setting-row"))
-            .map((element) => element.dataset.field);
-          const fromIndex = fields.indexOf(draggedCardField);
-          const toIndex = fields.indexOf(preference.field);
-          fields.splice(fromIndex, 1);
-          fields.splice(toIndex, 0, draggedCardField);
-          draggedCardField = undefined;
-          vscode.postMessage({ type: "reorderCardFields", fields });
-        });
-        settings.append(row);
-      }
-
-      const reset = document.createElement("button");
-      reset.className = "reset-settings";
-      reset.type = "button";
-      reset.textContent = "Reset board settings";
-      reset.addEventListener("click", () => vscode.postMessage({ type: "resetBoardSettings" }));
-      settings.append(reset);
-    }
-
-    function createSelectSetting(labelText, value, options, messageType, property, extra = {}) {
-      const control = document.createElement("label");
-      control.className = "setting-control";
-      const label = document.createElement("span");
-      label.textContent = labelText;
-      const select = document.createElement("select");
-      for (const [optionValue, optionLabel] of options) {
-        const option = document.createElement("option");
-        option.value = optionValue;
-        option.textContent = optionLabel;
-        option.selected = optionValue === value;
-        select.append(option);
-      }
-      select.addEventListener("change", () => vscode.postMessage({
-        type: messageType,
-        [property]: select.value,
-        ...extra,
-      }));
-      control.append(label, select);
-      return control;
-    }
-
-    function createNumberSetting(labelText, value, status) {
-      const control = document.createElement("label");
-      control.className = "setting-control";
-      const label = document.createElement("span");
-      label.textContent = labelText;
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = "0";
-      input.max = "999";
-      input.value = String(value);
-      input.title = "Use 0 to disable";
-      input.addEventListener("change", () => vscode.postMessage({
-        type: "setWipLimit",
-        status,
-        limit: Number(input.value),
-      }));
-      control.append(label, input);
-      return control;
-    }
-
-    function createCheckboxSetting(labelText, enabled, messageType) {
-      const control = document.createElement("label");
-      control.className = "setting-control";
-      const label = document.createElement("span");
-      label.textContent = labelText;
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = enabled;
-      checkbox.addEventListener("change", () => vscode.postMessage({
-        type: messageType,
-        enabled: checkbox.checked,
-      }));
-      control.append(label, checkbox);
-      return control;
-    }
-
-    function formatDate(timestamp, format) {
-      const date = new Date(timestamp);
-      if (format === "short") {
-        return date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
-      }
-      if (format === "relative") {
-        const seconds = Math.round((timestamp - Date.now()) / 1000);
-        const absoluteSeconds = Math.abs(seconds);
-        const [value, unit] = absoluteSeconds < 60
-          ? [seconds, "second"]
-          : absoluteSeconds < 3600
-            ? [Math.round(seconds / 60), "minute"]
-            : absoluteSeconds < 86400
-              ? [Math.round(seconds / 3600), "hour"]
-              : [Math.round(seconds / 86400), "day"];
-        return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(value, unit);
-      }
-      return date.toLocaleString();
-    }
-
-    function labelMetadata(label, value, snapshot) {
-      return value && snapshot.showMetadataLabels ? label + ": " + value : value;
-    }
-
-    function optionalMetadata(label, value, snapshot) {
-      if (value) return labelMetadata(label, value, snapshot);
-      return snapshot.missingValueBehavior === "placeholder"
-        ? labelMetadata(label, "—", snapshot)
-        : undefined;
-    }
-
-    function tagValues(todo, snapshot) {
-      const limit = snapshot.tagLimit === "all" ? todo.tags.length : Number(snapshot.tagLimit);
-      const tags = todo.tags.slice(0, limit);
-      const hiddenCount = todo.tags.length - tags.length;
-      if (hiddenCount > 0) tags.push("+" + hiddenCount);
-      if (!tags.length) return [optionalMetadata("Tags", undefined, snapshot)];
-      return snapshot.showMetadataLabels
-        ? [labelMetadata("Tags", tags.join(", "), snapshot)]
-        : tags;
-    }
-
-    function cardAccentClass(todo, accent) {
-      switch (accent) {
-        case "priority": return "accent-priority-" + todo.priority;
-        case "status": return "accent-status-" + todo.status;
-        case "blocked": return todo.blocked ? "accent-blocked" : "";
-        default: return "";
-      }
-    }
-
-    function cardFieldValues(todo, field, snapshot) {
-      switch (field) {
-        case "id": return [labelMetadata("ID", todo.id, snapshot)];
-        case "key": return [optionalMetadata("Key", todo.key, snapshot)];
-        case "priority": return [labelMetadata("Priority", todo.priority.toUpperCase(), snapshot)];
-        case "group": return [optionalMetadata("Group", todo.group, snapshot)];
-        case "blocked": return [todo.blocked
-          ? labelMetadata("State", "Blocked", snapshot)
-          : optionalMetadata("State", undefined, snapshot)];
-        case "tags": return tagValues(todo, snapshot);
-        case "createdAt": return [todo.createdAt
-          ? labelMetadata("Created", formatDate(todo.createdAt, snapshot.dateFormat), snapshot)
-          : optionalMetadata("Created", undefined, snapshot)];
-        case "updatedAt": return [todo.updatedAt
-          ? labelMetadata("Modified", formatDate(todo.updatedAt, snapshot.dateFormat), snapshot)
-          : optionalMetadata("Modified", undefined, snapshot)];
-        default: return [];
-      }
-    }
-
-    function groupTodos(todos, grouping) {
-      if (grouping === "none") return [{ label: "", todos }];
-      const groups = new Map();
-      for (const todo of todos) {
-        const label = grouping === "priority"
-          ? todo.priority.toUpperCase()
-          : grouping === "group"
-            ? todo.group || "Ungrouped"
-            : todo.epic
-              ? "Epic"
-              : "Standard";
-        const group = groups.get(label) || [];
-        group.push(todo);
-        groups.set(label, group);
-      }
-      return Array.from(groups, ([label, groupedTodos]) => ({ label, todos: groupedTodos }));
-    }
-
-    function createQuickSelect(todo, value, options, type, property, label) {
-      const select = document.createElement("select");
-      select.setAttribute("aria-label", label);
-      for (const [optionValue, optionLabel] of options) {
-        const option = document.createElement("option");
-        option.value = optionValue;
-        option.textContent = optionLabel;
-        option.selected = optionValue === value;
-        select.append(option);
-      }
-      select.addEventListener("click", (event) => event.stopPropagation());
-      select.addEventListener("change", (event) => {
-        event.stopPropagation();
-        vscode.postMessage({ type, todoId: todo.id, [property]: select.value });
-      });
-      return select;
-    }
-
-    function createCard(todo, snapshot) {
-      const card = document.createElement("article");
-      card.className = ["card", cardAccentClass(todo, snapshot.cardAccent), todo.blocked ? "blocked" : ""]
-        .filter(Boolean)
-        .join(" ");
-      card.dataset.todoId = todo.id;
-      card.dataset.vscodeContext = JSON.stringify({
-        webviewSection: "todoCard",
-        todoId: todo.id,
-        todoIdCollision: Boolean(todo.collision),
-        preventDefaultContextMenuItems: true,
-      });
-      card.title = [
-        todo.collision,
-        todo.createdAt ? "Created " + new Date(todo.createdAt).toLocaleString() : undefined,
-        todo.updatedAt ? "Modified " + new Date(todo.updatedAt).toLocaleString() : undefined,
-      ]
-        .filter(Boolean)
-        .join("\n") || "File timestamps unavailable";
-      card.draggable = !todo.collision;
-      card.addEventListener("dragstart", (event) => {
-        event.stopPropagation();
-        draggedTodoId = todo.id;
-      });
-      card.addEventListener("dragend", () => { draggedTodoId = undefined; });
-      card.addEventListener("click", () => vscode.postMessage({ type: "open", todoId: todo.id }));
-
-      const title = document.createElement("div");
-      title.className = "card-title " + snapshot.titleWrapping;
-      title.textContent = todo.title;
-      const description = document.createElement("div");
-      description.className = "card-description " + snapshot.descriptionPreview;
-      description.textContent = todo.summary || "";
-      const meta = document.createElement("div");
-      meta.className = "card-meta";
-      meta.textContent = snapshot.cardFields
-        .filter((preference) => preference.visible)
-        .flatMap((preference) => cardFieldValues(todo, preference.field, snapshot))
-        .filter(Boolean)
-        .join(" · ");
-      card.append(title);
-      if (todo.collision) {
-        const warning = document.createElement("button");
-        warning.type = "button";
-        warning.className = "collision-warning";
-        warning.textContent = "Duplicate ID - show conflicting files";
-        warning.title = todo.collision;
-        warning.addEventListener("click", event => {
-          event.stopPropagation();
-          vscode.postMessage({ type: "focusCollision", todoId: todo.id, collisionSource: todo.collisionSource });
-        });
-        card.append(warning);
-      }
-      if (description.textContent && snapshot.descriptionPreview !== "hidden") card.append(description);
-      if (meta.textContent) card.append(meta);
-
-      const actions = document.createElement("div");
-      actions.className = "card-actions";
-      actions.addEventListener("click", (event) => event.stopPropagation());
-      actions.append(
-        createQuickSelect(todo, todo.status, [
-          ["pending", "Pending"],
-          ["in-progress", "In Progress"],
-          ["ready", "Ready"],
-          ["backlogged", "Backlog"],
-          ["complete", "Complete"],
-          ["cancelled", "Cancelled"],
-        ], "setStatus", "status", "Change status"),
-        createQuickSelect(todo, todo.priority, [
-          ["p1", "P1"],
-          ["p2", "P2"],
-          ["p3", "P3"],
-        ], "setPriority", "priority", "Change priority"),
-      );
-       if (todo.key) {
-         const ticket = document.createElement("button");
-         ticket.type = "button";
-         ticket.textContent = "Ticket";
-         ticket.title = "Open URL or copy external key";
-         ticket.addEventListener("click", (event) => {
-           event.stopPropagation();
-           vscode.postMessage({ type: "openExternalKey", todoId: todo.id });
-         });
-         actions.append(ticket);
-       }
-       const deleteBtn = document.createElement("button");
-       deleteBtn.type = "button";
-        deleteBtn.textContent = "Delete";
-        deleteBtn.title = "Delete this todo (cannot be undone)";
-        deleteBtn.addEventListener("click", (event) => {
-          event.stopPropagation();
-          if (confirm("Delete todo " + todo.id + " (" + todo.title + ")? This cannot be undone.")) {
-            vscode.postMessage({ type: "delete", todoId: todo.id });
-          }
-        });
-        actions.append(deleteBtn);
-      card.append(actions);
-      const busy = document.createElement("div");
-      busy.className = "card-busy";
-      busy.setAttribute("aria-label", "Processing");
-      busy.addEventListener("click", (event) => event.stopPropagation());
-      busy.addEventListener("dragstart", (event) => event.stopPropagation());
-      card.append(busy);
-      return card;
-    }
-
-    function render(snapshot) {
-      renderToolbar(snapshot);
-      renderSettings(snapshot);
-      board.style.setProperty("--column-count", String(Math.max(snapshot.columns.length, 1)));
-      board.dataset.density = snapshot.cardDensity;
-      board.dataset.columnWidth = snapshot.columnWidth;
-      board.classList.toggle("source-sections", Boolean(snapshot.sections));
-      board.setAttribute("aria-label", snapshot.scope === "code-scanning" ? "Code-scanning task board" : "Agendo task board");
-      board.replaceChildren();
-
-      if (snapshot.sections && snapshot.sections.length) {
-        for (const section of snapshot.sections) {
-          const sectionWrap = document.createElement("section");
-          sectionWrap.className = "source-section";
-          sectionWrap.setAttribute("aria-label", section.label);
-          const sectionTitle = document.createElement("h2");
-          sectionTitle.className = "source-section-title";
-          sectionTitle.textContent = section.label;
-          sectionWrap.append(sectionTitle);
-
-          const sectionBoard = document.createElement("div");
-          sectionBoard.className = "board source-board";
-          sectionBoard.dataset.density = snapshot.cardDensity;
-          sectionBoard.dataset.columnWidth = snapshot.columnWidth;
-          sectionBoard.style.setProperty("--column-count", String(Math.max(section.columns.length, 1)));
-          if (!section.columns.length) {
-            const empty = document.createElement("div");
-            empty.className = "empty";
-            empty.textContent = "No matching tasks";
-            sectionBoard.append(empty);
-          }
-          for (const column of section.columns) {
-            sectionBoard.append(createColumn(column, snapshot));
-          }
-          sectionWrap.append(sectionBoard);
-          board.append(sectionWrap);
-        }
-        return;
-      }
-
-      for (const column of snapshot.columns) {
-        board.append(createColumn(column, snapshot));
-      }
-    }
-
-    function createColumn(column, snapshot) {
-      const columnElement = document.createElement("section");
-      columnElement.className = "column";
-      columnElement.dataset.status = column.status;
-      columnElement.addEventListener("dragover", (event) => {
-        event.preventDefault();
-        columnElement.classList.add("drop-target");
-      });
-      columnElement.addEventListener("dragleave", () => columnElement.classList.remove("drop-target"));
-      columnElement.addEventListener("drop", (event) => {
-        event.preventDefault();
-        columnElement.classList.remove("drop-target");
-        if (draggedTodoId) {
-          vscode.postMessage({ type: "setStatus", todoId: draggedTodoId, status: column.status });
-        } else if (draggedStatus && draggedStatus !== column.status) {
-          const statuses = Array.from(columnElement.parentElement.children).map((element) => element.dataset.status);
-          const fromIndex = statuses.indexOf(draggedStatus);
-          const toIndex = statuses.indexOf(column.status);
-          statuses.splice(fromIndex, 1);
-          statuses.splice(toIndex, 0, draggedStatus);
-          vscode.postMessage({ type: "reorderStatuses", statuses });
-        }
-        draggedStatus = undefined;
-      });
-
-      const header = document.createElement("div");
-      header.className = "column-header";
-      header.draggable = true;
-      header.addEventListener("dragstart", () => { draggedStatus = column.status; });
-      header.addEventListener("dragend", () => { draggedStatus = undefined; });
-      const label = document.createElement("span");
-      label.textContent = column.label;
-      const actions = document.createElement("span");
-      actions.className = "column-actions";
-      const count = document.createElement("span");
-      const overWip = column.wipLimit && column.totalCount > column.wipLimit;
-      count.className = "count" + (overWip ? " over-wip" : "");
-      const visibleCount = column.todos.length === column.totalCount
-        ? String(column.totalCount)
-        : column.todos.length + " / " + column.totalCount;
-      count.textContent = column.wipLimit ? visibleCount + " · WIP " + column.wipLimit : visibleCount;
-      if (overWip) columnElement.classList.add("over-wip");
-      const hide = document.createElement("button");
-      hide.className = "hide-column";
-      hide.type = "button";
-      hide.textContent = "Hide";
-      hide.addEventListener("click", (event) => {
-        event.stopPropagation();
-        vscode.postMessage({ type: "hideStatus", status: column.status });
-      });
-      actions.append(count, hide);
-      header.append(label, actions);
-      columnElement.append(header);
-
-      if (!column.todos.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty";
-        empty.textContent = "No tasks";
-        columnElement.append(empty);
-      }
-
-      for (const group of groupTodos(column.todos, snapshot.grouping)) {
-        if (group.label) {
-          const groupHeader = document.createElement("div");
-          groupHeader.className = "group-header";
-          groupHeader.textContent = group.label + " · " + group.todos.length;
-          columnElement.append(groupHeader);
-        }
-        for (const todo of group.todos) {
-          columnElement.append(createCard(todo, snapshot));
-        }
-      }
-      return columnElement;
-    }
-
-    window.addEventListener("message", (event) => {
-      if (event.data.type === "busy") {
-        const card = board.querySelector('[data-todo-id="' + event.data.todoId + '"]');
-        if (card) card.classList.add("busy");
-        return;
-      }
-      if (event.data.type === "snapshot") render(event.data.snapshot);
-    });
-    vscode.postMessage({ type: "ready" });
-  </script>
-</body>
-</html>`;
+    const template = readFileSync(
+      path.join(__dirname, "../../resources/canvas/agendo-work-session/board.html"),
+      "utf8",
+    );
+    const hostBootstrap =
+      "((api) => { globalThis.agendoBoardHost = { postMessage: message => api.postMessage(message), onMessage: listener => window.addEventListener('message', event => listener(event.data)), getState: () => api.getState(), setState: state => api.setState(state) }; })(acquireVsCodeApi());";
+    return template
+      .replace("__AGENDO_BOARD_CSP__", csp)
+      .replace("__AGENDO_BOARD_NONCE__", nonce)
+      .replace("__AGENDO_BOARD_HOST__", hostBootstrap)
+      .replace("__AGENDO_BOARD_NAV__", "");
   }
 }

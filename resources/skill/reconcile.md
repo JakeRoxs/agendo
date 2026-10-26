@@ -9,15 +9,15 @@ silently rewrite history.
 
 Everything in this file inherits the conventions in [SKILL.md](./SKILL.md): the `{root}` and state
 folder placeholders, the filename/frontmatter/folder rules, the status lifecycle, and the
-move-before-edit rule. Resolve the `.agendo-config.json` file first, exactly as SKILL.md instructs.
+rule that filename, frontmatter, and folder always stay in sync. Resolve the `.agendo-config.json` file first, exactly as SKILL.md instructs.
 
 ## Safety first (non-negotiable)
 
 - **Propose, don't apply.** Present recommendations and let the user decide what to apply. Never
   auto-move a file, change a status, or rewrite a todo without explicit approval.
-- **Move before edit** for any lifecycle change, and route every transition through the Agendo
-  lifecycle (rename → move → then edit the destination). This is the same rule SKILL.md applies to
-  every status change.
+- **Keep filename, frontmatter `status`/`priority`, and folder in sync** for any lifecycle change,
+  and route every transition through the Agendo lifecycle. This is the same rule SKILL.md applies
+  to every status change.
 - **`complete` only with verified acceptance criteria.** Recommend `complete` only when every
   acceptance criterion is demonstrably satisfied and the work is confirmed working. If the boxes
   are stale, include checking them in the proposed update before the status transition.

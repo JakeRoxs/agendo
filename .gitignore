@@ -5,6 +5,7 @@ reports/
 .scannerwork/
 .artifacts/
 *.vsix
+resources/mcp/server.bundle.mjs
 .vscode-test/
 .DS_Store
 Thumbs.db

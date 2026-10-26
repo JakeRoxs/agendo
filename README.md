@@ -3,8 +3,8 @@
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Extension Version](https://img.shields.io/badge/extension-0.2.0-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.5.0-orange.svg)
-![Canvas Version](https://img.shields.io/badge/canvas-0.1.2-purple.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.5.1-orange.svg)
+![Canvas Version](https://img.shields.io/badge/canvas-0.1.6-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed todo files from a dedicated Activity Bar
 tree and an editor-window board. It keeps task state in the repository while adding fast ways to
@@ -33,8 +33,9 @@ skill invocation.
 
 Agendo bundles the `agendo-work-session` canvas, an interactive dashboard that shows the todo you are working on in an editor tab next to the chat. The canvas reads and edits the same Markdown todo file, takes status and priority from the filename, and reloads automatically when the file changes.
 
-The canvas shows:
+Pending todos lead with scanner evidence when available, problem context, and triage instead of implementation progress. A triage guide and missing-notes prompt explain what to record before choosing ready, backlogged, or cancelled. Section expansion is remembered per todo and status, so a pending layout does not override the active-work defaults.
 
+The canvas shows:
 - the todo number, title, status, and priority
 - acceptance criteria with a progress bar, where each criterion can be checked from the canvas
 - a dependency panel that resolves what blocks the todo and what it blocks, with each todo's status and priority, whether it is satisfied, and click-through navigation to open it
@@ -84,14 +85,12 @@ Examples:
 ```
 
 The naming convention includes:
-
 - `issue_id` — zero-padded, sequential, and unique
 - `status` — `pending`, `in-progress`, `ready`, `backlogged`, `complete`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
 Lifecycle semantics:
-
 - `pending` needs triage or has not started
 - `in-progress` is actively being worked on
 - `ready` is likely done but still needs confirmation that it works
@@ -102,15 +101,15 @@ Lifecycle semantics:
 ```mermaid
 stateDiagram-v2
     [*] --> pending
-    pending --> in-progress : triage approved
+    pending --> in_progress : triage approved
     pending --> backlogged : deprioritized
-    in-progress --> ready : implementation done
+    in_progress --> ready : implementation done
     ready --> complete : verified working
-    ready --> in-progress : needs more work
-    in-progress --> backlogged : deprioritized
+    ready --> in_progress : needs more work
+    in_progress --> backlogged : deprioritized
     backlogged --> pending : reactivated
     pending --> cancelled : abandoned
-    in-progress --> cancelled : abandoned
+    in_progress --> cancelled : abandoned
     ready --> cancelled : abandoned
     complete --> [*]
     cancelled --> [*]
@@ -130,8 +129,7 @@ key: "JIRA-123"
 ```
 
 Dependencies drive blocked-state reporting, groups provide lightweight organization, and external
-tracking keys are displayed and searchable when present. Legacy `jira:` frontmatter remains
-supported as an alias for `key`.
+tracking keys are displayed and searchable when present.
 
 ## Quick start
 
@@ -157,7 +155,6 @@ The extension defaults to `docs/todos`, but you can change it in Settings or via
 ### Create your first todo
 
 You can create tasks either from the extension UI or from the bundled skill.
-
 - Open the Agendo view in the Activity Bar
 - Use "Create Todo..."
 - Enter a short kebab-case description, choose a priority, and optionally add an external key
@@ -173,20 +170,20 @@ This is especially useful when you want a follow-up task captured into the same 
 
 ## Configuration
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `agendo.root` | `docs/todos` | Workspace-relative root folder for todo files |
-| `agendo.defaultPriority` | `p3` | Default priority for newly created todos |
-| `agendo.completeFolder` | `complete` | Folder used for completed tasks |
-| `agendo.cancelledFolder` | `cancelled` | Folder used for cancelled tasks |
-| `agendo.backlogFolder` | `backlog` | Folder used for backlogged tasks |
-| `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
-| `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
-| `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
-| `agendo.codeScanning.enabled` | `false` | Enable manually triggered native code-scanning imports |
-| `agendo.codeScanning.sortByDate` | `false` | Sort scanning todos by modified date independently of the regular tree |
-| `agendo.codeScanning.sonarqube.url` | empty | SonarQube server URL |
-| `agendo.codeScanning.sonarqube.projectKey` | empty | SonarQube project key |
+| Setting                                    | Default             | Description                                                                                                    |
+| ------------------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `agendo.root`                              | `docs/todos`        | Workspace-relative root folder for todo files                                                                  |
+| `agendo.defaultPriority`                   | `p3`                | Default priority for newly created todos                                                                       |
+| `agendo.completeFolder`                    | `complete`          | Folder used for completed tasks                                                                                |
+| `agendo.cancelledFolder`                   | `cancelled`         | Folder used for cancelled tasks                                                                                |
+| `agendo.backlogFolder`                     | `backlog`           | Folder used for backlogged tasks                                                                               |
+| `agendo.viewMode`                          | `preview`           | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
+| `agendo.gitignoreTodos`                    | `true`              | Optionally add a wildcard `.gitignore` in the todo root                                                        |
+| `agendo.skillUpdateSource`                 | GitHub raw base URL | Source used for updating the bundled Agendo skill                                                              |
+| `agendo.codeScanning.enabled`              | `false`             | Enable manually triggered native code-scanning imports                                                         |
+| `agendo.codeScanning.sortByDate`           | `false`             | Sort scanning todos by modified date independently of the regular tree                                         |
+| `agendo.codeScanning.sonarqube.url`        | empty               | SonarQube server URL                                                                                           |
+| `agendo.codeScanning.sonarqube.projectKey` | empty               | SonarQube project key                                                                                          |
 
 ## Duplicate IDs
 
@@ -202,10 +199,26 @@ When multiple files reuse an ID within the same todo type, each affected tree ro
 
 Code scanning is optional and disabled by default. Run **Agendo: Import Code-Scanning Todos...** from the Command Palette or the **Code Scanning** section to enable it for a workspace and select CodeQL or SonarQube. Imports run only on request; activation and normal refresh never contact a scanning service.
 
+### Import grouping
+
+Choose how findings become todos before authenticating or fetching:
+- **By file (default)** creates one todo per affected file, keeping multiple rule types together for implementation
+- **By rule/type** creates one todo per rule across all affected files, useful for triage or cross-cutting fixes
+- **By individual issue** creates one todo per scanner issue or alert, giving each occurrence its own lifecycle
+
+Each grouping has a stable identity within its source repository/project. Re-importing the same grouping refreshes its evidence; choosing another grouping creates separate todos and does not merge, remove, or change the lifecycle of previous imports. File grouping follows full scanner paths (not just basenames), with pathless issues collected into a project-level todo. Individual grouping follows the scanner's issue ID even if its location changes.
+
 ### Authentication
 
 - **CodeQL** uses the GitHub CLI's authenticated account (`gh auth login`) and the current workspace's repository; the account needs permission to read code-scanning alerts
-- **SonarQube** prompts for a server URL, project key, and user token; the token is stored in VS Code SecretStorage, not settings, todo files, or logs; leave the token prompt blank to reuse it or enter a new token to replace it
+- **SonarQube** offers **SonarQube CLI** or **Direct token** authentication; both import the same unresolved issues and preserve existing scanner todo identities
+- **SonarQube CLI** reuses `sonar auth login` and the CLI's active server through `sonar api`, without reading or copying its token; install `sonar` on the VS Code extension host's `PATH` and authenticate first, then confirm the detected project key
+- CLI imports check the active server before and after every page request and abort before writing todos if a change is detected; avoid switching CLI connections during an import because these checks cannot atomically pin the connection
+- **Direct token** prompts for a server URL, project key, and user token; the token is stored in VS Code SecretStorage, not settings, todo files, or logs; leave the token prompt blank to reuse it or enter a new token to replace it
+- SonarQube URL defaults to the Agendo setting, then `SONARQUBE_URL` or `SONAR_HOST_URL`; project key defaults to the Agendo setting, then `SONAR_PROJECT_KEY`, then `sonar.projectKey` in the workspace root's `sonar-project.properties`
+- With no saved token, leave the token prompt blank to import the matching environment credential pair: `SONARQUBE_URL` with `SONARQUBE_TOKEN`, otherwise `SONAR_HOST_URL` with `SONAR_TOKEN`; the variable families are never mixed, and the chosen URL must match the import server
+- If the chosen environment URL has no matching token, or a token has no matching environment URL, enter a token explicitly or use CLI authentication
+- Environment variables must be available to the VS Code extension host (restart VS Code after setting them); MCP-only environment variables and other extensions' private credential stores are not accessible, and `.env` or MCP configuration files are not read
 - SonarQube requires HTTPS except for loopback servers, and includes unresolved issues, not Security Hotspots
 - Imports require a trusted workspace and run natively in the extension, without Python
 
@@ -218,12 +231,12 @@ docs/todos/
   001-pending-p2-regular-todo.md
   code-scanning/
     codeql/
-      cql-001-pending-p1-js-example.md
+      cql-001-pending-p1-src-example-js.md
       complete/
       cancelled/
       backlog/
     sonarqube/
-      sq-001-pending-p2-typescript-s123.md
+      sq-001-pending-p2-src-example-ts.md
       complete/
       cancelled/
       backlog/
@@ -231,7 +244,7 @@ docs/todos/
 
 Custom complete, cancelled, and backlog folder settings apply inside each source as well. Folders are created only when needed. Scanning IDs never consume the regular todo sequence; use the full ID (e.g. `cql-001`) in dependencies and links.
 
-Agendo creates one todo per rule and repository/project, initially prioritized by the most severe finding.
+Agendo initially prioritizes each imported todo by the most severe finding in its selected group. New imports record `scan_grouping` and `scan_target` alongside the stable `scan_identity`.
 
 ### Sidebar and board
 
@@ -259,10 +272,17 @@ Both sections share the same repository and dependency graph, so dependencies ac
 
 **Re-imports** update only the marked **Scanner Evidence** section. IDs, status, priority, notes, acceptance criteria, and work logs are preserved, including completed or cancelled todos. Missing findings never automatically complete, cancel, reopen, or delete a todo. Save pending editor changes before importing, and retain the evidence markers so Agendo can refresh that section safely.
 
+SonarQube imports also fetch each rule's title, explanation, code examples, and references through `api/rules/show`, converting HTML explanations to Markdown. Both CLI and direct-token imports require access to that endpoint. Re-import existing scanner todos to enrich their evidence; ordinary refresh and canvas opening do not contact SonarQube. Existing evidence is already visible in the canvas without a re-import.
+
+Scanner evidence leads with **Affected Locations**, listing the file, line (or an explicit indication that none was reported), problem message, severity, and source link for each finding. The general rule explanation follows the affected locations, so concrete occurrences are visible before the longer documentation.
+
+In the canvas, a scanner overview summarizes the rule types, severities, and finding/file counts. A compact contents index groups links into **Affected Files** and **Rule Context**. Findings are grouped by file and ordered by line, with each file expanded by default for pending todos; explanations, examples, and references have separate collapsed sections. Todos containing multiple rules show each finding's rule ID and separate collapsible context groups for each rule. Contents links expand and focus the selected section, and each section's open/closed state is remembered per todo and status.
+
+Canvas labels use the colored `sq`/`cql` source badges with short IDs such as `#002`, omitting repeated ID prefixes and `SonarQube:`/`CodeQL:` title prefixes. History options use labels such as `sq · 002 typescript:S3776`; navigation and dependencies still use the full prefixed IDs internally.
+
 ## Contributing
 
 Contributions are welcome.
-
 1. Fork or clone the repository.
 2. Create a feature branch.
 3. Keep changes focused and aligned with the repo's task-driven workflow.

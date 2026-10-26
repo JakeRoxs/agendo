@@ -3,9 +3,10 @@ import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Command } from "./commands";
-import { get, Settings } from "./configuration";
+import { get, Settings, set } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
+import { createCanvasHostActions } from "./todos/canvasHostActions";
 import { CanvasManager } from "./todos/canvasManager";
 import { CanvasViewer } from "./todos/canvasViewer";
 import { ConfigService } from "./todos/configService";
@@ -35,9 +36,104 @@ export async function activate(context: vscode.ExtensionContext) {
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
   const canvas = new CanvasManager(context.extensionUri);
-  const canvasViewer = new CanvasViewer(context.extensionUri);
+  const taskActions = createCanvasHostActions({ repository, status, links });
+  const canvasViewer = new CanvasViewer(context.extensionUri, {
+    ...taskActions,
+    getBoardSnapshot: async (scope) => {
+      return (
+        scope === "code-scanning" ? scanningBoardViewProvider : boardViewProvider
+      ).getSnapshot();
+    },
+    handleBoardMessage: async (scope, message) => {
+      await (scope === "code-scanning"
+        ? scanningBoardViewProvider
+        : boardViewProvider
+      ).handleCanvasMessage(message);
+    },
+    getSettingsInfo: async () => {
+      let skillStatus: unknown;
+      try {
+        skillStatus = await skill.getStatus();
+      } catch {
+        /* ignore */
+      }
+      let canvasStatus: unknown;
+      try {
+        canvasStatus = await canvas.getStatus();
+      } catch {
+        /* ignore */
+      }
+      return {
+        extensionVersion: context.extension.packageJSON.version,
+        skill: skillStatus,
+        canvas: canvasStatus,
+        workspace: {
+          root: config.root,
+          gitignored: config.gitignored,
+          backlogFolder: config.backlogFolder,
+          cancelledFolder: config.cancelledFolder,
+          completeFolder: config.completeFolder,
+          codeScanningEnabled: get<boolean>(Settings.CodeScanningEnabled),
+        },
+        viewOptions: {
+          groupBy: get<string>(Settings.GroupBy),
+          sortByDate: get<boolean>(Settings.SortByDate),
+        },
+      };
+    },
+    handleSettingsAction: async (payload) => {
+      const { action, component, scope } = payload as {
+        action: string;
+        component?: string;
+        scope?: string;
+      };
+      switch (action) {
+        case "open-extension-settings":
+          await vscode.commands.executeCommand(
+            "workbench.action.openSettings",
+            `@ext:agendo.agendo`,
+          );
+          return { success: true, reload: false };
+        case "open-board":
+          if (scope === "code-scanning") {
+            await vscode.commands.executeCommand(Command.CodeScanningOpenBoard);
+          } else {
+            await vscode.commands.executeCommand(Command.OpenBoard);
+          }
+          return { success: true, reload: false };
+        case "open-tree":
+          await vscode.commands.executeCommand("workbench.view.extension.agendo");
+          return { success: true, reload: false };
+        case "check-source":
+          if (component === "skill") {
+            await vscode.commands.executeCommand(Command.ManageSkill);
+          } else {
+            await vscode.commands.executeCommand(Command.ManageCanvas);
+          }
+          return { success: true };
+        case "install":
+          if (component === "skill") {
+            await vscode.commands.executeCommand(Command.ManageSkill);
+          } else {
+            await vscode.commands.executeCommand(Command.ManageCanvas);
+          }
+          return { success: true };
+        case "set-group-by": {
+          const validModes = ["status", "priority", "group", "none"];
+          const mode = scope ?? "";
+          if (!validModes.includes(mode)) {
+            throw new Error(`Invalid groupBy mode: ${mode}`);
+          }
+          await set(Settings.GroupBy, mode);
+          return { success: true, reload: false };
+        }
+        default:
+          throw new Error(`Unknown settings action: ${action}`);
+      }
+    },
+  });
   context.subscriptions.push(canvasViewer);
-  config.setCanvasOpener(async (uri) => {
+  config.setCanvasOpener(async (uri, returnTo) => {
     const todoId = /^((?:(?:cql|sq)-)?\d{3,})-/.exec(basename(uri.fsPath))?.[1];
     const root = config.getWorkspaceFolder()?.uri.fsPath;
     if (!todoId || !root) {
@@ -50,7 +146,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return false;
     }
     try {
-      await canvasViewer.open(root, todoId);
+      await canvasViewer.open(root, todoId, returnTo);
       return true;
     } catch (error) {
       out`Could not open the work-session canvas: ${error}`;
@@ -72,6 +168,8 @@ export async function activate(context: vscode.ExtensionContext) {
     filter,
     status,
     context.workspaceState,
+    "todos",
+    taskActions,
   );
   const scanningBoardViewProvider = new BoardViewProvider(
     repository,
@@ -79,6 +177,7 @@ export async function activate(context: vscode.ExtensionContext) {
     status,
     context.workspaceState,
     "code-scanning",
+    taskActions,
   );
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
@@ -204,17 +303,11 @@ export async function activate(context: vscode.ExtensionContext) {
   await vscode.commands.executeCommand("setContext", "agendo.loading", false);
   await vscode.commands.executeCommand("setContext", "agendo.codeScanning.loading", false);
 
-  // Keep an already-installed work-session canvas in step with the bundled version
-  try {
-    await canvas.updateIfInstalled();
-  } catch {
-    // Non-critical: don't block activation on canvas refresh failures
-  }
-
-  // Auto-check for skill updates. Not awaited: the prompt only resolves when the
+  // Auto-check for skill and canvas updates. Not awaited: the prompt only resolves when the
   // user dismisses it, and activation must finish first or the views never load.
   if (get(Settings.SkillUpdateCheck)) {
     void promptForSkillUpdate(skill);
+    void promptForCanvasUpdate(canvas);
   }
 }
 
@@ -224,13 +317,32 @@ async function promptForSkillUpdate(skill: SkillManager): Promise<void> {
     if (!skillStatus.updateAvailable) {
       return;
     }
-    const updateButton = "Update Skill";
+    const updateButton = "Review Versions";
     const result = await vscode.window.showInformationMessage(
-      `Agendo skill update available: v${skillStatus.installedVersion} → v${skillStatus.bundledVersion}`,
+      `Agendo skill: installed v${skillStatus.installedVersion}; bundled v${skillStatus.bundledVersion} (included in this extension) is newer. GitHub/source has not been checked.`,
       updateButton,
     );
     if (result === updateButton) {
-      await vscode.commands.executeCommand(Command.EnableSkill);
+      await vscode.commands.executeCommand(Command.ManageSkill);
+    }
+  } catch {
+    // Non-critical: don't surface update check failures
+  }
+}
+
+async function promptForCanvasUpdate(canvas: CanvasManager): Promise<void> {
+  try {
+    const canvasStatus = await canvas.getStatus();
+    if (!canvasStatus.updateAvailable) {
+      return;
+    }
+    const updateButton = "Review Versions";
+    const result = await vscode.window.showInformationMessage(
+      `Agendo canvas: installed v${canvasStatus.installedVersion}; bundled v${canvasStatus.bundledVersion} (included in this extension) is newer. GitHub/source has not been checked.`,
+      updateButton,
+    );
+    if (result === updateButton) {
+      await vscode.commands.executeCommand(Command.ManageCanvas);
     }
   } catch {
     // Non-critical: don't surface update check failures

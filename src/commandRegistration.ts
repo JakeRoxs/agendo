@@ -1,17 +1,27 @@
+import { existsSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
+import { buildAccomplishmentsPacket } from "./todos/accomplishmentsService";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import {
   fetchCodeQL,
+  fetchCodeQLBranches,
   fetchSonarQube,
+  fetchSonarQubeBranches,
+  fetchSonarQubeCliBranches,
+  fetchSonarQubeCli,
   importScanningFindings,
+  sonarQubeCliServer,
+  sonarQubeDefaults,
+  sonarQubeEnvironmentToken,
   validateSonarUrl,
 } from "./todos/codeScanningService";
+import { compareVersions, versionRelationship } from "./todos/componentVersions";
 import {
   type ConfigService,
   VIEW_MODES,
@@ -21,11 +31,17 @@ import {
 import { buildTodoDigest } from "./todos/digestService";
 import type { FilterService } from "./todos/filterService";
 import type { LinkService } from "./todos/linkService";
-import type { SkillManager } from "./todos/skillManager";
+import {
+  type FindingChanges,
+  readScanningProvenance,
+  type ScanningProvenance,
+} from "./todos/scanningSnapshot";
+import type { SkillManager, SkillStatus } from "./todos/skillManager";
 import type { StatusService } from "./todos/statusService";
 import { buildCollisionReconcileContext, findTodoCollisions } from "./todos/todoCollisions";
 import {
   buildFileName,
+  getTodoSource,
   matchesTodoScope,
   type ScanningSource,
   TERMINAL_STATUSES,
@@ -44,6 +60,7 @@ import {
   type TreeNode,
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
+import { boardReturnTarget } from "./todos/workspaceNavigation";
 
 export interface CommandServices {
   config: ConfigService;
@@ -127,6 +144,15 @@ export function registerCommands(
       `Copied reconciliation context for ${collisions.length} ID collision(s).`,
     );
   });
+  register(Command.CopyAccomplishmentsContext, async () => {
+    await services.repository.refresh();
+    const todos = services.repository.getTodos();
+    const packet = buildAccomplishmentsPacket(todos, {});
+    await vscode.env.clipboard.writeText(packet.text);
+    vscode.window.showInformationMessage(
+      `Copied accomplishments context: ${packet.matched} completed todo(s), ${packet.included.length} included${packet.omittedCount > 0 ? `, ${packet.omittedCount} omitted` : ""}.`,
+    );
+  });
   if (services.scanning) {
     const scanningServices = { ...services, ...services.scanning };
     registerFilterCommands(register, scanningServices, busy, "code-scanning");
@@ -155,6 +181,46 @@ export function registerCommands(
     } finally {
       scanning = false;
     }
+  });
+  register(Command.RefreshScanningTodo, async (arg: unknown) => {
+    if (scanning) {
+      return;
+    }
+    scanning = true;
+    try {
+      try {
+        await runScanningTodoRefresh(context, services, arg);
+      } finally {
+        await services.repository.refresh();
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(
+        `Scanner refresh failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+      );
+    } finally {
+      scanning = false;
+    }
+  });
+  register(Command.ShowMcpConfig, async () => {
+    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
+    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
+    const mcpConfig = {
+      mcpServers: {
+        agendo: {
+          command: "node",
+          args: [
+            existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs"),
+          ],
+          description: "Agendo todo management",
+        },
+      },
+    };
+    const json = JSON.stringify(mcpConfig, null, 2);
+    const doc = await vscode.workspace.openTextDocument({
+      content: json,
+      language: "json",
+    });
+    vscode.window.showTextDocument(doc, { preview: false });
   });
 }
 
@@ -204,25 +270,108 @@ async function runCodeScanningImport(
   if (!source) {
     return;
   }
-  const sonar = source.source === "sonarqube" ? await promptSonarQubeSettings(context) : undefined;
+  const sonar =
+    source.source === "sonarqube"
+      ? await promptSonarQubeSettings(context, workspace.uri)
+      : undefined;
   if (source.source === "sonarqube" && !sonar) {
     return;
   }
+  const branches = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Loading ${source.label} branches...`,
+    },
+    async () => {
+      if (source.source === "codeql") return fetchCodeQLBranches(workspace.uri.fsPath);
+      if (!sonar) throw new Error("SonarQube settings are missing.");
+      return sonar.cli
+        ? fetchSonarQubeCliBranches(workspace.uri.fsPath, sonar.server, sonar.project)
+        : fetchSonarQubeBranches(sonar.server, sonar.project, sonar.token);
+    },
+  );
+  const branchChoice = await vscode.window.showQuickPick(
+    [
+      {
+        label: `${branches.defaultBranch} (default)`,
+        description: "Use the scanner's default branch",
+        branch: undefined,
+      },
+      ...branches.branches
+        .filter((branch) => branch !== branches.defaultBranch)
+        .sort((a, b) => a.localeCompare(b))
+        .map((branch) => ({ label: branch, branch })),
+    ],
+    {
+      title: `Select ${source.label} branch`,
+      placeHolder: `Choose the branch to import from; default is ${branches.defaultBranch}`,
+    },
+  );
+  if (!branchChoice) return;
+  const grouping = await vscode.window.showQuickPick(
+    [
+      {
+        label: "By file (default)",
+        description: "One todo per affected file",
+        detail: "Keep related changes together, with separate context for each rule.",
+        grouping: "file" as const,
+      },
+      {
+        label: "By rule/type",
+        description: "One todo per rule across files",
+        detail: "Review or resolve the same kind of issue across the project.",
+        grouping: "rule" as const,
+      },
+      {
+        label: "By individual issue",
+        description: "One todo per scanner issue or alert",
+        detail: "Track each finding independently, including multiple findings on the same line.",
+        grouping: "finding" as const,
+      },
+    ],
+    {
+      title: "Group imported findings",
+      placeHolder:
+        "Default: by file. Changing grouping creates separate todos; previous imports remain.",
+    },
+  );
+  if (!grouping) return;
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
     async () => {
-      const scan = sonar
-        ? await fetchSonarQube(sonar.server, sonar.project, sonar.token)
-        : await fetchCodeQL(workspace.uri.fsPath);
+      const scan =
+        source.source === "codeql"
+          ? await fetchCodeQL(workspace.uri.fsPath, undefined, branchChoice.branch)
+          : sonar?.cli
+            ? await fetchSonarQubeCli(
+                workspace.uri.fsPath,
+                sonar.server,
+                sonar.project,
+                undefined,
+                branchChoice.branch,
+              )
+            : sonar
+              ? await fetchSonarQube(
+                  sonar.server,
+                  sonar.project,
+                  sonar.token,
+                  undefined,
+                  undefined,
+                  branchChoice.branch,
+                )
+              : undefined;
+      if (!scan) return;
       const result = await importScanningFindings(
         config,
         repository,
         source.source,
         scan.scope,
         scan.findings,
+        grouping.grouping,
+        { branch: branchChoice.branch },
       );
       vscode.window.showInformationMessage(
-        `${source.label}: ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
+        `${source.label} (${branchChoice.label}, ${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
       );
     },
   );
@@ -230,52 +379,305 @@ async function runCodeScanningImport(
 
 async function promptSonarQubeSettings(
   context: vscode.ExtensionContext,
-): Promise<{ server: string; project: string; token: string } | undefined> {
-  const urlInput = await vscode.window.showInputBox({
-    prompt: "SonarQube server URL",
-    value: get<string>(Settings.SonarQubeUrl) || "",
-    validateInput: (value) => {
-      try {
-        validateSonarUrl(value);
-        return undefined;
-      } catch {
-        return "Enter an HTTPS URL, or HTTP on loopback";
+  workspace: vscode.Uri,
+  fixed?: { server: string; project: string },
+): Promise<{ server: string; project: string; token: string; cli: boolean } | undefined> {
+  const defaults = await sonarQubeDefaults(workspace);
+  const auth = await vscode.window.showQuickPick(
+    [
+      { label: "SonarQube CLI", description: "Reuse sonar auth login (no token entry)", cli: true },
+      {
+        label: "Direct token",
+        description: "Use a saved, environment, or entered token",
+        cli: false,
+      },
+    ],
+    { placeHolder: "Choose SonarQube authentication" },
+  );
+  if (!auth) {
+    return;
+  }
+  let server: string;
+  let project: string;
+  if (fixed) {
+    server = validateSonarUrl(fixed.server).toString();
+    project = fixed.project;
+    if (auth.cli) {
+      const active = await sonarQubeCliServer(workspace.fsPath);
+      if (active !== server) {
+        throw new Error(
+          `SonarQube CLI is connected to a different server (${active}). Log in to ${server} and retry.`,
+        );
       }
-    },
-  });
-  if (!urlInput) {
-    return;
+    }
+  } else {
+    const urlInput = auth.cli
+      ? await sonarQubeCliServer(workspace.fsPath)
+      : await vscode.window.showInputBox({
+          prompt: "SonarQube server URL",
+          value: get<string>(Settings.SonarQubeUrl) || defaults.server,
+          validateInput: (value) => {
+            try {
+              validateSonarUrl(value);
+              return undefined;
+            } catch {
+              return "Enter an HTTPS URL, or HTTP on loopback";
+            }
+          },
+        });
+    if (!urlInput) {
+      return;
+    }
+    server = validateSonarUrl(urlInput).toString();
+    const projectInput = await vscode.window.showInputBox({
+      prompt: `SonarQube project key (${server})`,
+      value: get<string>(Settings.SonarQubeProjectKey) || defaults.project,
+      validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
+    });
+    if (!projectInput) {
+      return;
+    }
+    project = projectInput.trim();
   }
-  const server = validateSonarUrl(urlInput).toString();
-  const projectInput = await vscode.window.showInputBox({
-    prompt: "SonarQube project key",
-    value: get<string>(Settings.SonarQubeProjectKey) || "",
-    validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
-  });
-  if (!projectInput) {
-    return;
+  if (auth.cli) {
+    return { server, project, token: "", cli: true };
   }
-  const project = projectInput.trim();
   const secretKey = `agendo.sonarqube:${server}`;
   const saved = await context.secrets.get(secretKey);
+  const environmentToken = sonarQubeEnvironmentToken(server, defaults);
   const tokenInput = await vscode.window.showInputBox({
     prompt: saved
       ? "SonarQube token (leave blank to reuse saved token)"
-      : "SonarQube user token (stored securely in VS Code)",
+      : environmentToken
+        ? "SonarQube token (leave blank to import environment token into secure storage)"
+        : "SonarQube user token (stored securely in VS Code)",
     password: true,
     ignoreFocusOut: true,
   });
   if (tokenInput === undefined) {
     return;
   }
-  const token = tokenInput.trim() || saved || "";
+  const token = tokenInput.trim() || saved || environmentToken;
   if (!token) {
     return;
   }
   await context.secrets.store(secretKey, token);
   await set(Settings.SonarQubeUrl, server);
   await set(Settings.SonarQubeProjectKey, project);
-  return { server, project, token };
+  return { server, project, token, cli: false };
+}
+
+async function runScanningTodoRefresh(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  arg: unknown,
+): Promise<void> {
+  const { repository } = services;
+  if (!vscode.workspace.isTrusted) {
+    vscode.window.showWarningMessage("Trust this workspace before refreshing scanner todos.");
+    return;
+  }
+  const workspace = services.config.getWorkspaceFolder();
+  if (workspace?.uri.scheme !== "file") {
+    vscode.window.showWarningMessage(
+      "Open a filesystem workspace before refreshing scanner todos.",
+    );
+    return;
+  }
+  const scanningTodos = repository.getTodos().filter((t) => matchesTodoScope(t, "code-scanning"));
+  let todo = resolveRefreshableTodo(arg, repository.getTodos());
+  if (!todo && arg === undefined) {
+    const picked = await vscode.window.showQuickPick(
+      scanningTodos.map((t) => ({
+        label: `${t.id} · ${t.title}`,
+        description: `[${t.status}] ${t.folder}`,
+        todo: t,
+      })),
+      { placeHolder: "Select an imported scanner todo to refresh" },
+    );
+    todo = picked?.todo;
+  }
+  if (!todo) {
+    return;
+  }
+  const expectedSource = getTodoSource(todo);
+  if (!expectedSource) {
+    vscode.window.showErrorMessage(`Todo ${todo.id} is not a scanner-imported todo.`);
+    return;
+  }
+  const content = await vscode.workspace.fs.readFile(todo.uri);
+  const textContent = Buffer.from(content).toString("utf8");
+  let provenance: ScanningProvenance | undefined;
+  try {
+    provenance = readScanningProvenance(textContent);
+  } catch (error) {
+    vscode.window.showErrorMessage(
+      `Cannot refresh ${todo.id}: ${error instanceof Error ? error.message : "invalid provenance"}. Re-import the original scope and grouping instead.`,
+    );
+    return;
+  }
+  if (!provenance) {
+    vscode.window.showErrorMessage(
+      `Todo ${todo.id} has no scanner provenance. Re-import the original scope and grouping to update it.`,
+    );
+    return;
+  }
+  if (provenance.source === "codeql") {
+    await refreshCodeQLTodo(services, todo, provenance);
+  } else {
+    await refreshSonarTodo(context, services, todo, provenance);
+  }
+}
+
+async function refreshCodeQLTodo(
+  services: CommandServices,
+  todo: Todo,
+  provenance: ScanningProvenance,
+): Promise<void> {
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
+    async () => {
+      const workspace = services.config.getWorkspaceFolder();
+      if (workspace?.uri.scheme !== "file") {
+        vscode.window.showWarningMessage(
+          "Open a filesystem workspace before refreshing scanner todos.",
+        );
+        return;
+      }
+      const scan = await fetchCodeQL(workspace.uri.fsPath, undefined, provenance.branch);
+      if (scan.scope !== provenance.scope || scan.branch !== provenance.branch) {
+        throw new Error(
+          `Workspace scanner target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
+        );
+      }
+      const targetFindings = scan.findings.filter((f) => {
+        if (provenance.grouping === "finding") return f.id === provenance.target;
+        if (provenance.grouping === "file") return f.path === provenance.target;
+        return f.rule === provenance.target;
+      });
+      if (!targetFindings.length) {
+        vscode.window.showInformationMessage(
+          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
+        );
+        return;
+      }
+      const result = await importScanningFindings(
+        services.config,
+        services.repository,
+        "codeql",
+        scan.scope,
+        scan.findings,
+        provenance.grouping,
+        { target: provenance.target, branch: provenance.branch },
+      );
+      showScanningImportResult("CodeQL", todo.id, result);
+    },
+  );
+}
+
+async function refreshSonarTodo(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  todo: Todo,
+  provenance: ScanningProvenance,
+): Promise<void> {
+  const parts = provenance.scope.split("#");
+  const server = validateSonarUrl(parts[0]).toString();
+  const project = parts.slice(1).join("#");
+  // biome-ignore lint/style/noNonNullAssertion: workspace validated above
+  const sonar = await promptSonarQubeSettings(context, services.config.getWorkspaceFolder()!.uri, {
+    server,
+    project,
+  });
+  if (!sonar) {
+    return;
+  }
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
+    async () => {
+      const scan = sonar.cli
+        ? await fetchSonarQubeCli(
+            // biome-ignore lint/style/noNonNullAssertion: workspace validated above
+            services.config.getWorkspaceFolder()!.uri.fsPath,
+            sonar.server,
+            sonar.project,
+            undefined,
+            provenance.branch,
+          )
+        : await fetchSonarQube(
+            sonar.server,
+            sonar.project,
+            sonar.token,
+            undefined,
+            undefined,
+            provenance.branch,
+          );
+      if (scan.scope !== provenance.scope || scan.branch !== provenance.branch) {
+        throw new Error(
+          `SonarQube target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
+        );
+      }
+      const targetFindings = scan.findings.filter((f) => {
+        if (provenance.grouping === "finding") return f.id === provenance.target;
+        if (provenance.grouping === "file") return f.path === provenance.target;
+        return f.rule === provenance.target;
+      });
+      if (!targetFindings.length) {
+        vscode.window.showInformationMessage(
+          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
+        );
+        return;
+      }
+      const result = await importScanningFindings(
+        services.config,
+        services.repository,
+        "sonarqube",
+        scan.scope,
+        scan.findings,
+        provenance.grouping,
+        { target: provenance.target, branch: provenance.branch },
+      );
+      showScanningImportResult("SonarQube", todo.id, result);
+    },
+  );
+}
+
+function showScanningImportResult(
+  source: string,
+  todoId: string,
+  result: {
+    created: number;
+    updated: number;
+    refreshed: number;
+    changes: FindingChanges;
+    reviewRequired: string[];
+  },
+): void {
+  const parts = [
+    `${source} refresh for ${todoId}:`,
+    `${result.created} created, ${result.updated} updated, ${result.refreshed} refreshed`,
+    `findings: ${result.changes.added} added, ${result.changes.changed} changed, ${result.changes.unchanged} unchanged, ${result.changes.notReturned} no longer returned, ${result.changes.uncompared} uncompared`,
+  ];
+  if (result.reviewRequired.length) {
+    parts.push(
+      `Requires review: ${result.reviewRequired.join(", ")}. These are not auto-marked; update status when you've addressed them.`,
+    );
+  }
+  parts.push("Import retrieves current scanner results; it does not trigger a new scan.");
+  vscode.window.showInformationMessage(parts.join("\n"));
+}
+
+function resolveRefreshableTodo(arg: unknown, todos: readonly Todo[]): Todo | undefined {
+  const node = resolveTodo(arg);
+  if (node) {
+    return node;
+  }
+  const matches = resolveBoardTodo(arg, todos);
+  if (matches) {
+    return matches;
+  }
+  vscode.window.showErrorMessage("Could not resolve the todo to refresh.");
+  return undefined;
 }
 
 /**
@@ -284,6 +686,7 @@ async function promptSonarQubeSettings(
  * driven by the operation's context key.
  */
 function registerLoadingCommands(register: Register): void {
+  register(Command.RefreshComponentsLoading, () => undefined);
   register(Command.CodeScanningRefreshLoading, () => undefined);
   register(Command.CodeScanningOpenBoardLoading, () => undefined);
   register(Command.CodeScanningShowDigestLoading, () => undefined);
@@ -441,7 +844,11 @@ function registerTodoCommands(
   register(Command.OpenCanvas, async (arg: unknown) => {
     const todo = resolveTodo(arg) ?? resolveBoardTodo(arg, repository.getTodos());
     if (todo) {
-      await config.openInCanvas(todo.uri);
+      const returnTo = boardReturnTarget(
+        arg && typeof arg === "object" ? (arg as Record<string, unknown>).returnTo : undefined,
+      );
+      if (returnTo && !matchesTodoScope(todo, returnTo.scope)) return;
+      await config.openInCanvas(todo.uri, returnTo);
     }
   });
 
@@ -664,6 +1071,29 @@ function registerConfigCommands(register: Register, services: CommandServices): 
         : "Agendo: Todos now sorted by issue ID.",
     );
   });
+  register(Command.SetGroupBy, async () => {
+    const modes: Array<{ label: string; mode: string }> = [
+      { label: "Status", mode: "status" },
+      { label: "Priority", mode: "priority" },
+      { label: "Group", mode: "group" },
+      { label: "None (flat)", mode: "none" },
+    ];
+    const current = get<string>(Settings.GroupBy);
+    const picked = await vscode.window.showQuickPick(
+      modes.map((m) => ({
+        label: m.label,
+        description: m.mode === current ? "Current" : undefined,
+      })),
+      { placeHolder: "Choose grouping mode" },
+    );
+    if (!picked) return;
+    const mode = modes.find((m) => m.label === picked.label)?.mode ?? "status";
+    await set(Settings.GroupBy, mode);
+    services.treeProvider.refresh();
+    vscode.window.showInformationMessage(
+      `Agendo: Todos now grouped by ${picked.label.toLowerCase()}.`,
+    );
+  });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({
       prompt: "Global default for todos root folder",
@@ -708,30 +1138,102 @@ function registerSkillCommands(
   busy: BusyIndicator,
 ): void {
   const { skill, canvas, refreshSkillStatus } = services;
+  let checking = false;
+  register(Command.RefreshComponents, async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      await busy.run(
+        "Checking skill and canvas versions",
+        async () => {
+          const results = await Promise.allSettled([skill.getStatus(true), canvas.getStatus(true)]);
+          let updates = 0;
+          let uncertain = false;
+          const details = results.map((result, index) => {
+            const name = index === 0 ? "Skill" : "Canvas";
+            if (result.status === "rejected") {
+              uncertain = true;
+              return `${name}: version check unavailable`;
+            }
+            const status = result.value;
+            if (!status.installed) return `${name}: not installed`;
+            const available = [status.bundledVersion, status.sourceVersion].some((version) =>
+              Boolean(
+                version &&
+                  status.installedVersion &&
+                  compareVersions(version, status.installedVersion) > 0,
+              ),
+            );
+            if (available) updates++;
+            if (status.sourceError || !status.installedVersion || !status.bundledVersion)
+              uncertain = true;
+            return `${name}: installed v${status.installedVersion ?? "unknown"}; bundled v${status.bundledVersion ?? "unknown"} (${versionRelationship(status.installedVersion, status.bundledVersion)}); source ${status.sourceVersion ? `v${status.sourceVersion} (${versionRelationship(status.installedVersion, status.sourceVersion)})` : "unavailable"}`;
+          });
+          refreshSkillStatus();
+          const summary = `${updates ? `${updates} component(s) have newer versions available.` : "No newer versions found among checked versions."} ${uncertain ? "Some versions could not be checked. " : ""}${details.join(". ")}. No files were installed.`;
+          if (uncertain) await vscode.window.showWarningMessage(summary);
+          else await vscode.window.showInformationMessage(summary);
+        },
+        "agendo.componentsChecking",
+      );
+    } finally {
+      checking = false;
+    }
+  });
+
+  for (const component of ["skill", "canvas"] as const) {
+    register(component === "skill" ? Command.ManageSkill : Command.ManageCanvas, async () => {
+      const manager = component === "skill" ? skill : canvas;
+      const status: SkillStatus = await manager.getStatus(true);
+      const installed: string = status.installed
+        ? `v${status.installedVersion ?? "unknown"}`
+        : "not installed";
+      const sourceLabel = status.sourceVersion ? `v${status.sourceVersion}` : "unavailable";
+      const sourceDetail =
+        status.sourceError ||
+        (status.sourceVersion
+          ? versionRelationship(status.installedVersion, status.sourceVersion)
+          : "GitHub/main by default; may differ from the extension bundle");
+      const picked: (vscode.QuickPickItem & { action: string }) | undefined =
+        await vscode.window.showQuickPick(
+          [
+            {
+              label: `Install bundled version v${status.bundledVersion ?? "unknown"}`,
+              detail: `${versionRelationship(status.installedVersion, status.bundledVersion)}; includes extension defaults`,
+              action: "bundle",
+            },
+            {
+              label: `Install from source ${sourceLabel}`,
+              detail: sourceDetail,
+              action: "source",
+            },
+          ],
+          {
+            title: `Agendo ${component}: installed ${installed} | bundled v${status.bundledVersion ?? "?"} | source ${sourceLabel}`,
+            placeHolder: "Choose an action",
+          },
+        );
+      if (!picked) return;
+      await vscode.commands.executeCommand(
+        component === "skill"
+          ? picked.action === "bundle"
+            ? Command.EnableSkill
+            : Command.UpdateSkill
+          : picked.action === "bundle"
+            ? Command.InstallCanvas
+            : Command.UpdateCanvas,
+      );
+    });
+  }
 
   register(Command.EnableSkill, async () => {
     const status = await skill.getStatus();
-    if (status.installed && !status.updateAvailable) {
-      const canvasStatus = await canvas.getStatus();
-      if (!canvasStatus.installed || canvasStatus.updateAvailable) {
-        await canvas.install();
-        vscode.window.showInformationMessage(
-          `Agendo skill already installed (v${status.installedVersion ?? "?"}). Installed the work-session canvas (v${canvasStatus.bundledVersion ?? "?"}).`,
-        );
-        return;
-      }
-      vscode.window.showInformationMessage(
-        `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
-      );
-      return;
-    }
     try {
       const previousVersion = status.installedVersion;
       await busy.run(
         "Installing skill…",
         async () => {
           await skill.install();
-          await canvas.install();
           refreshSkillStatus();
         },
         "agendo.skillInstalling",
@@ -739,10 +1241,12 @@ function registerSkillCommands(
       const newVersion = status.bundledVersion ?? "?";
       if (previousVersion) {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from v${previousVersion} to v${newVersion} (Extension).`,
+          `Agendo skill replaced: installed v${previousVersion} → bundled v${newVersion} (included in this extension).`,
         );
       } else {
-        vscode.window.showInformationMessage(`Agendo skill installed (v${newVersion} Extension).`);
+        vscode.window.showInformationMessage(
+          `Agendo skill installed: bundled v${newVersion} (included in this extension).`,
+        );
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
@@ -762,8 +1266,8 @@ function registerSkillCommands(
       const version = (await canvas.getStatus()).bundledVersion ?? "?";
       vscode.window.showInformationMessage(
         previous.installedVersion
-          ? `Agendo work-session canvas updated from v${previous.installedVersion} to v${version}.`
-          : `Agendo work-session canvas installed (v${version}).`,
+          ? `Agendo canvas replaced: installed v${previous.installedVersion} → bundled v${version} (included in this extension).`
+          : `Agendo canvas installed: bundled v${version} (included in this extension).`,
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install canvas: ${error}`);
@@ -771,7 +1275,8 @@ function registerSkillCommands(
   });
   register(Command.UpdateSkill, async () => {
     try {
-      const previousStatus = await skill.getStatus();
+      const previousStatus = await skill.getStatus(true);
+      if (previousStatus.sourceError) throw new Error(previousStatus.sourceError);
       await busy.run(
         "Updating skill…",
         async () => {
@@ -783,15 +1288,41 @@ function registerSkillCommands(
       const newStatus = await skill.getStatus();
       if (previousStatus.installedVersion && newStatus.installedVersion) {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from v${previousStatus.installedVersion} to v${newStatus.installedVersion} (Source).`,
+          `Agendo skill replaced: installed v${previousStatus.installedVersion} → source v${newStatus.installedVersion} from ${previousStatus.sourceUrl}.`,
         );
       } else {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from configured source (v${newStatus.installedVersion ?? "?"} Source).`,
+          `Agendo skill installed: source v${newStatus.installedVersion ?? "?"} from ${previousStatus.sourceUrl}.`,
         );
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
+    }
+  });
+  register(Command.UpdateCanvas, async () => {
+    try {
+      const previousStatus = await canvas.getStatus(true);
+      if (previousStatus.sourceError) throw new Error(previousStatus.sourceError);
+      await busy.run(
+        "Updating canvas…",
+        async () => {
+          await canvas.updateFromSource();
+          refreshSkillStatus();
+        },
+        "agendo.canvasUpdating",
+      );
+      const newStatus = await canvas.getStatus();
+      if (previousStatus.installedVersion && newStatus.installedVersion) {
+        vscode.window.showInformationMessage(
+          `Agendo canvas replaced: installed v${previousStatus.installedVersion} → source v${newStatus.installedVersion} from ${previousStatus.sourceUrl}.`,
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `Agendo canvas installed: source v${newStatus.installedVersion ?? "?"} from ${previousStatus.sourceUrl}.`,
+        );
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to update canvas: ${error}`);
     }
   });
   register(Command.ToggleSkillUpdateCheck, async () => {
@@ -801,8 +1332,8 @@ function registerSkillCommands(
     await config.update(Settings.SkillUpdateCheck, newEnabled, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(
       newEnabled
-        ? "Agendo skill update check enabled. Will notify on activation when a newer skill version is available."
-        : "Agendo skill update check disabled.",
+        ? "Agendo skill and canvas update notifications enabled for newer bundled versions."
+        : "Agendo skill and canvas update notifications disabled.",
     );
   });
 }
@@ -1102,8 +1633,15 @@ TODO
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
     await config.writeConfigFile?.({ force: true });
     await config.applyGitignore?.({ force: true });
-    repository.refresh();
-    vscode.window.showInformationMessage(
+    try {
+      await repository.refresh();
+    } catch (err) {
+      await vscode.window.showWarningMessage(
+        `Todo ${newId} was created, but refreshing the todo list failed: ${err}`,
+      );
+      return;
+    }
+    await vscode.window.showInformationMessage(
       `Created todo ${newId} from ${parsed.externalKey ?? url}.`,
     );
   } catch (err) {

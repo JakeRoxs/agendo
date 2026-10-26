@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: backlogged
 priority: p3
 issue_id: "029"
 tags: [vscode, extension, ux, keyboard]

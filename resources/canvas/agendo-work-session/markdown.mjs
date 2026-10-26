@@ -9,11 +9,12 @@ export function escapeHtml(value) {
 
 export function inlineMarkdown(text) {
   return String(text)
-    .split(/(`[^`]+`)/)
-    .map((part, i) => {
-      if (i % 2 === 1) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+    .split(/(\[[^\]]+\]\((?:<https?:\/\/[^>\s]*>|https?:\/\/[^)\s]+)\)|`[^`]+`)/)
+    .map(part => {
+      const link = part.match(/^\[([^\]]+)\]\((?:<(https?:\/\/[^>\s]*)>|(https?:\/\/[^)\s]+))\)$/);
+      if (link) return `<a href="${escapeHtml(link[2] || link[3])}" target="_blank" rel="noopener noreferrer">${inlineMarkdown(link[1])}</a>`;
+      if (part.startsWith('`') && part.endsWith('`')) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
       return escapeHtml(part)
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/(^|[^*\w])\*(?!\s)([^*]+?)\*(?!\w)/g, '$1<em>$2</em>');
     })
@@ -59,7 +60,7 @@ export function renderMarkdown(markdown) {
     if (heading) {
       flushParagraph();
       flushList();
-      const level = Math.min(heading[1].length + 3, 6);
+       const level = Math.max(3, heading[1].length);
       out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
     } else if (bullet || ordered) {
       flushParagraph();

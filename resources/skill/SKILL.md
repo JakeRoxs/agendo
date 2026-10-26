@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.5.0
+version: 1.6.1
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -139,10 +139,44 @@ On a scanner status change, retain its source root, for example
 `{root}/code-scanning/codeql/{completeFolder}/cql-001-complete-p1-rule-name.md`.
 Reopening returns it to `{root}/code-scanning/codeql`, not the main root.
 
+Imports default to one todo per affected file, with optional grouping by rule/type or individual
+scanner issue. File-based todos may contain several rules; review every finding and its rule
+context. New todos record `scan_grouping` and `scan_target`. Changing grouping creates separate
+todos, not a migration; do not silently merge or remove the previous grouping. IDs share the
+same source-specific sequence across grouping choices.
+
 Scanner imports manage only the marked Scanner Evidence block and `scan_identity` is the stable
 import identity. Preserve these markers and metadata. Keep work logs, decisions, and notes outside
 the managed block. Importing findings does not authorize status changes; missing alerts do not prove
 completion. The lifecycle and verification rules below apply equally to scanner todos.
+
+A file-based import is a focus for investigation, not a prohibition against necessary changes in
+related files. A finding reported in one file may require changes to a shared helper, caller, test,
+or other related file. When working a scanner todo:
+
+- Keep small, directly necessary changes in the same todo. Record the related file, its purpose,
+  and its relationship to the main finding in the Recommended Action or a new Related File Work
+  subsection.
+- Add acceptance criteria covering necessary related-file work (helper updates, caller changes,
+  tests) without fabricating scanner findings for those files.
+- Distinguish related findings already in the selected import from references to findings in
+  other todos or grouping modes. Use the finding's stable ID when referencing another todo.
+- Do not propagate checklist completion, change lifecycle, or merge notes across independent
+  todos. Overlap references are informational only.
+- Any claimed clearance in another file must be supported by appropriate tests and scanner
+  evidence, not inferred solely from a related edit.
+- Create a linked pending todo (using the `dependencies` field) for independent cleanup, a
+  separately verifiable larger change, or work needing separate approval.
+
+**Related File Work subsection example:**
+
+```markdown
+### Related File Work
+
+- `src/utils/shared.js` — Refactor `validateInput()` to handle null (called by `src/api/user.ts`
+  where the finding was reported). No separate scanner finding exists for this file.
+- `src/api/user.test.ts` — Add regression test for the null-input case.
+```
 
 The extension displays scanner todos in a separate Code Scanning section between Todos and Skill,
 grouped by CodeQL or SonarQube, then status and priority/custom group. Its search, filters, digest,
@@ -246,13 +280,18 @@ key: "JIRA-123"
 ```
 
 Do not add an empty `key`, and do not automatically include the key in the todo
-title or filename. Existing `jira:` fields are supported as a legacy alias.
+title or filename.
 
 **Authoritative filename, synchronized mirror:** the extension derives status and priority from the
 filename tokens. Frontmatter `status` and `priority` are human-readable mirrors and must match the
-filename. Folder placement is derived from status. If filename and frontmatter disagree, the
-extension follows the filename. When transitioning a todo, update filename, frontmatter, and folder
-placement together.
+filename. Folder placement is derived from status.
+
+**Keep all three in sync, always.** The filename status/priority tokens, the frontmatter `status`
+and `priority`, and the folder (`{root}`, `{backlog}`, `{complete}`, `{cancelled}`) must describe the
+same state at all times. Never change one without the others, and never leave a todo half-transitioned.
+If they disagree, the extension follows the filename, so the stale frontmatter or folder is the bug to
+fix. Verify all three after every transition. Applies to creation, triage, completion, cancelling,
+backlogging, reopening, and priority changes. The order of rename and edit does not matter.
 
 ## Common Workflows
 
@@ -301,11 +340,6 @@ and an obvious solution — or when the user explicitly requests immediate actio
 
 ### Triaging Pending Items
 
-> **Rename or move first, then edit the destination.** This applies to every lifecycle or priority
-> transition. VS Code Copilot may stage edits against the original path; editing before a rename can
-> recreate a stale copy when the change is accepted. After moving, perform all frontmatter, banner,
-> and work-log edits using only the new path.
-
 **To triage pending todos:**
 
 1. List pending items: `ls "{root}"/*-pending-*.md`
@@ -314,9 +348,9 @@ and an obvious solution — or when the user explicitly requests immediate actio
    - Review Proposed Solutions
    - Make decision: approve, defer (backlog), or modify priority
 3. Update approved todos:
-   - First rename the file: `mv "{root}/{file}-pending-{pri}-{desc}.md" "{root}/{file}-in-progress-{pri}-{desc}.md"`
-   - Then update frontmatter at the new path: `status: pending` → `status: in-progress`
-   - Fill "Recommended Action" at the new path with a clear plan
+   - Rename the file: `mv "{root}/{file}-pending-{pri}-{desc}.md" "{root}/{file}-in-progress-{pri}-{desc}.md"`
+   - Update frontmatter to match: `status: pending` → `status: in-progress`
+   - Fill "Recommended Action" with a clear plan
    - Adjust priority if different from initial assessment
 4. Deferred todos either stay in `pending` status or move to `backlogged` (see below).
 
@@ -330,7 +364,17 @@ its Resume Context and Work Log as you go.
 
 **Open the work-session canvas for the active todo.** When you start or resume work on a todo and
 the host lists the `agendo-work-session` canvas (installed by the Agendo extension into
-`~/.copilot/extensions/agendo-work-session/`, or present as a project extension), open it for that todo:
+`$COPILOT_HOME/extensions/agendo-work-session/` — defaulting to `~/.copilot/extensions/agendo-work-session/`
+on Linux/macOS or `%USERPROFILE%\.copilot\extensions\agendo-work-session\` on Windows, or present as a
+project extension), open it for that todo:
+
+In the normal VS Code extension, a board card's **Work session** action opens the dashboard with
+a **Return to Board** link to that board. Its filters and layout remain intact. Normal card clicks
+still honor the saved todo-opening preference; explicit work-session navigation does not change it.
+Use **Group overview** on a grouped todo to inspect its members, then use Back/Forward or recent
+views to return. These native UI actions do not require Copilot or an agent session.
+
+In a supported Copilot canvas host:
 
 - Call `open_canvas` with `canvasId: "agendo-work-session"`, `input: { "todoId": "{issue_id}" }`
   (the three-digit ID as a string), and the fixed `instanceId` `agendo-work-session`. Always reuse
@@ -486,14 +530,14 @@ is confirmed done and functional.
 **To mark a todo as complete:**
 
 1. Verify all acceptance criteria checked off and the work is confirmed working
-2. **Move the file first, before editing its contents**: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-complete-{pri}-{desc}.md"`
-3. Edit only the file at its new `{complete}` path: set frontmatter `status: ready` →
-   `status: complete` and add the final Work Log entry.
+2. Move and rename the file: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-complete-{pri}-{desc}.md"`
+3. Set frontmatter `status: ready` → `status: complete` and add the final Work Log entry.
 4. Check for newly unblocked active work: `grep -l 'dependencies:.*"{issue_id}"' "{root}"/*-{pending,in-progress,ready}-*.md`
 
 Do not commit, push, or create a pull request unless the user explicitly requests it.
 
-> Remember: **move before edit** for every lifecycle transition (see [Triaging Pending Items](#triaging-pending-items)).
+> Remember: every lifecycle or priority transition changes the filename, frontmatter, and folder
+> together (see [File Structure](#file-structure)).
 
 ## Active vs. Terminal Status Rules
 
@@ -572,6 +616,14 @@ gathering, and an advisory review that proposes changes for user approval withou
 rewriting history. An unscoped request such as "review all todos" triggers a whole-repository
 reconciliation that reviews every non-terminal todo, automatically continues in stable ID-ordered
 batches when needed, and presents one consolidated report for approval.
+
+## Edit Verification
+
+When editing todo files, always verify the edit succeeded before proceeding:
+
+- After an edit tool call fails or appears to have no effect, **read the file** to verify its current state before retrying. Do not repeat the same edit multiple times without checking whether the target text actually exists.
+- If an edit fails twice with the same search text, stop and inspect the file content directly — the text may have already been changed or may differ from what you expect.
+- When updating status, check the current status first rather than assuming it. The filename and frontmatter should already be in sync from the previous transition.
 
 ## Key Distinctions
 

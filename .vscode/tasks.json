@@ -48,6 +48,19 @@
       "type": "npm",
       "script": "package:vsix",
       "problemMatcher": [],
+      "group": "build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "new"
+      }
+    },
+    {
+      "label": "Package and Install VSIX",
+      "type": "shell",
+      "command": "node -e \"const {execFileSync}=require('node:child_process');const version=require('./package.json').version;execFileSync('code',['--install-extension','.artifacts/agendo-'+version+'.vsix','--force'],{stdio:'inherit'});\"",
+      "dependsOn": ["Package VSIX"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
       "group": {
         "kind": "build",
         "isDefault": true

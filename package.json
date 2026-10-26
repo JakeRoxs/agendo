@@ -3,7 +3,7 @@
   "displayName": "Agendo",
   "icon": "resources/images/agendo-icon.png",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -106,6 +106,29 @@
     ],
     "commands": [
       {
+        "command": "agendo.refreshComponents",
+        "title": "Check Skill and Canvas Updates",
+        "category": "Agendo",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agendo.refreshComponents.loading",
+        "title": "Checking Skill and Canvas Updates...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)",
+        "enablement": "false"
+      },
+      {
+        "command": "agendo.manageSkill",
+        "title": "Skill Versions and Update Actions...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.manageCanvas",
+        "title": "Canvas Versions and Update Actions...",
+        "category": "Agendo"
+      },
+      {
         "command": "agendo.focusCollision",
         "title": "Show Conflicting Files",
         "category": "Agendo",
@@ -116,6 +139,12 @@
         "title": "Copy ID Collision Reconciliation Context",
         "category": "Agendo",
         "icon": "$(copy)"
+      },
+      {
+        "command": "agendo.copyAccomplishmentsContext",
+        "title": "Copy Accomplishments Context",
+        "category": "Agendo",
+        "icon": "$(checklist)"
       },
       {
         "command": "agendo.codeScanning.refresh",
@@ -274,7 +303,7 @@
       },
       {
         "command": "agendo.installCanvas",
-        "title": "Install/Update Work Session Canvas",
+        "title": "Install Bundled Work Session Canvas",
         "category": "Agendo",
         "icon": "$(dashboard)"
       },
@@ -368,13 +397,18 @@
       },
       {
         "command": "agendo.enableSkill",
-        "title": "Install/Enable Agendo Skill",
+        "title": "Install Bundled Agendo Skill",
         "category": "Agendo",
         "icon": "$(cloud-download)"
       },
       {
         "command": "agendo.updateSkill",
-        "title": "Update Agendo Skill from Source",
+        "title": "Install Agendo Skill from Configured Source",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.updateCanvas",
+        "title": "Install Work Session Canvas from Configured Source",
         "category": "Agendo"
       },
       {
@@ -390,8 +424,14 @@
         "icon": "$(sync~spin)"
       },
       {
+        "command": "agendo.updateCanvas.loading",
+        "title": "Updating work-session canvas...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "agendo.toggleSkillUpdateCheck",
-        "title": "Toggle Agendo Skill Update Check",
+        "title": "Toggle Skill and Canvas Update Notifications",
         "category": "Agendo",
         "icon": "$(bell)"
       },
@@ -402,6 +442,12 @@
         "icon": "$(calendar)"
       },
       {
+        "command": "agendo.setGroupBy",
+        "title": "Set Group By",
+        "category": "Agendo",
+        "icon": "$(list-flat)"
+      },
+      {
         "command": "agendo.collapseNode",
         "title": "Collapse",
         "category": "Agendo"
@@ -409,6 +455,17 @@
       {
         "command": "agendo.expandNode",
         "title": "Expand",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.refreshScanningTodo",
+        "title": "Refresh Imported Todo",
+        "category": "Agendo",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "agendo.showMcpConfig",
+        "title": "Show MCP Configuration",
         "category": "Agendo"
       }
     ],
@@ -570,6 +627,21 @@
           "group": "2_config@7"
         },
         {
+          "command": "agendo.setGroupBy",
+          "when": "view == agendo.todos",
+          "group": "2_config@8"
+        },
+        {
+          "command": "agendo.refreshComponents",
+          "when": "view == agendo.skillStatus && !agendo.componentsChecking",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agendo.refreshComponents.loading",
+          "when": "view == agendo.skillStatus && agendo.componentsChecking",
+          "group": "navigation@1"
+        },
+        {
           "command": "agendo.enableSkill",
           "when": "view == agendo.skillStatus && !agendo.skillInstalling",
           "group": "skill@1"
@@ -590,6 +662,11 @@
           "group": "skill@2"
         },
         {
+          "command": "agendo.updateCanvas",
+          "when": "view == agendo.skillStatus && !agendo.canvasUpdating",
+          "group": "skill@4"
+        },
+        {
           "command": "agendo.enableSkill.loading",
           "when": "view == agendo.skillStatus && agendo.skillInstalling",
           "group": "skill@1"
@@ -600,12 +677,21 @@
           "group": "skill@2"
         },
         {
+          "command": "agendo.updateCanvas.loading",
+          "when": "view == agendo.skillStatus && agendo.canvasUpdating",
+          "group": "skill@4"
+        },
+        {
           "command": "agendo.toggleSkillUpdateCheck",
           "when": "view == agendo.skillStatus",
           "group": "skill@3"
         }
       ],
       "commandPalette": [
+        {
+          "command": "agendo.refreshComponents.loading",
+          "when": "false"
+        },
         {
           "command": "agendo.openCanvas",
           "when": "false"
@@ -621,6 +707,11 @@
           "command": "agendo.openCanvas",
           "when": "(webviewId == 'agendo.board' || webviewId == 'agendo.codeScanning.board') && webviewSection == 'todoCard'",
           "group": "1_open@1"
+        },
+        {
+          "command": "agendo.refreshScanningTodo",
+          "when": "webviewId == 'agendo.codeScanning.board' && webviewSection == 'todoCard'",
+          "group": "5_scanning@1"
         }
       ],
       "view/item/context": [
@@ -703,6 +794,11 @@
           "command": "agendo.deleteTodo",
           "when": "(view == agendo.todos || view == agendo.codeScanning) && viewItem =~ /todoItem|todoItemBlocked/",
           "group": "4_delete@1"
+        },
+        {
+          "command": "agendo.refreshScanningTodo",
+          "when": "view == agendo.codeScanning && viewItem =~ /todoItem|todoItemBlocked/",
+          "group": "5_scanning@1"
         }
       ]
     },
@@ -792,7 +888,12 @@
         "agendo.skillUpdateSource": {
           "type": "string",
           "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill",
-          "description": "Raw base URL used by 'Update Agendo Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
+          "description": "HTTPS base URL for checking and installing the skill from source. Defaults to GitHub/main, which can differ from the version bundled in this extension."
+        },
+        "agendo.canvasUpdateSource": {
+          "type": "string",
+          "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/canvas/agendo-work-session",
+          "description": "HTTPS base URL for checking and installing the canvas from source. Defaults to GitHub/main, which can differ from the version bundled in this extension."
         },
         "agendo.showDependencyNodes": {
           "type": "boolean",
@@ -802,42 +903,62 @@
         "agendo.skillUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "When enabled, automatically check for Agendo skill updates on extension activation and notify when a newer version is available."
+          "description": "Notify on activation when the skill or canvas bundled with this extension is newer than the installed copy. Does not install automatically or contact GitHub; source checks are explicit in Versions and Update Actions."
         },
         "agendo.sortByDate": {
           "type": "boolean",
           "default": false,
           "description": "When enabled, sort todos within each priority group by last modified date (most recent first) instead of by issue ID."
+        },
+        "agendo.groupBy": {
+          "type": "string",
+          "enum": [
+            "status",
+            "priority",
+            "group",
+            "none"
+          ],
+          "default": "status",
+          "description": "How todos are grouped in the tree view: by status (default), priority, group, or flat (none)."
         }
       }
     }
   },
   "overrides": {
     "diff": "^8.0.4",
-    "serialize-javascript": "^7.1.0"
+    "serialize-javascript": "^7.1.3"
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run bundle",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
-    "lint": "biome check .",
+    "lint": "biome lint .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "bundle": "esbuild out/extension.js --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=out/extension.bundle.js && node -e \"require('node:fs').copyFileSync('out/extension.bundle.js','out/extension.js')\" && esbuild resources/mcp/server.mjs --bundle --platform=node --format=esm --target=node18 --outfile=resources/mcp/server.bundle.mjs",
     "test": "node ./out/test/runTest.js",
     "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js",
-    "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix"
+    "package:vsix": "node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix",
+    "mcp": "node resources/mcp/server.mjs",
+    "mcp:compile": "tsc src/mcp/server.ts --outDir out/mcp --module commonjs --target es2020 --esModuleInterop"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.5.15",
+    "@biomejs/biome": "^2.6.2",
     "@types/mocha": "^10.0.10",
     "@types/node": "26.x",
+    "@types/turndown": "^5.0.6",
     "@types/vscode": "^1.103.0",
     "@vscode/test-electron": "^3.1.0",
     "c8": "^12.0.0",
+    "esbuild": "^0.28.2",
     "glob": "^13.0.6",
     "mocha": "^12.0.3",
     "prettier": "^3.9.10",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "turndown": "^7.2.4"
   }
 }

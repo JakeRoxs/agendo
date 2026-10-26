@@ -4,6 +4,11 @@
  * Commands follow the format: "agendo.commandName".
  */
 export enum Command {
+  RefreshComponents = "agendo.refreshComponents",
+  RefreshComponentsLoading = "agendo.refreshComponents.loading",
+  ManageSkill = "agendo.manageSkill",
+  ManageCanvas = "agendo.manageCanvas",
+  CopyAccomplishmentsContext = "agendo.copyAccomplishmentsContext",
   CopyCollisionContext = "agendo.copyCollisionContext",
   FocusCollision = "agendo.focusCollision",
   CodeScanningRefresh = "agendo.codeScanning.refresh",
@@ -50,13 +55,18 @@ export enum Command {
   SetDefaultPreview = "agendo.setDefault.preview",
   EnableSkill = "agendo.enableSkill",
   UpdateSkill = "agendo.updateSkill",
+  UpdateCanvas = "agendo.updateCanvas",
   ToggleSkillUpdateCheck = "agendo.toggleSkillUpdateCheck",
   ToggleSortDate = "agendo.toggleSortDate",
+  SetGroupBy = "agendo.setGroupBy",
   EnableSkillLoading = "agendo.enableSkill.loading",
   InstallCanvasLoading = "agendo.installCanvas.loading",
   UpdateSkillLoading = "agendo.updateSkill.loading",
+  UpdateCanvasLoading = "agendo.updateCanvas.loading",
   CollapseNode = "agendo.collapseNode",
   ExpandNode = "agendo.expandNode",
   ImportFromClipboard = "agendo.importFromClipboard",
   ImportFromClipboardLoading = "agendo.importFromClipboard.loading",
+  RefreshScanningTodo = "agendo.refreshScanningTodo",
+  ShowMcpConfig = "agendo.showMcpConfig",
 }

@@ -1,18 +1,24 @@
 import * as os from "node:os";
 import * as vscode from "vscode";
+import { get, Settings } from "../configuration";
 import { out } from "../output";
+import { checkSourceVersion, type SourceVersion } from "./componentVersions";
 import { readText } from "./fileSystem";
-import { compareVersions } from "./skillManager";
+import { compareVersions, fetchText } from "./skillManager";
 
 const CANVAS_NAME = "agendo-work-session";
 const META_FILE = ".canvas-meta.json";
 
 /** Relative files that make up the bundled canvas. */
 const CANVAS_FILES = [
+  "board.html",
+  "board.mjs",
+  "copilot-extension.json",
   "errors.mjs",
   META_FILE,
   "extension.mjs",
   "server.mjs",
+  "settings.mjs",
   "todos.mjs",
   "page.mjs",
   "markdown.mjs",
@@ -24,7 +30,7 @@ const CANVAS_FILES = [
 const OBSOLETE_FILES = ["package.json"];
 
 /** Result of comparing the bundled canvas against the installed copy. */
-export interface CanvasStatus {
+export interface CanvasStatus extends SourceVersion {
   installed: boolean;
   installedVersion?: string;
   bundledVersion?: string;
@@ -40,6 +46,7 @@ export interface CanvasStatus {
  * `.github/extensions/` is migrated away so the canvas is not registered twice.
  */
 export class CanvasManager {
+  private sourceStatus?: SourceVersion;
   constructor(private readonly extensionUri: vscode.Uri) {}
 
   private get bundledDir(): vscode.Uri {
@@ -70,15 +77,29 @@ export class CanvasManager {
   }
 
   /** Compare bundled vs installed versions. */
-  async getStatus(): Promise<CanvasStatus> {
+  async getStatus(checkSource = false): Promise<CanvasStatus> {
     const bundledVersion = await this.readVersion(this.bundledDir);
     const installedVersion = await this.readVersion(this.installDir);
+    let installed = false;
+    try {
+      await vscode.workspace.fs.stat(vscode.Uri.joinPath(this.installDir, "extension.mjs"));
+      installed = true;
+    } catch {
+      // Missing entry point is not an installed canvas.
+    }
+    const sourceUrl = (get<string>(Settings.CanvasUpdateSource) || "").trim();
+    if (checkSource) this.sourceStatus = await checkSourceVersion(sourceUrl, META_FILE, fetchText);
     return {
-      installed: installedVersion !== undefined,
+      installed,
       installedVersion,
       bundledVersion,
-      updateAvailable:
-        installedVersion !== undefined && compareVersions(bundledVersion, installedVersion) > 0,
+      updateAvailable: Boolean(
+        installed &&
+          installedVersion &&
+          bundledVersion &&
+          compareVersions(bundledVersion, installedVersion) > 0,
+      ),
+      ...(this.sourceStatus?.sourceUrl === sourceUrl ? this.sourceStatus : { sourceUrl }),
     };
   }
 
@@ -101,6 +122,40 @@ export class CanvasManager {
       }
     }
     out`Installed ${CANVAS_NAME} canvas to ${dir.fsPath}`;
+    await this.removeLegacyCopy();
+  }
+
+  /**
+   * Refresh the installed canvas from the configured GitHub raw source. The
+   * source is expected to be a raw base URL under which the canvas files live.
+   */
+  async updateFromSource(): Promise<void> {
+    const base = (get<string>(Settings.CanvasUpdateSource) || "").trim();
+    if (!base) {
+      throw new Error("No canvas update source configured (agendo.canvasUpdateSource).");
+    }
+    const baseUrl = stripTrailingSlashes(base);
+    const files = await Promise.all(
+      CANVAS_FILES.map(async (relative) => ({
+        relative,
+        body: await fetchText(`${baseUrl}/${relative}`),
+      })),
+    );
+    const dir = this.installDir;
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(dir, "assets"));
+    for (const { relative, body } of files) {
+      const parts = relative.split("/");
+      const target = vscode.Uri.joinPath(dir, ...parts);
+      await vscode.workspace.fs.writeFile(target, Buffer.from(body, "utf8"));
+    }
+    for (const obsolete of OBSOLETE_FILES) {
+      try {
+        await vscode.workspace.fs.delete(vscode.Uri.joinPath(dir, obsolete));
+      } catch {
+        // Already absent
+      }
+    }
+    out`Updated ${CANVAS_NAME} canvas from ${baseUrl}`;
     await this.removeLegacyCopy();
   }
 
@@ -132,4 +187,13 @@ export class CanvasManager {
     }
     return false;
   }
+}
+
+/** Remove any trailing '/' characters without regex backtracking. */
+function stripTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charAt(end - 1) === "/") {
+    end--;
+  }
+  return value.slice(0, end);
 }

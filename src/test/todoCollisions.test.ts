@@ -133,7 +133,7 @@ suite("todo ID collision diagnostics", () => {
   test("copy command refreshes diagnostics and copies only the selected collision or all collisions from the palette", async () => {
     const callbacks = new Map<string, (...args: any[]) => any>();
     const originalRegister = vscode.commands.registerCommand;
-    const originalWrite = vscode.env.clipboard.writeText;
+    const originalClipboard = Object.getOwnPropertyDescriptor(vscode.env, "clipboard");
     const originalInfo = vscode.window.showInformationMessage;
     const copied: string[] = [];
     const subscriptions: vscode.Disposable[] = [];
@@ -151,10 +151,13 @@ suite("todo ID collision diagnostics", () => {
         return new vscode.Disposable(() => {});
       },
     });
-    Object.defineProperty(vscode.env.clipboard, "writeText", {
+    Object.defineProperty(vscode.env, "clipboard", {
       configurable: true,
-      value: async (value: string) => {
-        copied.push(value);
+      value: {
+        writeText: async (value: string) => {
+          copied.push(value);
+        },
+        readText: async () => "",
       },
     });
     Object.defineProperty(vscode.window, "showInformationMessage", {
@@ -192,10 +195,7 @@ suite("todo ID collision diagnostics", () => {
         configurable: true,
         value: originalRegister,
       });
-      Object.defineProperty(vscode.env.clipboard, "writeText", {
-        configurable: true,
-        value: originalWrite,
-      });
+      if (originalClipboard) Object.defineProperty(vscode.env, "clipboard", originalClipboard);
       Object.defineProperty(vscode.window, "showInformationMessage", {
         configurable: true,
         value: originalInfo,

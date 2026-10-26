@@ -12,6 +12,9 @@ out/test/**
 out/reports/**
 out/**/*.map
 node_modules/**
+out/extension.bundle.js
+resources/mcp/server.mjs
+resources/**/test/**
 docs/**
 .gitignore
 .gitattributes
