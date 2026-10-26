@@ -49,7 +49,7 @@ suite("Component version actions", () => {
         vscode.window,
         "showQuickPick",
         async (
-          items: Array<{ label: string; detail?: string; action: string }>,
+          _items: Array<{ label: string; detail?: string; action: string }>,
           options?: { title?: string },
         ) => {
           assert.ok(options?.title?.includes("installed v3.0.0"));
