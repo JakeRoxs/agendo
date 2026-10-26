@@ -1,5 +1,5 @@
 ---
-status: ready
+status: complete
 priority: p2
 issue_id: "045"
 tags: [canvas, copilot, prompts, context, ux]
@@ -28,15 +28,15 @@ Add a small set of explicit actions such as Explain Finding, Investigate Selecti
 
 ## Acceptance Criteria
 
-- [ ] Contextual actions identify the selected todo/finding/group and use the bounded context packet from 044
-- [ ] Explain, investigate, plan, and verify intents are clearly differentiated; implementation is not implied by a read-only explanation request
-- [ ] Requests are submitted only after explicit user interaction, not on filter changes, refreshes, rendering, or file updates
-- [ ] Direct submission targets the owning session and checks actual host/runtime support
-- [ ] Busy-session, duplicate-click, queued-request, and failed-send states are visible without claiming the agent has begun or completed work prematurely
-- [ ] Unsupported/non-Copilot hosts provide a useful Copy Context fallback without impersonating Copilot or changing providers
-- [ ] User-facing request content is inspectable, bounded, and excludes credentials and unrelated conversation history
-- [ ] Agent and tool permission boundaries remain in force; a UI request does not bypass approvals
-- [ ] Tests cover selected finding IDs, request intent, explicit submission, unsupported hosts, duplicates, failure recovery, and copy fallback
+- [x] Contextual actions identify the selected todo/finding/group and use the bounded context packet from 044
+- [x] Explain, investigate, plan, and verify intents are clearly differentiated; implementation is not implied by a read-only explanation request
+- [x] Requests are submitted only after explicit user interaction, not on filter changes, refreshes, rendering, or file updates
+- [x] Direct submission targets the owning session and checks actual host/runtime support
+- [x] Busy-session, duplicate-click, queued-request, and failed-send states are visible without claiming the agent has begun or completed work prematurely
+- [x] Unsupported/non-Copilot hosts provide a useful Copy Context fallback without impersonating Copilot or changing providers
+- [x] User-facing request content is inspectable, bounded, and excludes credentials and unrelated conversation history
+- [x] Agent and tool permission boundaries remain in force; a UI request does not bypass approvals
+- [x] Tests cover selected finding IDs, request intent, explicit submission, unsupported hosts, duplicates, failure recovery, and copy fallback
 
 ## Technical Details
 
@@ -49,7 +49,7 @@ Primary areas: canvas controls, local request routing, the optional Copilot sess
 
 ## Resume Context
 
-**Current state:** Ready. Copy Context fallback and Explain Finding action implemented. Copilot session is retained from joinSession() and used for contextual requests with four intents: explain, investigate, suggest-fix, and verify. When Copilot session is unavailable, the action returns the prompt for manual use.
+**Current state:** Complete. Copy Context fallback and Explain Finding action implemented. Copilot session is retained from joinSession() and used for contextual requests with four intents: explain, investigate, suggest-fix, and verify. When Copilot session is unavailable, the action returns the prompt for manual use.
 
 **Next step:** Complete with integration tests or mark complete after user verification.
 

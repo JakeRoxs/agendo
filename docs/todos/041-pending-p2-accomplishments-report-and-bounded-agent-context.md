@@ -1,5 +1,5 @@
 ---
-status: completed
+status: pending
 priority: p2
 issue_id: "041"
 tags: [reporting, digest, completed-todos, agent-context]
@@ -22,10 +22,17 @@ Agendo helps choose and resume work but does not provide an outcome-oriented ret
 - Existing records do not guarantee a reliable completion timestamp. Last modification or latest work-log time must not silently become the completion date.
 - Todo 028 concerns CSV/JSON export; this feature is a human-readable, evidence-backed retrospective and can be implemented independently.
 - The user's proposed division of labor is extension-side selection/compilation followed by agent-side synthesis.
+- The current implementation places the accomplishments report and criteria change settings directly on the todo page, making it visually busy.
+- The accomplishments report should be a separate, on-demand feature that can be run for a specific time period (between date X and date Y) or for a selected set of todos.
+- Criteria change settings should be moved to a settings panel rather than appearing on every todo page.
 
 ## Recommended Action
 
-Proposed for triage: begin with an Accomplishments Context command using the same provider-independent copy-context pattern as other Agendo workflows. Let users choose a reporting period and optional group/tag/source filters. The extension prepares a compact deterministic packet; an agent turns it into a readable report with links to supporting todos. Offer preview/copy before transmission or saving. Do not add an LLM provider, vector database, or automatic report scheduler for the first version.
+Refine the current implementation:
+1. Move the accomplishments report to a separate command/panel that accepts a time range (start date, end date) and optional filters (group, tags, source).
+2. Move criteria change settings to a dedicated settings panel, removing them from the per-todo page view.
+3. Keep the report as an on-demand, user-initiated action rather than a persistent page element.
+4. The report should summarize accomplishments for the selected period or todo set, not appear on every todo page.
 
 For a large selection, emit a bounded index and stable batches. Produce partial summaries with their supporting IDs, then synthesize those summaries while retaining coverage and exclusions. Do not silently sample or claim that the full archive was reviewed when only a subset fit.
 
@@ -51,9 +58,9 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 
 ## Resume Context
 
-**Current state:** Feature idea captured; no report command, date model, or agent integration has been implemented.
+**Current state:** Reopened to refine the implementation. The current version places the report and settings on the todo page, making it busy. Needs to be separated into an on-demand report command with time-range selection and a dedicated settings panel.
 
-**Next step:** Define the first report's completion-date policy and compact packet format, then prototype it against a small completed selection and an oversized synthetic archive.
+**Next step:** Move accomplishments report to a separate command with time-range parameters and move criteria settings to a settings panel.
 
 ## Work Log
 

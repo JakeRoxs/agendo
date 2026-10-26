@@ -232,7 +232,7 @@ export function renderProposalPanel(proposals = [], canApply = false, policy = {
     </article>`;
   }).join('');
   return `<section class="proposal-panel" data-proposals data-can-apply="${canApply}" aria-labelledby="proposals-heading">
-    <h2 id="proposals-heading">Proposed Criteria Changes</h2>
+    <h2 id="proposals-heading" class="sr-only">Proposed Criteria Changes</h2>
     <div class="approval-policy" data-approval-policy>
       <p role="status"><strong>Effective mode here: ${effectiveAuto ? 'Auto-approve new criteria proposals' : 'Manual review'}</strong></p>
       <p class="hint">${policy.mode === 'auto' ? `Authorized scope: ${escapeHtml(scope)} (${escapeHtml(policy.scope)}).` : 'No automatic changes are authorized.'} Authorization lasts only for this canvas session and is cleared when it closes. It grants no shell, generic patch, or lifecycle permissions.</p>
@@ -344,8 +344,7 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = [], pr
         ${importPill}
       </div>
       ${renderAgentControls()}
-      ${renderReportControls(todo.status)}
-      ${renderProposalPanel(proposals, typeof actions.assertWritable === 'function', policy)}
+      ${proposals.length > 0 ? `<details class="proposal-details"><summary>Proposed Criteria Changes (${proposals.length})</summary>${renderProposalPanel(proposals, typeof actions.assertWritable === 'function', policy)}</details>` : ''}
       ${sections}
       <p class="error" id="status-message" role="status" aria-live="polite"></p>
     </main>
