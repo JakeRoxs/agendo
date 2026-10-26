@@ -36,7 +36,6 @@ Agendo bundles the `agendo-work-session` canvas, an interactive dashboard that s
 Pending todos lead with scanner evidence when available, problem context, and triage instead of implementation progress. A triage guide and missing-notes prompt explain what to record before choosing ready, backlogged, or cancelled. Section expansion is remembered per todo and status, so a pending layout does not override the active-work defaults.
 
 The canvas shows:
-
 - the todo number, title, status, and priority
 - acceptance criteria with a progress bar, where each criterion can be checked from the canvas
 - a dependency panel that resolves what blocks the todo and what it blocks, with each todo's status and priority, whether it is satisfied, and click-through navigation to open it
@@ -86,14 +85,12 @@ Examples:
 ```
 
 The naming convention includes:
-
 - `issue_id` — zero-padded, sequential, and unique
 - `status` — `pending`, `in-progress`, `ready`, `backlogged`, `complete`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
 Lifecycle semantics:
-
 - `pending` needs triage or has not started
 - `in-progress` is actively being worked on
 - `ready` is likely done but still needs confirmation that it works
@@ -158,7 +155,6 @@ The extension defaults to `docs/todos`, but you can change it in Settings or via
 ### Create your first todo
 
 You can create tasks either from the extension UI or from the bundled skill.
-
 - Open the Agendo view in the Activity Bar
 - Use "Create Todo..."
 - Enter a short kebab-case description, choose a priority, and optionally add an external key
@@ -174,20 +170,20 @@ This is especially useful when you want a follow-up task captured into the same 
 
 ## Configuration
 
-| Setting | Default | Description |
-| --- | --- | --- |
-| `agendo.root` | `docs/todos` | Workspace-relative root folder for todo files |
-| `agendo.defaultPriority` | `p3` | Default priority for newly created todos |
-| `agendo.completeFolder` | `complete` | Folder used for completed tasks |
-| `agendo.cancelledFolder` | `cancelled` | Folder used for cancelled tasks |
-| `agendo.backlogFolder` | `backlog` | Folder used for backlogged tasks |
-| `agendo.viewMode` | `preview` | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
-| `agendo.gitignoreTodos` | `true` | Optionally add a wildcard `.gitignore` in the todo root |
-| `agendo.skillUpdateSource` | GitHub raw base URL | Source used for updating the bundled Agendo skill |
-| `agendo.codeScanning.enabled` | `false` | Enable manually triggered native code-scanning imports |
-| `agendo.codeScanning.sortByDate` | `false` | Sort scanning todos by modified date independently of the regular tree |
-| `agendo.codeScanning.sonarqube.url` | empty | SonarQube server URL |
-| `agendo.codeScanning.sonarqube.projectKey` | empty | SonarQube project key |
+| Setting                                    | Default             | Description                                                                                                    |
+| ------------------------------------------ | ------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `agendo.root`                              | `docs/todos`        | Workspace-relative root folder for todo files                                                                  |
+| `agendo.defaultPriority`                   | `p3`                | Default priority for newly created todos                                                                       |
+| `agendo.completeFolder`                    | `complete`          | Folder used for completed tasks                                                                                |
+| `agendo.cancelledFolder`                   | `cancelled`         | Folder used for cancelled tasks                                                                                |
+| `agendo.backlogFolder`                     | `backlog`           | Folder used for backlogged tasks                                                                               |
+| `agendo.viewMode`                          | `preview`           | Open todos in `editor`, `preview`, `previewEditor`, or `canvas` (work-session dashboard in an editor tab) mode |
+| `agendo.gitignoreTodos`                    | `true`              | Optionally add a wildcard `.gitignore` in the todo root                                                        |
+| `agendo.skillUpdateSource`                 | GitHub raw base URL | Source used for updating the bundled Agendo skill                                                              |
+| `agendo.codeScanning.enabled`              | `false`             | Enable manually triggered native code-scanning imports                                                         |
+| `agendo.codeScanning.sortByDate`           | `false`             | Sort scanning todos by modified date independently of the regular tree                                         |
+| `agendo.codeScanning.sonarqube.url`        | empty               | SonarQube server URL                                                                                           |
+| `agendo.codeScanning.sonarqube.projectKey` | empty               | SonarQube project key                                                                                          |
 
 ## Duplicate IDs
 
@@ -206,7 +202,6 @@ Code scanning is optional and disabled by default. Run **Agendo: Import Code-Sca
 ### Import grouping
 
 Choose how findings become todos before authenticating or fetching:
-
 - **By file (default)** creates one todo per affected file, keeping multiple rule types together for implementation
 - **By rule/type** creates one todo per rule across all affected files, useful for triage or cross-cutting fixes
 - **By individual issue** creates one todo per scanner issue or alert, giving each occurrence its own lifecycle
@@ -288,7 +283,6 @@ Canvas labels use the colored `sq`/`cql` source badges with short IDs such as `#
 ## Contributing
 
 Contributions are welcome.
-
 1. Fork or clone the repository.
 2. Create a feature branch.
 3. Keep changes focused and aligned with the repo's task-driven workflow.
