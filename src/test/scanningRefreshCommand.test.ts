@@ -141,6 +141,30 @@ suite("scanning refresh command", () => {
 
   test("resolves todo from board todoId argument", async () => {
     const { id } = await createScanningTodo("codeql", "src/test.ts", "file", "owner/repo");
+    mock(
+      require("../todos/codeScanningService"),
+      "fetchCodeQL",
+      async () => ({ scope: "owner/repo", findings: [codeqlFinding] }),
+      restore,
+    );
+    mock(
+      require("../todos/codeScanningService"),
+      "importScanningFindings",
+      async () => ({
+        created: 0,
+        updated: 1,
+        refreshed: 0,
+        changes: { added: 0, changed: 1, unchanged: 0, notReturned: 0, uncompared: 0 },
+        reviewRequired: [],
+      }),
+      restore,
+    );
+    mock(
+      vscode.window,
+      "withProgress",
+      async (_opts: unknown, work: () => Promise<void>) => work(),
+      restore,
+    );
     const callbacks = new Map<string, (...args: any[]) => Promise<void>>();
     const subscriptions: vscode.Disposable[] = [];
     mock(
