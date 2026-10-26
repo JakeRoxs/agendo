@@ -21,6 +21,7 @@ export enum Settings {
   CanvasUpdateSource = "canvasUpdateSource",
   SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
+  GroupBy = "groupBy",
   CodeScanningEnabled = "codeScanning.enabled",
   CodeScanningSortByDate = "codeScanning.sortByDate",
   SonarQubeUrl = "codeScanning.sonarqube.url",

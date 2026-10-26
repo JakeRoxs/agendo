@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "050"
 tags: [tree, views, grouping, settings, ux]
@@ -35,11 +35,11 @@ Proposed for triage: Explore alternative tree organization approaches and a cons
 
 ## Acceptance Criteria
 
-- [ ] Tree structure clearly distinguishes grouping from priority
-- [ ] View options are accessible without consuming excessive toolbar/menu space
-- [ ] Settings panel (or canvas-hosted settings) consolidates view configuration
-- [ ] User can switch between grouping modes (status, priority, group, none) easily
-- [ ] Default view remains familiar to existing users
+- [x] Tree structure clearly distinguishes grouping from priority
+- [x] View options are accessible without consuming excessive toolbar/menu space
+- [x] Settings panel (or canvas-hosted settings) consolidates view configuration
+- [x] User can switch between grouping modes (status, priority, group, none) easily
+- [x] Default view remains familiar to existing users
 
 ## Technical Details
 
@@ -49,11 +49,37 @@ Related todo **054** owns the consolidated Settings/About surface, with its work
 
 ## Resume Context
 
-**Current state:** Concept proposed by user; no implementation started.
+**Current state:** Complete. Configurable grouping modes (status, priority, group, none) implemented with toolbar button, quick pick command, and canvas settings page integration. Default grouping mode is "status" for familiarity.
 
-**Next step:** Investigate current view options architecture and propose specific changes.
+**Next step:** Move to complete directory.
 
 ## Work Log
+
+### 2026-10-26 - Settings Page Integration
+
+**By:** Kilo
+
+**Actions:**
+
+- Added View Options section to canvas settings page with groupBy mode selector
+- Added `set-group-by` settings action handler in extension
+- Passed current groupBy value to settings page via `getSettingsInfo`
+- All 313 extension tests and 34 canvas tests pass
+- All acceptance criteria verified
+
+### 2026-10-26 - Grouping Modes Implemented
+
+**By:** Kilo
+
+**Actions:**
+
+- Investigated tree view and view options architecture
+- Added `agendo.groupBy` setting with options: status (default), priority, group, none
+- Modified `getChildren()` in `todoTreeProvider.ts` to build hierarchy dynamically based on grouping mode
+- Added `priorityNodesRoot` and `groupNodesRoot` methods for root-level priority/group grouping
+- Added `agendo.setGroupBy` command with quick pick for switching modes
+- Added toolbar button in `view/title` menu (group `2_config@8`)
+- All 313 extension tests pass
 
 ### 2026-10-26 - Settings Surface Scope Linked
 

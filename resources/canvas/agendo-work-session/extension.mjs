@@ -71,10 +71,15 @@ const canvas = createCanvas({
           title: todo.title,
           status: todo.status,
           priority: todo.priority,
+          group: todo.group,
           criteria: todo.criteria,
           dependencies: todo.dependencies,
           workLog: todo.workLog.slice(0, 5),
-          resumeContext: todo.resumeContext
+          resumeContext: todo.resumeContext,
+          scannerEvidence: todo.scannerEvidence,
+          triage: todo.triage,
+          scan: todo.scan,
+          description: todo.description
         };
       })
     },

@@ -984,6 +984,29 @@ function registerConfigCommands(register: Register, services: CommandServices): 
         : "Agendo: Todos now sorted by issue ID.",
     );
   });
+  register(Command.SetGroupBy, async () => {
+    const modes: Array<{ label: string; mode: string }> = [
+      { label: "Status", mode: "status" },
+      { label: "Priority", mode: "priority" },
+      { label: "Group", mode: "group" },
+      { label: "None (flat)", mode: "none" },
+    ];
+    const current = get<string>(Settings.GroupBy);
+    const picked = await vscode.window.showQuickPick(
+      modes.map((m) => ({
+        label: m.label,
+        description: m.mode === current ? "Current" : undefined,
+      })),
+      { placeHolder: "Choose grouping mode" },
+    );
+    if (!picked) return;
+    const mode = modes.find((m) => m.label === picked.label)?.mode ?? "status";
+    await set(Settings.GroupBy, mode);
+    services.treeProvider.refresh();
+    vscode.window.showInformationMessage(
+      `Agendo: Todos now grouped by ${picked.label.toLowerCase()}.`,
+    );
+  });
   register(Command.SetDefaultRoot, async () => {
     const value = await vscode.window.showInputBox({
       prompt: "Global default for todos root folder",

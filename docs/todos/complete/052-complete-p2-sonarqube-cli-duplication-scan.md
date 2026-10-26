@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: complete
 priority: p2
 issue_id: "052"
 tags: [sonarqube, cli, code-quality, duplication, code-scanning]
@@ -82,11 +82,11 @@ Duplication is part of the standard file-based code scan, not a separate import:
 
 - [x] Document SonarQube CLI and REST API duplication query commands and output formats
 - [x] Evaluate feasibility of integrating duplication findings into per-file code scanning
-- [ ] Enhance `fetchSonarQube` to include file-level duplication metrics in the standard scan
+- [x] Enhance `fetchSonarQube` to include file-level duplication metrics in the standard scan
 - [x] Reuse existing SonarQube onboarding auth choice (CLI vs API) — duplication should follow whichever
   method the user already selected, not introduce a separate preference
-- [ ] Duplication findings appear in per-file scan output by default (file grouping is default)
-- [ ] Define duplication density threshold for creating findings (configurable, default ~5%)
+- [x] Duplication findings appear in per-file scan output by default (file grouping is default)
+- [x] Define duplication density threshold for creating findings (configurable, default 5%)
 - [x] Record findings and recommended approach in this todo
 
 ## Technical Details
@@ -146,6 +146,19 @@ The `codeScanning` setting in `.agendo-config.json` is already enabled.
   may not be available on all instances/versions
 - MCP tools provide broader API access than direct CLI queries
 - Existing integration architecture cleanly supports adding new fetcher types
+
+### 2026-10-26 - Implementation
+
+**By:** Kilo
+
+**Actions:**
+
+- Implemented duplication metrics fetching in `fetchSonarQube` — queries `api/measures/component` for each file with `metricKeys=duplicated_lines,duplicated_lines_density`
+- Files with duplication density >= threshold (default 5%) generate a synthetic finding with rule `sonarqube:duplicated_lines`, severity MAJOR
+- Duplication findings include the file path, duplicated line count, density percentage, and link to SonarQube duplications view
+- Works through both direct API and CLI paths (CLI wrapper calls `fetchSonarQube`)
+- Updated tests to account for new duplication metrics API calls
+- All 313 tests pass
 
 ### 2026-10-26 - Requirements clarified
 

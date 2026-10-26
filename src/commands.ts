@@ -58,6 +58,7 @@ export enum Command {
   UpdateCanvas = "agendo.updateCanvas",
   ToggleSkillUpdateCheck = "agendo.toggleSkillUpdateCheck",
   ToggleSortDate = "agendo.toggleSortDate",
+  SetGroupBy = "agendo.setGroupBy",
   EnableSkillLoading = "agendo.enableSkill.loading",
   InstallCanvasLoading = "agendo.installCanvas.loading",
   UpdateSkillLoading = "agendo.updateSkill.loading",

@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Command } from "./commands";
-import { get, Settings } from "./configuration";
+import { get, Settings, set } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
 import { createCanvasHostActions } from "./todos/canvasHostActions";
@@ -67,6 +67,9 @@ export async function activate(context: vscode.ExtensionContext) {
         extensionVersion: context.extension.packageJSON.version,
         skill: skillStatus,
         canvas: canvasStatus,
+        viewOptions: {
+          groupBy: get<string>(Settings.GroupBy),
+        },
       };
     },
     handleSettingsAction: async (payload) => {
@@ -106,6 +109,15 @@ export async function activate(context: vscode.ExtensionContext) {
             await vscode.commands.executeCommand(Command.ManageCanvas);
           }
           return { success: true };
+        case "set-group-by": {
+          const validModes = ["status", "priority", "group", "none"];
+          const mode = scope ?? "";
+          if (!validModes.includes(mode)) {
+            throw new Error(`Invalid groupBy mode: ${mode}`);
+          }
+          await set(Settings.GroupBy, mode);
+          return { success: true, reload: false };
+        }
         default:
           throw new Error(`Unknown settings action: ${action}`);
       }

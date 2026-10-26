@@ -224,8 +224,8 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
 
   const groupPill = `<label class="badge-select"><span class="visually-hidden">Change group</span><select data-group-select class="badge badge-group" aria-label="Change group"><option value=""${!todo.group ? ' selected' : ''}>no group</option>${groups.map(g => `<option value="${escapeHtml(g)}"${todo.group === g ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}</select></label>`;
   const editButton = actions.edit ? '<button type="button" class="edit-button" data-edit title="Edit todo file" aria-label="Edit todo file"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 3 5 5-12 12H4v-5Z"/><path d="m13 6 5 5"/></svg><span>Edit</span></button>' : '';
-  const settingsButton = '<a href="/settings" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></a>';
-  const navigation = renderNavigation(nav);
+  const settingsButton = '<button type="button" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></button>';
+  const navigation = renderNavigation(nav, todo);
 
   const importGrouping = { file: 'File import', rule: 'Rule import', finding: 'Issue import' }[todo.scan?.grouping];
   const importPill = importGrouping
@@ -255,8 +255,8 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
 }
 
 export function renderGroupCanvas(groupName, members, nav, actions = {}) {
-  const navigation = renderNavigation(nav);
-  const settingsButton = '<a href="/settings" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></a>';
+  const navigation = renderNavigation(nav, { id: `group:${groupName}`, title: `Group: ${groupName}`, status: 'pending', group: groupName });
+  const settingsButton = '<button type="button" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></button>';
 
   // Count by status
   const statusCounts = {};
@@ -362,23 +362,29 @@ function renderRelations({ blocked, dependencies, dependents }, terminal, profil
 // The current todo is already the dropdown's selection, so chips only show the others.
 const VISIBLE_CHIPS = 4;
 
-export function renderNavigation(nav) {
+export function renderNavigation(nav, currentTodo) {
   if (!nav) return '';
   const multiple = nav.recent.length > 1;
+  const current = nav.recent.find(r => r.current);
+  const currentTitle = currentTodo ? `#${displayId(currentTodo.id)} ${displayTitle(currentTodo)}` : (current?.kind === 'board' ? (current.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board') : current?.kind === 'group' ? `Group: ${current.groupName}` : 'No todo');
+  
+  const dropdownItems = nav.recent.map(r => r.kind === 'board'
+    ? `<button type="button" class="recent-item${r.current ? ' recent-current' : ''}" data-open-board="${escapeHtml(r.scope)}">${r.current ? '— ' : ''}${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}${r.current ? ' —' : ''}</button>`
+    : r.kind === 'group' ? `<button type="button" class="recent-item${r.current ? ' recent-current' : ''}" data-open-group="${escapeHtml(r.groupName)}">${r.current ? '— ' : ''}Group: ${escapeHtml(r.groupName)}${r.current ? ' —' : ''}</button>`
+    : `<button type="button" class="recent-item status-border-${escapeHtml(r.status)}${r.current ? ' recent-current' : ''}" data-open="${escapeHtml(r.id)}">${r.current ? '— ' : ''}${todoSource(r.id).label} · #${escapeHtml(displayId(r.id))} ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})${r.current ? ' —' : ''}</button>`).join('');
+  
   const chips = multiple ? `<ul class="recent" aria-label="Recent views">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => r.kind === 'board'
     ? `<li><button type="button" class="chip" data-open-board="${escapeHtml(r.scope)}">${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</button></li>`
     : r.kind === 'group' ? `<li><button type="button" class="chip" data-open-group="${escapeHtml(r.groupName)}">Group: ${escapeHtml(r.groupName)}</button></li>`
-    : `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(displayId(r.id))}</button></li>`).join('')}</ul>` : '';
-  const current = nav.recent.find(r => r.current);
-  const select = multiple ? `<label class="recent-select"><span class="visually-hidden">Jump to a recent view</span><select data-open-select class="status-border-${escapeHtml(current?.status ?? 'missing')}">${nav.recent.map(r => r.kind === 'board'
-    ? `<option value="" data-board-scope="${escapeHtml(r.scope)}"${r.current ? ' selected' : ''}>${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</option>`
-    : r.kind === 'group' ? `<option value="" data-group-name="${escapeHtml(r.groupName)}"${r.current ? ' selected' : ''}>Group: ${escapeHtml(r.groupName)}</option>`
-    : `<option class="status-border-${escapeHtml(r.status)}" value="${escapeHtml(r.id)}"${r.current ? ' selected' : ''}>${todoSource(r.id).label} · ${escapeHtml(displayId(r.id))} ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})</option>`).join('')}</select></label>` : '';
+    : `<li><button type="button" class="chip source-${todoSource(r.id).key} ${escapeHtml(r.priority)} status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(displayId(r.id))}</button></li>`).join('')}</ul>` : '';
+  
+  const titleButton = `<button type="button" class="current-todo-title status-border-${escapeHtml(current?.status ?? 'missing')}" data-toggle-recent aria-expanded="false" title="Click to see recent views">${escapeHtml(currentTitle)}</button>`;
+  const recentDropdown = multiple ? `<div class="recent-dropdown" data-recent-dropdown hidden>${dropdownItems}</div>` : '';
+  
   return `<nav class="history" aria-label="Workspace history">
         ${nav.returnTo ? `<button type="button" data-return-board>Return to ${nav.returnTo.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</button>` : ''}
         <button type="button" data-nav="back" aria-label="Back"${nav.canBack ? '' : ' disabled'}>&larr;</button>
         <button type="button" data-nav="forward" aria-label="Forward"${nav.canForward ? '' : ' disabled'}>&rarr;</button>
-        ${select}
-        ${chips}
+        <div class="todo-title-area">${titleButton}${chips}${recentDropdown}</div>
       </nav>`;
 }

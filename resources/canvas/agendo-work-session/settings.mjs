@@ -14,12 +14,23 @@ export function renderSettingsPage(info) {
   const canvasSourceUrl = info.canvas?.sourceUrl || 'not configured';
   const canvasSourceError = info.canvas?.sourceError || '';
 
+  const groupBy = info.viewOptions?.groupBy || 'status';
+  const groupByOptions = ['status', 'priority', 'group', 'none'];
+  const groupByLabels = { status: 'Status', priority: 'Priority', group: 'Group', none: 'None (flat)' };
+  const groupByHtml = groupByOptions.map(mode => `<a href="#" data-action="set-group-by" data-scope="${mode}" class="settings-link${mode === groupBy ? ' active' : ''}">${groupByLabels[mode]}${mode === groupBy ? ' (current)' : ''}</a>`).join(' ');
+
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Settings</title>
   <link rel="stylesheet" href="/page.css"></head>
   <body>
     <main>
       <div class="canvas-toolbar"><a href="/" class="edit-button" data-back title="Back" aria-label="Back">← Back</a></div>
       <h1>Settings and About</h1>
+
+      <section class="settings-section">
+        <h2>View Options</h2>
+        <p>Tree grouping mode:</p>
+        <div class="settings-actions">${groupByHtml}</div>
+      </section>
 
       <section class="settings-section">
         <h2>Extension</h2>

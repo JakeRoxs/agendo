@@ -90,6 +90,7 @@ function buildNav(entry, workspaceRoot) {
       id,
       title: summaries.get(id)?.title ?? `Todo ${id}`,
       status: summaries.get(id)?.status ?? 'missing',
+      priority: summaries.get(id)?.priority ?? 'p3',
       current
     };
   });

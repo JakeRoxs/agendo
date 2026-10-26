@@ -962,6 +962,18 @@ suite("native code scanning", () => {
     globalThis.fetch = (async (url, options) => {
       requests.push(new URL(String(url)));
       assert.strictEqual(options?.redirect, "error");
+      if (requests[requests.length - 1].pathname.endsWith("/api/measures/component")) {
+        return new Response(
+          JSON.stringify({
+            component: {
+              measures: [
+                { metric: "duplicated_lines", value: "0" },
+                { metric: "duplicated_lines_density", value: "0" },
+              ],
+            },
+          }),
+        );
+      }
       if (requests[requests.length - 1].pathname.endsWith("/api/rules/show")) {
         return new Response(
           JSON.stringify({
@@ -1006,8 +1018,13 @@ suite("native code scanning", () => {
       assert.strictEqual(requests[0].pathname, "/context/api/issues/search");
       assert.strictEqual(requests[1].searchParams.get("p"), "2");
       assert.strictEqual(requests[0].searchParams.get("componentKeys"), "org:project");
-      assert.strictEqual(requests.length, 3, "fetch rule explanation once across issue pages");
-      assert.strictEqual(requests[2].searchParams.get("key"), "ts:S1");
+      assert.strictEqual(
+        requests.length,
+        4,
+        "fetch issues, rule explanation, and duplication metrics",
+      );
+      const ruleRequest = requests.find((r) => r.pathname.endsWith("/api/rules/show"));
+      assert.strictEqual(ruleRequest?.searchParams.get("key"), "ts:S1");
       assert.strictEqual(result.findings[0].ruleTitle, "Use a comparison function");
       assert.match(result.findings[0].ruleDescription || "", /Why this matters/);
       assert.match(
@@ -1094,6 +1111,16 @@ suite("native code scanning", () => {
       }
       assert.deepStrictEqual(args.slice(0, 2), ["api", "get"]);
       const url = new URL(args[2], "https://sonar.example");
+      if (url.pathname === "/api/measures/component") {
+        return JSON.stringify({
+          component: {
+            measures: [
+              { metric: "duplicated_lines", value: "0" },
+              { metric: "duplicated_lines_density", value: "0" },
+            ],
+          },
+        });
+      }
       if (url.pathname === "/api/rules/show") {
         assert.strictEqual(url.searchParams.get("key"), "ts:example");
         return JSON.stringify({
@@ -1123,10 +1150,9 @@ suite("native code scanning", () => {
       "org:project & test",
       run,
     );
-    assert.deepStrictEqual(
-      calls.map((args) => args[0]),
-      ["auth", "api", "auth", "auth", "api", "auth", "auth", "api", "auth"],
-    );
+    const callTypes = calls.map((args) => args[0]);
+    assert.strictEqual(callTypes.filter((t) => t === "auth").length, 8);
+    assert.strictEqual(callTypes.filter((t) => t === "api").length, 4);
     assert.strictEqual(result.scope, "https://sonar.example/context/#org:project & test");
     assert.strictEqual(result.findings.length, 2);
     assert.strictEqual(result.findings[0].path, "src/example.ts");
@@ -1388,9 +1414,9 @@ suite("native code scanning", () => {
       for (const item of recent) {
         assert.ok(html.includes(`data-open="${item.id}"`));
       }
-      assert.ok(html.includes("todo · 001 Regular"));
-      assert.ok(html.includes("cql · 001 CodeQL finding"));
-      assert.ok(html.includes("sq · 001 SonarQube finding"));
+      assert.ok(html.includes("todo · #001 Regular"));
+      assert.ok(html.includes("cql · #001 CodeQL finding"));
+      assert.ok(html.includes("sq · #001 SonarQube finding"));
       assert.ok(html.includes('class="canvas-toolbar"'));
       assert.ok(html.includes('data-edit title="Edit todo file"'));
       assert.ok(html.includes("<span>Edit</span>"));
@@ -1440,15 +1466,15 @@ suite("native code scanning", () => {
     const html = renderCanvas(todo, relations, { canBack: true, canForward: false, recent });
     assert.match(html, /<title>typescript:S3776<\/title>/);
     assert.match(html, /<h1><span class="todo-id">#002<\/span>typescript:S3776<\/h1>/);
-    assert.match(html, /value="sq-002" selected>sq · 002 typescript:S3776/);
-    assert.match(html, /value="cql-001">cql · 001 js\/example/);
+    assert.match(html, /sq · #002 typescript:S3776/);
+    assert.match(html, /cql · #001 js\/example/);
     assert.match(html, /source-sonarqube[^>]*>sq<\/span> #001<\/button>/);
     assert.match(html, /source-codeql[^>]*>cql<\/span> #001<\/button>/);
     assert.match(html, /class="todo-id">#999<\/span>/);
     assert.match(html, /data-todo-id="sq-002"/);
     assert.match(html, /data-open="sq-001"/);
     assert.match(html, /data-open="cql-001"/);
-    assert.match(html, /value="001">todo · 001 SonarQube: a regular task/);
+    assert.match(html, /todo · #001 SonarQube: a regular task/);
     const visibleText = html.replace(/<[^>]*>/g, " ");
     assert.doesNotMatch(visibleText, /(?:sq|cql)-\d+/);
     assert.doesNotMatch(visibleText, /SonarQube: typescript:|CodeQL: js\//);

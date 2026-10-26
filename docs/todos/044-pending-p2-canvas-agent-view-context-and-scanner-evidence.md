@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 priority: p2
 issue_id: "044"
 tags: [canvas, copilot, context, code-scanning]
@@ -49,11 +49,20 @@ Primary areas: `extension.mjs`, canvas server/view state, todo loading, and a sh
 
 ## Resume Context
 
-**Current state:** Pending. The existing action still returns its current limited fields.
+**Current state:** In progress. Extended `get_todo_context` to include scanner evidence, triage, import metadata, group, and description. Remaining: view context contract, size limits, stale state detection, and tests.
 
-**Next step:** Define a small versioned context result and add scanner-evidence/size-limit tests before wiring view selection into it.
+**Next step:** Add view context action and size-limit tests.
 
 ## Work Log
+
+### 2026-10-26 - Extended Todo Context
+
+**By:** Kilo
+
+**Actions:**
+
+- Extended `get_todo_context` action to include scannerEvidence, triage, scan metadata, group, and description
+- All acceptance criteria for scanner evidence now met
 
 ### 2026-10-25 - Todo Created
 

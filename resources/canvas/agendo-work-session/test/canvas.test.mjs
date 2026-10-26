@@ -310,13 +310,13 @@ describe('Settings button and page', () => {
     const html = renderCanvas(todo, null, null, {}, []);
     assert.ok(html.includes('data-settings'), 'Should render settings button');
     assert.ok(html.includes('Settings'), 'Should have Settings label');
-    assert.ok(html.includes('href="/settings"'), 'Should link to settings page');
+    assert.ok(html.includes('<button type="button" class="edit-button" data-settings'), 'Should be a button element');
   });
 
   it('renders settings button in group canvas toolbar', () => {
     const html = renderGroupCanvas('test-group', [], null);
     assert.ok(html.includes('data-settings'), 'Should render settings button');
-    assert.ok(html.includes('href="/settings"'), 'Should link to settings page');
+    assert.ok(html.includes('<button type="button" class="edit-button" data-settings'), 'Should be a button element');
   });
 
   it('renders settings page with version info', () => {
@@ -370,7 +370,7 @@ describe('Settings button and page', () => {
     };
     const html = renderCanvas(todo, null, null, {}, []);
     assert.ok(html.includes('aria-label="Settings and About"'), 'Should have aria-label');
-    assert.ok(html.includes('href="/settings"'), 'Should be a link for keyboard navigation');
+    assert.ok(html.includes('<button type="button"'), 'Should be a button for keyboard navigation');
   });
 
   it('settings page does not require host actions to render', () => {

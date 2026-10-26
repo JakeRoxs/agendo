@@ -442,6 +442,12 @@
         "icon": "$(calendar)"
       },
       {
+        "command": "agendo.setGroupBy",
+        "title": "Set Group By",
+        "category": "Agendo",
+        "icon": "$(list-flat)"
+      },
+      {
         "command": "agendo.collapseNode",
         "title": "Collapse",
         "category": "Agendo"
@@ -614,6 +620,11 @@
           "command": "agendo.toggleSortDate",
           "when": "view == agendo.todos",
           "group": "2_config@7"
+        },
+        {
+          "command": "agendo.setGroupBy",
+          "when": "view == agendo.todos",
+          "group": "2_config@8"
         },
         {
           "command": "agendo.refreshComponents",
@@ -893,6 +904,17 @@
           "type": "boolean",
           "default": false,
           "description": "When enabled, sort todos within each priority group by last modified date (most recent first) instead of by issue ID."
+        },
+        "agendo.groupBy": {
+          "type": "string",
+          "enum": [
+            "status",
+            "priority",
+            "group",
+            "none"
+          ],
+          "default": "status",
+          "description": "How todos are grouped in the tree view: by status (default), priority, group, or flat (none)."
         }
       }
     }

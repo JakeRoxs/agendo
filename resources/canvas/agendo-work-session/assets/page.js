@@ -149,6 +149,49 @@
     }
   });
 
+  document.querySelector('[data-settings]')?.addEventListener('click', () => {
+    location.href = '/settings';
+  });
+
+  // Recent views dropdown
+  const titleButton = document.querySelector('[data-toggle-recent]');
+  const recentDropdown = document.querySelector('[data-recent-dropdown]');
+  if (titleButton && recentDropdown) {
+    titleButton.addEventListener('click', () => {
+      const expanded = titleButton.getAttribute('aria-expanded') === 'true';
+      titleButton.setAttribute('aria-expanded', String(!expanded));
+      recentDropdown.hidden = expanded;
+    });
+    
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (event) => {
+      if (!titleButton.contains(event.target) && !recentDropdown.contains(event.target)) {
+        titleButton.setAttribute('aria-expanded', 'false');
+        recentDropdown.hidden = true;
+      }
+    });
+    
+    // Handle recent item clicks
+    recentDropdown.querySelectorAll('.recent-item').forEach(item => {
+      item.addEventListener('click', async () => {
+        recentDropdown.hidden = true;
+        titleButton.setAttribute('aria-expanded', 'false');
+        try {
+          if (item.dataset.openBoard) {
+            await post('/open', { view: { kind: 'board', scope: item.dataset.openBoard } });
+          } else if (item.dataset.openGroup) {
+            await post('/open', { view: { kind: 'group', groupName: item.dataset.openGroup } });
+          } else if (item.dataset.open) {
+            await post('/open', { todoId: item.dataset.open });
+          }
+          location.reload();
+        } catch (err) {
+          message.textContent = 'Could not open: ' + err.message;
+        }
+      });
+    });
+  }
+
   // Sections start open (dependencies open only when something needs attention); a manual
   // toggle is remembered per todo, so each todo keeps its own layout when you come back to it.
   const currentTodo = document.body.dataset.todoId;

@@ -305,6 +305,39 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
   }
 
+  private priorityNodesRoot(todos: Todo[]): TreeNode[] {
+    return TODO_PRIORITIES.filter((priority) => todos.some((t) => t.priority === priority)).map(
+      (priority) => ({
+        kind: "priority",
+        status: "ready",
+        priority,
+        todos: sortTodos(
+          todos.filter((t) => t.priority === priority),
+          this.scope,
+        ),
+      }),
+    );
+  }
+
+  private groupNodesRoot(todos: Todo[]): TreeNode[] {
+    const groups = new Map<string, Todo[]>();
+    for (const todo of todos) {
+      const group = todo.group || "Ungrouped";
+      if (!groups.has(group)) {
+        groups.set(group, []);
+      }
+      groups.get(group)?.push(todo);
+    }
+    return [...groups.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([name, groupTodos]) => ({
+        kind: "group" as const,
+        status: "ready",
+        group: name,
+        todos: sortTodos(groupTodos, this.scope),
+      }));
+  }
+
   private dependencyNodes(todos: Todo[]): TreeNode[] {
     const dependencyGroups = new Map<string, Todo[]>();
     const processedIds = new Set<string>();
@@ -352,15 +385,25 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
 
   getChildren(node?: TreeNode): TreeNode[] {
     const todos = this.visibleTodos();
+    const groupBy = get<string>(Settings.GroupBy);
 
     if (!node) {
-      if (this.scope === "code-scanning") {
+      if (this.scope === "code-scanning" && groupBy === "status") {
         return (["codeql", "sonarqube"] as const).flatMap((source) => {
           const count = todos.filter((todo) => getTodoSource(todo) === source).length;
           return count ? [{ kind: "source" as const, source, count }] : [];
         });
       }
-      return this.statusNodes(todos);
+      switch (groupBy) {
+        case "priority":
+          return this.priorityNodesRoot(todos);
+        case "group":
+          return this.groupNodesRoot(todos);
+        case "none":
+          return todos.map((todo) => ({ kind: "todo", todo }));
+        default:
+          return this.statusNodes(todos);
+      }
     }
 
     if (node.kind === "source") {

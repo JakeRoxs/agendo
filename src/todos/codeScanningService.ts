@@ -356,8 +356,10 @@ export async function fetchSonarQube(
   project: string,
   token: string,
   request?: (url: URL) => Promise<unknown>,
+  duplicationThreshold?: number,
 ): Promise<{ scope: string; findings: ScanningFinding[] }> {
   const base = validateSonarUrl(server);
+  const threshold = duplicationThreshold ?? 0.05;
   const findings: ScanningFinding[] = [];
   for (let page = 1; ; page++) {
     const url = new URL("api/issues/search", base);
@@ -451,6 +453,56 @@ export async function fetchSonarQube(
     finding.ruleTitle = rule?.title;
     finding.ruleDescription = rule?.description;
   }
+
+  const duplicationRuleKey = "sonarqube:duplicated_lines";
+  if (!rules.has(duplicationRuleKey)) {
+    rules.set(duplicationRuleKey, {
+      title: "Duplicated code detected",
+      description:
+        "This file has a high density of duplicated lines. Consider refactoring to extract shared code or remove redundant blocks.",
+    });
+  }
+
+  const filePaths = new Set(findings.map((finding) => finding.path));
+  for (const filePath of filePaths) {
+    try {
+      const url = new URL("api/measures/component", base);
+      url.search = new URLSearchParams({
+        component: `${project}:${filePath}`,
+        metricKeys: "duplicated_lines,duplicated_lines_density",
+      }).toString();
+      const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
+        component?: { measures?: Array<{ metric: string; value: string | number }> };
+      };
+      const measures = payload?.component?.measures;
+      if (!Array.isArray(measures)) continue;
+      const densityMeasure = measures.find((m) => m.metric === "duplicated_lines_density");
+      const linesMeasure = measures.find((m) => m.metric === "duplicated_lines");
+      const density = densityMeasure ? Number(densityMeasure.value) : 0;
+      const duplicatedLines = linesMeasure ? Number(linesMeasure.value) : 0;
+      if (density >= threshold && duplicatedLines > 0) {
+        const link = new URL("project/issues", base);
+        link.search = new URLSearchParams({
+          id: project,
+          view: "duplications",
+          file: filePath,
+        }).toString();
+        findings.push({
+          id: `dup-${project}-${filePath}`,
+          rule: duplicationRuleKey,
+          severity: "MAJOR",
+          message: `${duplicatedLines} duplicated lines (${Math.round(density)}% density) in ${filePath}`,
+          path: filePath,
+          url: link.toString(),
+          ruleTitle: "Duplicated code detected",
+          ruleDescription: rules.get(duplicationRuleKey)?.description,
+        });
+      }
+    } catch {
+      // Skip files where duplication metrics are unavailable
+    }
+  }
+
   return { scope: `${base.toString()}#${project}`, findings };
 }
 
