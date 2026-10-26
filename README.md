@@ -70,14 +70,14 @@ stateDiagram-v2
     pending --> in_progress : triage approved
     pending --> backlogged : deprioritized
     in_progress --> ready : implementation done
-    ready --> complete : verified working
+    ready --> completed : verified working
     ready --> in_progress : needs more work
     in_progress --> backlogged : deprioritized
     backlogged --> pending : reactivated
     pending --> cancelled : abandoned
     in_progress --> cancelled : abandoned
     ready --> cancelled : abandoned
-    complete --> [*]
+    completed --> [*]
     cancelled --> [*]
 ```
 
