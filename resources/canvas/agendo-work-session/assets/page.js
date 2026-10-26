@@ -35,11 +35,52 @@
 
   document.querySelector('[data-open-select]')?.addEventListener('change', async e => {
     try {
-      const res = await post('/open', { todoId: e.target.value });
+      const groupName = e.target.selectedOptions[0]?.dataset.groupName;
+      const scope = e.target.selectedOptions[0]?.dataset.boardScope;
+      const res = await post('/open', scope ? { view: { kind: 'board', scope } } : groupName !== undefined ? { view: { kind: 'group', groupName } } : { todoId: e.target.value });
       if (!res.ok) throw new Error(await res.text());
       location.reload();
     } catch (err) {
       message.textContent = 'Could not open todo: ' + err.message;
+    }
+  });
+
+  for (const button of document.querySelectorAll('[data-open-group]')) {
+    button.addEventListener('click', async () => {
+      try {
+        const res = await post('/open', { view: { kind: 'group', groupName: button.dataset.openGroup } });
+        if (!res.ok) throw new Error(await res.text());
+        location.reload();
+      } catch (err) {
+        message.textContent = 'Could not open group: ' + err.message;
+      }
+    });
+  }
+
+  for (const button of document.querySelectorAll('[data-open-board]')) {
+    button.addEventListener('click', async () => {
+      try {
+        const res = await post('/open', { view: { kind: 'board', scope: button.dataset.openBoard } });
+        if (!res.ok) throw new Error(await res.text());
+        location.reload();
+      } catch (err) {
+        message.textContent = 'Could not open board: ' + err.message;
+      }
+    });
+  }
+
+  document.querySelector('[data-return-board]')?.addEventListener('click', async e => {
+    const button = e.currentTarget;
+    button.disabled = true;
+    try {
+      const res = await post('/return-board', {});
+      if (!res.ok) throw new Error(await res.text());
+      const result = await res.json();
+      if (result.view?.kind === 'board') location.reload();
+    } catch (err) {
+      message.textContent = 'Could not return to board: ' + err.message;
+    } finally {
+      button.disabled = false;
     }
   });
 
@@ -65,6 +106,32 @@
     } catch (err) {
       select.disabled = false;
       message.textContent = 'Could not change status: ' + err.message;
+    }
+  });
+
+  document.querySelector('[data-priority-select]')?.addEventListener('change', async e => {
+    const select = e.target;
+    select.disabled = true;
+    try {
+      const res = await post('/priority', { priority: select.value });
+      if (!res.ok) throw new Error(await res.text());
+      location.reload();
+    } catch (err) {
+      select.disabled = false;
+      message.textContent = 'Could not change priority: ' + err.message;
+    }
+  });
+
+  document.querySelector('[data-group-select]')?.addEventListener('change', async e => {
+    const select = e.target;
+    select.disabled = true;
+    try {
+      const res = await post('/group', { group: select.value });
+      if (!res.ok) throw new Error(await res.text());
+      location.reload();
+    } catch (err) {
+      select.disabled = false;
+      message.textContent = 'Could not change group: ' + err.message;
     }
   });
 
@@ -120,6 +187,30 @@
     const expanded = !logs.classList.contains('show-all');
     sessionStorage.setItem(logKey, expanded ? '1' : '0');
     applyLog(expanded);
+  });
+
+  // Status lifecycle help: click/tap/keyboard opens, Escape or outside click closes.
+  const statusHelp = document.getElementById('status-help');
+  statusHelp?.addEventListener('toggle', () => {
+    if (!statusHelp.open) return;
+    const close = event => {
+      if (!statusHelp.contains(event.target)) {
+        statusHelp.open = false;
+        document.removeEventListener('click', close);
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    const onKey = event => {
+      if (event.key === 'Escape') {
+        statusHelp.open = false;
+        document.removeEventListener('click', close);
+        document.removeEventListener('keydown', onKey);
+      }
+    };
+    setTimeout(() => {
+      document.addEventListener('click', close);
+      document.addEventListener('keydown', onKey);
+    }, 0);
   });
 
   function celebrate(text) {

@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { get, Settings } from "../configuration";
 import { out } from "../output";
+import type { BoardReturnTarget } from "./workspaceNavigation";
 
 /**
  * Default configuration values, mirrored from package.json. The skill falls
@@ -76,16 +77,18 @@ const TODO_FILE_PATTERN =
  * file is a skill-readable projection of them.
  */
 export class ConfigService {
-  private canvasOpener?: (uri: vscode.Uri) => Promise<boolean>;
+  private canvasOpener?: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>;
 
   /** Register the handler for the `canvas` view mode; it returns false when it cannot show the todo. */
-  setCanvasOpener(opener: (uri: vscode.Uri) => Promise<boolean>): void {
+  setCanvasOpener(
+    opener: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>,
+  ): void {
     this.canvasOpener = opener;
   }
 
   /** Show a todo in the work-session canvas, falling back to the source editor when it cannot start. */
-  async openInCanvas(uri: vscode.Uri): Promise<void> {
-    if (!(await this.canvasOpener?.(uri))) {
+  async openInCanvas(uri: vscode.Uri, returnTo?: BoardReturnTarget): Promise<void> {
+    if (!(await this.canvasOpener?.(uri, returnTo))) {
       await vscode.window.showTextDocument(uri, { preview: true });
     }
   }

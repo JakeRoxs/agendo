@@ -106,6 +106,29 @@
     ],
     "commands": [
       {
+        "command": "agendo.refreshComponents",
+        "title": "Check Skill and Canvas Updates",
+        "category": "Agendo",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agendo.refreshComponents.loading",
+        "title": "Checking Skill and Canvas Updates...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)",
+        "enablement": "false"
+      },
+      {
+        "command": "agendo.manageSkill",
+        "title": "Skill Versions and Update Actions...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.manageCanvas",
+        "title": "Canvas Versions and Update Actions...",
+        "category": "Agendo"
+      },
+      {
         "command": "agendo.focusCollision",
         "title": "Show Conflicting Files",
         "category": "Agendo",
@@ -116,6 +139,12 @@
         "title": "Copy ID Collision Reconciliation Context",
         "category": "Agendo",
         "icon": "$(copy)"
+      },
+      {
+        "command": "agendo.copyAccomplishmentsContext",
+        "title": "Copy Accomplishments Context",
+        "category": "Agendo",
+        "icon": "$(checklist)"
       },
       {
         "command": "agendo.codeScanning.refresh",
@@ -274,7 +303,7 @@
       },
       {
         "command": "agendo.installCanvas",
-        "title": "Install/Update Work Session Canvas",
+        "title": "Install Bundled Work Session Canvas",
         "category": "Agendo",
         "icon": "$(dashboard)"
       },
@@ -368,13 +397,18 @@
       },
       {
         "command": "agendo.enableSkill",
-        "title": "Install/Enable Agendo Skill",
+        "title": "Install Bundled Agendo Skill",
         "category": "Agendo",
         "icon": "$(cloud-download)"
       },
       {
         "command": "agendo.updateSkill",
-        "title": "Update Agendo Skill from Source",
+        "title": "Install Agendo Skill from Configured Source",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.updateCanvas",
+        "title": "Install Work Session Canvas from Configured Source",
         "category": "Agendo"
       },
       {
@@ -390,8 +424,14 @@
         "icon": "$(sync~spin)"
       },
       {
+        "command": "agendo.updateCanvas.loading",
+        "title": "Updating work-session canvas...",
+        "category": "Agendo",
+        "icon": "$(sync~spin)"
+      },
+      {
         "command": "agendo.toggleSkillUpdateCheck",
-        "title": "Toggle Agendo Skill Update Check",
+        "title": "Toggle Skill and Canvas Update Notifications",
         "category": "Agendo",
         "icon": "$(bell)"
       },
@@ -576,6 +616,16 @@
           "group": "2_config@7"
         },
         {
+          "command": "agendo.refreshComponents",
+          "when": "view == agendo.skillStatus && !agendo.componentsChecking",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agendo.refreshComponents.loading",
+          "when": "view == agendo.skillStatus && agendo.componentsChecking",
+          "group": "navigation@1"
+        },
+        {
           "command": "agendo.enableSkill",
           "when": "view == agendo.skillStatus && !agendo.skillInstalling",
           "group": "skill@1"
@@ -596,6 +646,11 @@
           "group": "skill@2"
         },
         {
+          "command": "agendo.updateCanvas",
+          "when": "view == agendo.skillStatus && !agendo.canvasUpdating",
+          "group": "skill@4"
+        },
+        {
           "command": "agendo.enableSkill.loading",
           "when": "view == agendo.skillStatus && agendo.skillInstalling",
           "group": "skill@1"
@@ -606,12 +661,21 @@
           "group": "skill@2"
         },
         {
+          "command": "agendo.updateCanvas.loading",
+          "when": "view == agendo.skillStatus && agendo.canvasUpdating",
+          "group": "skill@4"
+        },
+        {
           "command": "agendo.toggleSkillUpdateCheck",
           "when": "view == agendo.skillStatus",
           "group": "skill@3"
         }
       ],
       "commandPalette": [
+        {
+          "command": "agendo.refreshComponents.loading",
+          "when": "false"
+        },
         {
           "command": "agendo.openCanvas",
           "when": "false"
@@ -808,7 +872,12 @@
         "agendo.skillUpdateSource": {
           "type": "string",
           "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/skill",
-          "description": "Raw base URL used by 'Update Agendo Skill from Source'. SKILL.md and assets/todo-template.md are fetched relative to this URL."
+          "description": "HTTPS base URL for checking and installing the skill from source. Defaults to GitHub/main, which can differ from the version bundled in this extension."
+        },
+        "agendo.canvasUpdateSource": {
+          "type": "string",
+          "default": "https://raw.githubusercontent.com/JakeRoxs/agendo/main/resources/canvas/agendo-work-session",
+          "description": "HTTPS base URL for checking and installing the canvas from source. Defaults to GitHub/main, which can differ from the version bundled in this extension."
         },
         "agendo.showDependencyNodes": {
           "type": "boolean",
@@ -818,7 +887,7 @@
         "agendo.skillUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "When enabled, automatically check for Agendo skill updates on extension activation and notify when a newer version is available."
+          "description": "Notify on activation when the skill or canvas bundled with this extension is newer than the installed copy. Does not install automatically or contact GitHub; source checks are explicit in Versions and Update Actions."
         },
         "agendo.sortByDate": {
           "type": "boolean",

@@ -16,6 +16,18 @@ export function assertTodoId(todoId) {
   return todoId;
 }
 
+function unquote(value) {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      const decoded = JSON.parse(trimmed);
+      if (typeof decoded === 'string') return decoded;
+    } catch { /* Also accept ordinary YAML quoted strings. */ }
+  }
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
 function parseFrontmatter(content) {
   const lines = content.split(/\r?\n/);
   if (lines[0].trim() !== '---') return { frontmatter: {}, body: content };
@@ -24,14 +36,23 @@ function parseFrontmatter(content) {
   if (end === -1) return { frontmatter: {}, body: content };
 
   const frontmatter = {};
-  for (const line of lines.slice(1, end)) {
-    const match = line.match(/^(\w+):\s*(.*)$/);
+  for (let index = 1; index < end; index++) {
+    const match = lines[index].match(/^(\w+):\s*(.*)$/);
     if (!match) continue;
     let value = match[2].trim();
-    if (value.startsWith('[') && value.endsWith(']')) {
-      value = value.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+    if (!value) {
+      const items = [];
+      while (index + 1 < end) {
+        const item = lines[index + 1].match(/^\s+-\s+(.+)$/);
+        if (!item) break;
+        items.push(unquote(item[1]));
+        index++;
+      }
+      value = items.length ? items : '';
+    } else if (value.startsWith('[') && value.endsWith(']')) {
+      value = value.slice(1, -1).split(',').map(unquote).filter(Boolean);
     } else {
-      value = value.replace(/^["']|["']$/g, '');
+      value = unquote(value);
     }
     frontmatter[match[1]] = value;
   }
@@ -109,7 +130,7 @@ function todoFiles(workspaceRoot) {
       }
     }
   }
-  return files;
+  return [...new Set(files)];
 }
 
 // Cheap change marker over every todo file, so the page reloads when a related todo changes or moves.
@@ -119,17 +140,26 @@ export function todoFingerprint(workspaceRoot) {
 
 export function listTodoSummaries(workspaceRoot) {
   const byId = new Map();
+  const dupes = new Set();
   for (const filePath of todoFiles(workspaceRoot)) {
     const nameMatch = basename(filePath).match(FILENAME_RE);
-    if (byId.has(nameMatch[1])) continue;
+    if (byId.has(nameMatch[1])) {
+      dupes.add(nameMatch[1]);
+      continue;
+    }
     const { frontmatter, body } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
     byId.set(nameMatch[1], {
       id: nameMatch[1],
       title: frontmatter.title || body.match(/^#\s+(.+)$/m)?.[1].trim() || `Todo ${nameMatch[1]}`,
       status: nameMatch[2],
       priority: nameMatch[3],
-      dependencies: normalizeDependencies(frontmatter.dependencies)
+      dependencies: normalizeDependencies(frontmatter.dependencies),
+      ambiguous: false
     });
+  }
+  for (const id of dupes) {
+    const existing = byId.get(id);
+    if (existing) existing.ambiguous = true;
   }
   return byId;
 }
@@ -142,11 +172,13 @@ export function getRelations(todoId, workspaceRoot) {
 
   const dependencies = self.dependencies.map(id => {
     const dep = all.get(id);
-    if (!dep) return { id, missing: true, satisfied: false };
+    if (!dep) return { id, missing: true, satisfied: false, ambiguous: false };
     const { title, status, priority } = dep;
+    const ambiguous = !!dep.ambiguous;
     return {
       id, title, status, priority,
-      satisfied: SATISFYING_STATUSES.has(status),
+      satisfied: !ambiguous && SATISFYING_STATUSES.has(status),
+      ambiguous,
       circular: dep.dependencies.includes(todoId)
     };
   });
@@ -163,16 +195,81 @@ export function getRelations(todoId, workspaceRoot) {
   };
 }
 
-export function findTodoFile(todoId, workspaceRoot) {
-  if (!todoId || !TODO_ID_RE.test(todoId)) return null;
+// List all unique group names from todos in the workspace.
+export function listGroups(workspaceRoot) {
+  const groups = new Set();
   for (const { dirs } of todoLocations(workspaceRoot)) {
     for (const fullPath of dirs) {
       if (!existsSync(fullPath)) continue;
-      const file = readdirSync(fullPath).find(f => f.startsWith(`${todoId}-`) && FILENAME_RE.test(f));
-      if (file) return join(fullPath, file);
+      for (const file of readdirSync(fullPath)) {
+        const nameMatch = file.match(FILENAME_RE);
+        if (!nameMatch) continue;
+        try {
+          const todo = loadTodo(nameMatch[1], workspaceRoot);
+          if (todo.group) groups.add(todo.group);
+        } catch {
+          // Skip files that fail to load
+        }
+      }
     }
   }
-  return null;
+  return [...groups].sort();
+}
+
+// Load all todos that belong to a specific group.
+export function loadGroupTodos(groupName, workspaceRoot) {
+  if (typeof groupName !== 'string' || !groupName.trim()) {
+    throw new CanvasError('invalid_group', 'groupName must be a non-empty string');
+  }
+  const members = [];
+  for (const { dirs } of todoLocations(workspaceRoot)) {
+    for (const fullPath of dirs) {
+      if (!existsSync(fullPath)) continue;
+      for (const file of readdirSync(fullPath)) {
+        const nameMatch = file.match(FILENAME_RE);
+        if (!nameMatch) continue;
+        const filePath = join(fullPath, file);
+        try {
+          const todo = loadTodo(nameMatch[1], workspaceRoot);
+          if (todo.group === groupName) {
+            members.push(todo);
+          }
+        } catch {
+          // Skip files that fail to load
+        }
+      }
+    }
+  }
+  // Sort by status order, then by ID
+  const statusOrder = { 'in-progress': 0, 'pending': 1, 'ready': 2, 'backlogged': 3, 'complete': 4, 'cancelled': 5 };
+  members.sort((a, b) => {
+    const sa = statusOrder[a.status] ?? 6;
+    const sb = statusOrder[b.status] ?? 6;
+    if (sa !== sb) return sa - sb;
+    return a.id.localeCompare(b.id);
+  });
+  return members;
+}
+
+export function findTodoFile(todoId, workspaceRoot) {
+  if (!todoId || !TODO_ID_RE.test(todoId)) return null;
+  const matches = [];
+  for (const { dirs } of todoLocations(workspaceRoot)) {
+    for (const fullPath of dirs) {
+      if (!existsSync(fullPath)) continue;
+      for (const f of readdirSync(fullPath)) {
+        if (f.startsWith(`${todoId}-`) && FILENAME_RE.test(f)) {
+          const abs = resolve(join(fullPath, f));
+          if (!matches.some(m => resolve(m) === abs)) matches.push(abs);
+        }
+      }
+    }
+  }
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new CanvasError('invalid_input', `Ambiguous todo ID ${todoId}: ${matches.length} files match`);
+  }
+  return matches[0];
 }
 
 // Locate a "## Heading" section as [start, end) over raw file lines.
@@ -260,7 +357,16 @@ export function loadTodo(todoId, workspaceRoot) {
     title: frontmatter.title || body.match(/^#\s+(.+)$/m)?.[1].trim() || `Todo ${todoId}`,
     status: nameMatch?.[2] || frontmatter.status || 'pending',
     priority: nameMatch?.[3] || frontmatter.priority || 'p3',
-    dependencies: normalizeDependencies(frontmatter.dependencies)
+    dependencies: normalizeDependencies(frontmatter.dependencies),
+    group: frontmatter.group || undefined,
+    scan: {
+      source: frontmatter.scan_source || undefined,
+      scope: frontmatter.scan_scope || undefined,
+      grouping: frontmatter.scan_grouping || undefined,
+      target: frontmatter.scan_target || undefined,
+      refreshedAt: frontmatter.scan_refreshed_at || undefined,
+      reviewRequired: frontmatter.scan_review_required === 'true'
+    }
   };
 }
 
@@ -308,11 +414,15 @@ export function setCriterionMet(todoId, index, met, workspaceRoot) {
 }
 
 export const STATUSES = ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'];
+export const PRIORITIES = ['p1', 'p2', 'p3'];
 const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[^\n]*\n?(?:\r?\n)?/m;
 
 // Rewrite one flow-style frontmatter field, or add it when missing.
 function setFrontmatterField(lines, key, value) {
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+  if (end === -1) {
+    throw new CanvasError('invalid_input', 'Malformed frontmatter: missing closing ---');
+  }
   const index = lines.findIndex((line, i) => i > 0 && i < end && new RegExp(`^${key}\\s*:`).test(line));
   if (index !== -1) lines[index] = `${key}: ${value}`;
   else lines.splice(end, 0, `${key}: ${value}`);
@@ -320,11 +430,16 @@ function setFrontmatterField(lines, key, value) {
 
 function addCancelledTag(lines) {
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
-  const index = lines.findIndex((line, i) => i > 0 && i < end && /^tags\s*:\s*\[.*\]\s*$/.test(line));
-  if (index === -1) return;
-  const tags = lines[index].match(/\[(.*)\]/)[1].split(',').map(t => t.trim()).filter(Boolean);
-  if (!tags.some(t => t.replace(/["']/g, '') === 'cancelled')) {
-    lines[index] = `tags: [${[...tags, 'cancelled'].join(', ')}]`;
+  const index = lines.findIndex((line, i) => i > 0 && i < end && /^tags\s*:/.test(line));
+  const existing = parseFrontmatter(lines.join('\n')).frontmatter.tags;
+  const tags = Array.isArray(existing) ? existing : existing ? [existing] : [];
+  if (!tags.includes('cancelled')) tags.push('cancelled');
+  const field = `[${tags.map(yamlScalar).join(', ')}]`;
+  if (index === -1) setFrontmatterField(lines, 'tags', field);
+  else {
+    let next = index + 1;
+    while (next < end && /^\s+-\s+/.test(lines[next])) next++;
+    lines.splice(index, next - index, `tags: ${field}`);
   }
 }
 
@@ -344,13 +459,23 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   const [, , oldStatus, priority] = name.match(FILENAME_RE) ?? [];
   if (oldStatus === newStatus) return { success: true, message: `Already ${newStatus}`, changed: false };
 
+  if (newStatus === 'ready') {
+    const relations = getRelations(todoId, workspaceRoot);
+    if (relations.blocked) {
+      const blockedBy = relations.dependencies.filter(d => !d.satisfied).map(d => d.id).join(', ');
+      throw new CanvasError('invalid_input', `Cannot set to ready: unresolved dependencies ${blockedBy}`);
+    }
+  }
+
   const content = readFileSync(filePath, 'utf-8');
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   let lines = content.split(/\r?\n/);
   if (lines[0].trim() === '---') {
     setFrontmatterField(lines, 'status', newStatus);
-    if (newStatus === 'cancelled') addCancelledTag(lines);
+  } else {
+    lines.unshift('---', `status: ${newStatus}`, '---');
   }
+  if (newStatus === 'cancelled') addCancelledTag(lines);
 
   let text = lines.join(eol);
   if (newStatus === 'cancelled' && !CANCELLED_BANNER_RE.test(text)) {
@@ -373,4 +498,82 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
   renameSync(filePath, target);
   return { success: true, message: `Status changed to ${newStatus}`, changed: true, filePath: target };
+}
+
+export function setTodoPriority(todoId, newPriority, workspaceRoot) {
+  assertTodoId(todoId);
+  if (!PRIORITIES.includes(newPriority)) {
+    throw new CanvasError('invalid_input', `priority must be one of: ${PRIORITIES.join(', ')}`);
+  }
+  const filePath = findTodoFile(todoId, workspaceRoot);
+  if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
+
+  const name = basename(filePath);
+  const [, , status, oldPriority] = name.match(FILENAME_RE) ?? [];
+  if (oldPriority === newPriority) return { success: true, message: `Already ${newPriority}`, changed: false };
+
+  const content = readFileSync(filePath, 'utf-8');
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
+  let lines = content.split(/\r?\n/);
+  if (lines[0].trim() === '---') {
+    setFrontmatterField(lines, 'priority', newPriority);
+  } else {
+    lines.unshift('---', `priority: ${newPriority}`, '---');
+  }
+
+  const text = lines.join(eol);
+  const slug = name.replace(/^(?:(?:cql|sq)-)?\d{3,}-[a-z-]+?-p[123]-/, '');
+  const target = join(dirname(filePath), `${todoId}-${status}-${newPriority}-${slug}`);
+
+  const temp = join(dirname(filePath), `.${name}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(temp, text, 'utf-8');
+  renameSync(temp, filePath);
+  renameSync(filePath, target);
+  return { success: true, message: `Priority changed to ${newPriority}`, changed: true, filePath: target };
+}
+
+function yamlScalar(value) {
+  if (/^[\w.-]+$/.test(value)) return value;
+  return JSON.stringify(value);
+}
+
+export function setTodoGroup(todoId, newGroup, workspaceRoot) {
+  assertTodoId(todoId);
+  if (typeof newGroup !== 'string') {
+    throw new CanvasError('invalid_input', 'group must be a string');
+  }
+  const trimmed = newGroup.trim();
+  if (newGroup.length > 200) {
+    throw new CanvasError('invalid_input', 'group must be at most 200 characters');
+  }
+  if (/[\r\n\0]/.test(newGroup)) {
+    throw new CanvasError('invalid_input', 'group must be a single line');
+  }
+  const filePath = findTodoFile(todoId, workspaceRoot);
+  if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
+
+  const content = readFileSync(filePath, 'utf-8');
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
+  let lines = content.split(/\r?\n/);
+
+  if (lines[0].trim() === '---' && lines.findIndex((line, i) => i > 0 && line.trim() === '---') === -1) {
+    throw new CanvasError('invalid_input', 'Malformed frontmatter: missing closing ---');
+  }
+  if (!trimmed) {
+    if (lines[0].trim() === '---') {
+      const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+      const groupIndex = lines.findIndex((line, i) => i > 0 && i < end && /^group\s*:/.test(line));
+      if (groupIndex !== -1) lines.splice(groupIndex, 1);
+    }
+  } else if (lines[0].trim() === '---') {
+    setFrontmatterField(lines, 'group', yamlScalar(trimmed));
+  } else {
+    lines.unshift('---', `group: ${yamlScalar(trimmed)}`, '---');
+  }
+
+  const text = lines.join(eol);
+  const temp = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);
+  writeFileSync(temp, text, 'utf-8');
+  renameSync(temp, filePath);
+  return { success: true, message: trimmed ? `Group set to ${trimmed}` : 'Group cleared', changed: true, filePath };
 }

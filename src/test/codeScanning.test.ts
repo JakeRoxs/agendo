@@ -1282,8 +1282,10 @@ suite("native code scanning", () => {
     assert.doesNotMatch(todo.description, /agendo:scan|useful explanation/);
     assert.match(todo.scannerEvidence, /useful explanation/);
     const pending = page.renderCanvas(todo, null, null);
-    assert.match(pending, /Needs triage/);
-    assert.match(pending, /No triage notes yet/);
+    assert.doesNotMatch(pending, /Needs triage/);
+    assert.doesNotMatch(pending, /No triage notes yet/);
+    assert.match(pending, /status-help/);
+    assert.match(pending, /Not started/);
     assert.match(pending, /id="scanner" data-section="scanner" open/);
     assert.ok(pending.indexOf('id="scanner"') < pending.indexOf('id="criteria"'));
     assert.doesNotMatch(pending, /id="criteria" data-section="criteria" open/);
@@ -1409,7 +1411,8 @@ suite("native code scanning", () => {
       null,
     );
     assert.ok(!withoutEdit.includes("data-edit"));
-    assert.ok(!withoutEdit.includes('class="canvas-toolbar"'));
+    assert.ok(withoutEdit.includes('class="canvas-toolbar"'));
+    assert.ok(withoutEdit.includes("data-settings"));
   });
 
   test("canvas labels omit redundant scanner prefixes while all navigation keeps full IDs", async () => {

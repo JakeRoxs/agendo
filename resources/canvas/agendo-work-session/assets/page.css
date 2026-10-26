@@ -21,6 +21,14 @@ pre code{background:none;padding:0;}
 .status-ready{background:#4a2d6e;color:#d4a5ff;}
 .status-complete{background:#1f5a2d;color:#7fff7f;}
 .status-backlogged,.status-cancelled{background:#444;color:#bbb;}
+.badge-group{background:#2d4a2d;color:#7fff7f;}
+.badge-import{background:#302d56;color:#c3b9ff;}
+.status-help{display:inline-block;margin-left:2px;vertical-align:middle;}
+.status-help summary{display:inline-block;width:18px;height:18px;border-radius:50%;background:#333;color:#d4d4d4;font-size:0.75em;font-weight:700;line-height:16px;text-align:center;cursor:pointer;border:1px solid #444;padding:0;}
+.status-help summary:hover{background:#3d3d3d;}
+.status-help[open] summary{background:#4da3ff;color:#fff;}
+.status-help .box{position:absolute;z-index:100;background:#252525;border:1px solid #444;border-radius:6px;padding:12px;width:320px;max-width:90vw;margin-top:6px;box-shadow:0 4px 16px rgba(0,0,0,0.5);}
+.status-help .box p{margin:4px 0;font-size:0.9em;}
 .progress-bar{height:8px;background:#333;border-radius:4px;overflow:hidden;margin:10px 0 4px;}
 .progress-fill{height:100%;background:#4caf50;transition:width 0.3s;}
 .progress-text{font-size:0.85em;color:#999;margin:0 0 8px;}
@@ -82,9 +90,9 @@ details.collapsible[open]>summary :is(h2,h3,h4)::before{transform:rotate(90deg);
 .hint{font-size:0.8em;font-weight:400;color:#8a8a8a;}
 @media (prefers-reduced-motion:reduce){details.collapsible>summary :is(h2,h3,h4)::before{transition:none;}}
 .badge-select{display:inline-flex;}
-select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:600;appearance:none;-webkit-appearance:none;padding:3px 10px;field-sizing:content;text-align:center;text-align-last:center;}
+select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:600;appearance:none;-webkit-appearance:none;padding:3px 10px;field-sizing:content;text-align:left;text-align-last:left;}
 select.badge:disabled{opacity:0.6;cursor:progress;}
-select.badge option{background:#2d2d2d;color:#e6e6e6;}
+select.badge option{background:#2d2d2d;color:#e6e6e6;text-align:left;}
 .edit-button{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;margin-left:auto;min-height:32px;padding:5px 10px;font:inherit;font-size:0.85em;}
 .edit-button svg{flex-shrink:0;}
 .triage-guide{border-left:3px solid #ffd36b;background:#2b281f;padding:12px 16px;margin:20px 0;border-radius:0 6px 6px 0;}
@@ -109,3 +117,17 @@ select.badge option{background:#2d2d2d;color:#e6e6e6;}
 .scanner-finding h4{color:#ffbf7f;margin-bottom:8px;}
 .scanner-context .box{margin-top:12px;}
 @media(max-width:600px){.scanner-toc{grid-template-columns:minmax(0,1fr);gap:12px;}}
+.group-id{color:#8a8a8a;font-weight:400;margin-right:10px;}
+.group-summary{font-size:0.9em;color:#999;margin:0 0 16px;}
+.group-members{list-style:none;padding:0;margin:0;}
+.group-members li{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #2a2a2a;}
+.group-members li.settled .todo-link{color:#8a8a8a;}
+.badge-progress{background:#1f5a2d;color:#7fff7f;}
+.settings-section{margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #333;}
+.settings-section:last-child{border-bottom:none;}
+.settings-section h2{font-size:1.1em;margin-top:0;}
+.settings-section dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;}
+.settings-section dt{color:#8a8a8a;font-weight:400;}
+.settings-section dd{margin:0;}
+.settings-actions{display:flex;gap:10px;margin-top:8px;}
+.settings-link{display:inline-block;padding:4px 0;}

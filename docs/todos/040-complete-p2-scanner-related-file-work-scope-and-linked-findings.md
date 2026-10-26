@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "040"
 tags: [code-scanning, workflow, related-files, skill]
@@ -59,3 +59,15 @@ Primary areas: bundled Agendo skill, scanner todo work-plan conventions, additio
 - Recorded the user's request to account for directly related fixes outside the imported main file
 - Defined the boundary between necessary supporting changes and separately tracked work
 - Preserved independent ownership of existing scanner todos and grouping modes
+
+### 2026-10-26 - Implemented and Verified
+
+**By:** Kilo
+
+**Actions:**
+
+- Added related-file work scope guidance to the bundled Agendo skill (SKILL.md)
+- Documented how to handle necessary changes outside the scanner's main reported file
+- Provided Related File Work subsection example
+- Updated skill version from 1.5.1 to 1.6.0
+- Verified: 185 extension tests passing, lint clean

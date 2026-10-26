@@ -32,7 +32,7 @@ function summarize(todo) {
 
 const canvas = createCanvas({
   id: 'agendo-work-session',
-  displayName: 'Agendo Work Session',
+  displayName: 'Agendo',
   description: 'Interactive work session dashboard for agendo todos with acceptance criteria tracking',
   inputSchema: {
     type: 'object',

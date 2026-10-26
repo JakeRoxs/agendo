@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "039"
 tags: [canvas, code-scanning, ux, lifecycle]
@@ -121,3 +121,16 @@ Primary areas: canvas todo loading, `page.mjs`, canvas styles/scripts, and regre
 - Replaced the proposed always-visible pending guidance with default-hidden status help for all six lifecycle states
 - Added concise meanings and generic next steps, with keyboard/touch access rather than a hover-only requirement
 - Kept task-specific notes, blockers, and verification signals separate from generic help
+
+### 2026-10-26 - Implemented and Verified
+
+**By:** Kilo
+
+**Actions:**
+
+- Added Group pill and import-grouping pill (File/Rule/Issue import) to canvas metadata row
+- Removed persistent "Needs triage" banner and empty-triage instructional content
+- Added on-demand lifecycle help associated with status control for all six states
+- Added scan provenance parsing (group, scan_source, scan_scope, scan_grouping, scan_target, scan_refreshed_at, scan_review_required) to canvas todo loader
+- Updated extension tests to match new canvas behavior
+- Verified: 185 extension tests passing, 20 canvas tests passing, lint clean, 0 audit vulnerabilities, vsix packaged

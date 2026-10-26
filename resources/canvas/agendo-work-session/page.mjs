@@ -40,6 +40,31 @@ function displayTitle(todo) {
     : scannerText(todo.title.replace(/^(?:SonarQube|CodeQL):\s*/i, ''));
 }
 
+function scanTooltip(todo) {
+  const scan = todo.scan;
+  const parts = [];
+  if (scan?.scope) parts.push(`scope: ${scan.scope}`);
+  if (scan?.target) parts.push(`target: ${scan.target}`);
+  if (scan?.refreshedAt) parts.push(`refreshed: ${scan.refreshedAt}`);
+  if (scan?.reviewRequired) parts.push('review required');
+  return parts.length ? parts.join(' · ') : 'Scanner import';
+}
+
+const LIFECYCLE_HELP = {
+  pending: { meaning: 'Not started', next: 'Review the scope and evidence; move to in-progress when beginning investigation or implementation.' },
+  'in-progress': { meaning: 'Investigation or implementation is underway', next: 'Work through findings and additional criteria; record relevant decisions and verification needs.' },
+  ready: { meaning: 'Implementation is believed finished and needs verification', next: 'Check criteria, tests, and a fresh analysis where applicable; complete only when verified.' },
+  complete: { meaning: 'Work is recorded as finished and verified', next: 'Review its evidence; explicitly reopen if further work is needed.' },
+  backlogged: { meaning: 'Work is deferred', next: 'Revisit priority and scope before returning it to active work.' },
+  cancelled: { meaning: 'Work is no longer being pursued', next: 'Review the reason and effects on related work before explicitly reopening.' }
+};
+
+function statusHelp(status) {
+  const help = LIFECYCLE_HELP[status];
+  if (!help) return '';
+  return `<details class="status-help" id="status-help"><summary aria-label="Lifecycle help for ${escapeHtml(status)}" tabindex="0">?</summary><div class="box"><p><strong>${escapeHtml(status)}:</strong> ${escapeHtml(help.meaning)}</p><p>${escapeHtml(help.next)}</p></div></details>`;
+}
+
 // Every section is collapsible; the page script remembers the choice per todo.
 function collapsible(id, title, content, { open = true, hint = '', auto = false, level = 2 } = {}) {
   return `<section aria-labelledby="${id}-heading"><details class="collapsible" id="${id}" data-section="${id}"${open ? ' open' : ''} data-auto-open="${auto}"><summary><h${level} id="${id}-heading">${title}${hint ? ` <span class="hint">${escapeHtml(hint)}</span>` : ''}</h${level}></summary>${content}</details></section>`;
@@ -142,11 +167,11 @@ function renderScannerEvidence(markdown, expanded) {
     ${contextHtml ? `<div class="scanner-context" aria-label="Rule context">${contextHtml}</div>` : ''}`;
 }
 
-export function renderCanvas(todo, relations, nav, actions = {}) {
+export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
   if (!todo) {
     return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Agendo Work Session</title>
     <link rel="stylesheet" href="/page.css"></head>
-    <body><main class="empty"><h1>Agendo Work Session</h1><p>No todo selected. Ask the agent to open a todo in this canvas.</p></main></body></html>`;
+    <body><main class="empty">${renderNavigation(nav)}<h1>Agendo Work Session</h1><p>No todo selected. Choose a todo from the board or history.</p><p class="error" id="status-message" role="status" aria-live="polite"></p></main><script src="/page.js"></script></body></html>`;
   }
 
   const profile = PROFILES[todo.status] ?? PROFILES.pending;
@@ -177,7 +202,7 @@ export function renderCanvas(todo, relations, nav, actions = {}) {
 
   const triageHtml = todo.triage.length > 0
     ? collapsible('triage', 'Triage', todo.triage.map(t => `<h3>${escapeHtml(t.heading)}</h3><div class="box">${renderMarkdown(t.text)}</div>`).join(''), { open: isOpen('triage'), hint: todo.triage.map(t => t.heading).join(' · ') })
-    : pending ? collapsible('triage', 'Triage', '<div class="box"><p>No triage notes yet. Record findings, compare proposed solutions, and write a recommended action in the todo file before marking it ready.</p></div>', { open: true, hint: 'not recorded' }) : '';
+    : '';
 
   const resumeHtml = todo.resumeContext
     ? collapsible('resume', 'Resume Context', `<div class="box">${renderMarkdown(todo.resumeContext)}</div>`, { open: isOpen('resume') })
@@ -194,22 +219,100 @@ export function renderCanvas(todo, relations, nav, actions = {}) {
   const sections = profile.order.map(id => byId[id]).join('');
 
   const statusPill = `<label class="badge-select"><span class="visually-hidden">Change status</span><select data-status-select class="badge status-${escapeHtml(todo.status)}" aria-label="Change status">${STATUS_OPTIONS.map(s => `<option value="${s}"${s === todo.status ? ' selected' : ''}>${s}</option>`).join('')}</select></label>`;
+
+  const priorityPill = `<label class="badge-select"><span class="visually-hidden">Change priority</span><select data-priority-select class="badge badge-priority" aria-label="Change priority">${['p1', 'p2', 'p3'].map(p => `<option value="${p}"${p === todo.priority ? ' selected' : ''}>${p}</option>`).join('')}</select></label>`;
+
+  const groupPill = `<label class="badge-select"><span class="visually-hidden">Change group</span><select data-group-select class="badge badge-group" aria-label="Change group"><option value=""${!todo.group ? ' selected' : ''}>no group</option>${groups.map(g => `<option value="${escapeHtml(g)}"${todo.group === g ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}</select></label>`;
   const editButton = actions.edit ? '<button type="button" class="edit-button" data-edit title="Edit todo file" aria-label="Edit todo file"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 3 5 5-12 12H4v-5Z"/><path d="m13 6 5 5"/></svg><span>Edit</span></button>' : '';
-  const navigation = renderNav(nav);
+  const settingsButton = '<a href="/settings" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></a>';
+  const navigation = renderNavigation(nav);
+
+  const importGrouping = { file: 'File import', rule: 'Rule import', finding: 'Issue import' }[todo.scan?.grouping];
+  const importPill = importGrouping
+    ? `<span class="badge badge-import" title="${escapeHtml(scanTooltip(todo))}" aria-label="${escapeHtml(importGrouping)}">${escapeHtml(importGrouping)}</span>`
+    : '';
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${escapeHtml(displayTitle(todo))}</title>
   <link rel="stylesheet" href="/page.css"></head>
   <body data-todo-id="${escapeHtml(todo.id)}" data-status="${escapeHtml(todo.status)}" data-percent="${percent}">
     <main>
-      ${navigation || editButton ? `<div class="canvas-toolbar">${navigation}${editButton}</div>` : ''}
+      ${navigation || editButton || settingsButton ? `<div class="canvas-toolbar">${navigation}${editButton}${settingsButton}</div>` : ''}
       <h1><span class="todo-id">#${escapeHtml(displayId(todo.id))}</span>${escapeHtml(displayTitle(todo))}</h1>
       <div class="meta">
         ${sourceBadge(todo.id)}
         ${statusPill}
-        <span class="badge badge-priority">${escapeHtml(todo.priority)}</span>
+        ${statusHelp(todo.status)}
+        ${priorityPill}
+        ${groupPill}
+        ${todo.group ? `<button type="button" data-open-group="${escapeHtml(todo.group)}" title="Open group overview">Group overview</button>` : ''}
+        ${importPill}
       </div>
-      ${pending ? '<aside class="triage-guide" aria-label="Pending todo guidance"><h2>Needs triage</h2><p>Understand the problem before starting implementation. Review the evidence, record your findings and recommendation, then choose ready, backlogged, or cancelled using the status selector.</p></aside>' : ''}
       ${sections}
+      <p class="error" id="status-message" role="status" aria-live="polite"></p>
+    </main>
+    <script src="/page.js"></script>
+  </body></html>`;
+}
+
+export function renderGroupCanvas(groupName, members, nav, actions = {}) {
+  const navigation = renderNavigation(nav);
+  const settingsButton = '<a href="/settings" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></a>';
+
+  // Count by status
+  const statusCounts = {};
+  const activeMembers = [];
+  const terminalMembers = [];
+  for (const todo of members) {
+    statusCounts[todo.status] = (statusCounts[todo.status] ?? 0) + 1;
+    if (todo.status === 'complete' || todo.status === 'cancelled' || todo.status === 'backlogged') {
+      terminalMembers.push(todo);
+    } else {
+      activeMembers.push(todo);
+    }
+  }
+
+  const summaryParts = [];
+  if (statusCounts['in-progress']) summaryParts.push(`${statusCounts['in-progress']} in-progress`);
+  if (statusCounts['pending']) summaryParts.push(`${statusCounts['pending']} pending`);
+  if (statusCounts['ready']) summaryParts.push(`${statusCounts['ready']} ready`);
+  if (statusCounts['complete']) summaryParts.push(`${statusCounts['complete']} complete`);
+  if (statusCounts['cancelled']) summaryParts.push(`${statusCounts['cancelled']} cancelled`);
+  if (statusCounts['backlogged']) summaryParts.push(`${statusCounts['backlogged']} backlogged`);
+  const summary = summaryParts.join(' · ') || 'empty';
+
+  const renderTodoRow = (todo) => {
+    const done = todo.criteria.filter(c => c.met).length;
+    const total = todo.criteria.length;
+    const progress = total > 0 ? `${done}/${total}` : '';
+    const blockedBy = (todo.dependencies && todo.dependencies.length > 0) ? `blocked by ${todo.dependencies.join(', ')}` : '';
+    return `<li class="group-member">
+      <button type="button" class="todo-link" data-open="${escapeHtml(todo.id)}"><span class="todo-id">#${escapeHtml(displayId(todo.id))}</span>${escapeHtml(displayTitle(todo))}</button>
+      ${sourceBadge(todo.id)}
+      <span class="badge status-${escapeHtml(todo.status)}">${escapeHtml(todo.status)}</span>
+      <span class="badge badge-priority">${escapeHtml(todo.priority)}</span>
+      ${progress ? `<span class="badge badge-progress">${escapeHtml(progress)}</span>` : ''}
+      ${blockedBy ? `<span class="note">${escapeHtml(blockedBy)}</span>` : ''}
+    </li>`;
+  };
+
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Group: ${escapeHtml(groupName)}</title>
+  <link rel="stylesheet" href="/page.css"></head>
+  <body data-group="${escapeHtml(groupName)}">
+    <main>
+      ${navigation || settingsButton ? `<div class="canvas-toolbar">${navigation}${settingsButton}</div>` : ''}
+      <h1><span class="group-id">Group:</span> ${escapeHtml(groupName)}</h1>
+      <div class="meta">
+        <span class="badge badge-group">Group: ${escapeHtml(groupName)}</span>
+        <span class="badge">${members.length} todos</span>
+      </div>
+      <p class="group-summary">${escapeHtml(summary)}</p>
+      ${activeMembers.length > 0 ? `
+        <h2>Active</h2>
+        <ul class="group-members">${activeMembers.map(renderTodoRow).join('')}</ul>` : ''}
+      ${terminalMembers.length > 0 ? `
+        <h2>Terminal</h2>
+        <ul class="group-members">${terminalMembers.map(renderTodoRow).join('')}</ul>` : ''}
+      ${members.length === 0 ? '<p class="empty">No todos in this group.</p>' : ''}
       <p class="error" id="status-message" role="status" aria-live="polite"></p>
     </main>
     <script src="/page.js"></script>
@@ -259,13 +362,20 @@ function renderRelations({ blocked, dependencies, dependents }, terminal, profil
 // The current todo is already the dropdown's selection, so chips only show the others.
 const VISIBLE_CHIPS = 4;
 
-function renderNav(nav) {
+export function renderNavigation(nav) {
   if (!nav) return '';
   const multiple = nav.recent.length > 1;
-  const chips = multiple ? `<ul class="recent" aria-label="Recent todos">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(displayId(r.id))}</button></li>`).join('')}</ul>` : '';
+  const chips = multiple ? `<ul class="recent" aria-label="Recent views">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => r.kind === 'board'
+    ? `<li><button type="button" class="chip" data-open-board="${escapeHtml(r.scope)}">${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</button></li>`
+    : r.kind === 'group' ? `<li><button type="button" class="chip" data-open-group="${escapeHtml(r.groupName)}">Group: ${escapeHtml(r.groupName)}</button></li>`
+    : `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(displayId(r.id))}</button></li>`).join('')}</ul>` : '';
   const current = nav.recent.find(r => r.current);
-  const select = multiple ? `<label class="recent-select"><span class="visually-hidden">Jump to a recent todo</span><select data-open-select class="status-border-${escapeHtml(current?.status ?? 'missing')}">${nav.recent.map(r => `<option class="status-border-${escapeHtml(r.status)}" value="${escapeHtml(r.id)}"${r.current ? ' selected' : ''}>${todoSource(r.id).label} · ${escapeHtml(displayId(r.id))} ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})</option>`).join('')}</select></label>` : '';
-  return `<nav class="history" aria-label="Todo history">
+  const select = multiple ? `<label class="recent-select"><span class="visually-hidden">Jump to a recent view</span><select data-open-select class="status-border-${escapeHtml(current?.status ?? 'missing')}">${nav.recent.map(r => r.kind === 'board'
+    ? `<option value="" data-board-scope="${escapeHtml(r.scope)}"${r.current ? ' selected' : ''}>${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</option>`
+    : r.kind === 'group' ? `<option value="" data-group-name="${escapeHtml(r.groupName)}"${r.current ? ' selected' : ''}>Group: ${escapeHtml(r.groupName)}</option>`
+    : `<option class="status-border-${escapeHtml(r.status)}" value="${escapeHtml(r.id)}"${r.current ? ' selected' : ''}>${todoSource(r.id).label} · ${escapeHtml(displayId(r.id))} ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})</option>`).join('')}</select></label>` : '';
+  return `<nav class="history" aria-label="Workspace history">
+        ${nav.returnTo ? `<button type="button" data-return-board>Return to ${nav.returnTo.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</button>` : ''}
         <button type="button" data-nav="back" aria-label="Back"${nav.canBack ? '' : ' disabled'}>&larr;</button>
         <button type="button" data-nav="forward" aria-label="Forward"${nav.canForward ? '' : ' disabled'}>&rarr;</button>
         ${select}

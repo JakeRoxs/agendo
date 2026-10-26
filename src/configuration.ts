@@ -18,6 +18,7 @@ export enum Settings {
   GitignoreTodos = "gitignoreTodos",
   SkillUpdateSource = "skillUpdateSource",
   SkillUpdateCheck = "skillUpdateCheck",
+  CanvasUpdateSource = "canvasUpdateSource",
   SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
   CodeScanningEnabled = "codeScanning.enabled",

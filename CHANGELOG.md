@@ -6,6 +6,16 @@ All notable changes to the Agendo extension are documented here.
 
 ### Added
 
+- Explicit board-card work-session actions and scoped Return to Board navigation preserve the originating regular or code-scanning board without changing todo-opening preferences
+- Group overview entry points and typed todo/group history fix back/forward navigation without fabricating todo IDs
+- Skill panel refresh button explicitly checks skill and canvas source versions, shows a loading spinner and results, and retains the last checked source version in the panel without installing files
+- Skill and canvas version/action pickers distinguish the installed copy, extension-bundled files, and configured source (GitHub/main by default), with explicit metadata-only source checks
+- Canvas source installation and bundled-update notifications alongside the skill update workflow
+- Canvas group overview view with member counts by lifecycle state, progress indicators, blocker context, and navigation into individual member todos
+- Accomplishments Context command (`agendo.copyAccomplishmentsContext`) that compiles a bounded, deterministic evidence packet from completed todos for agent-side report synthesis, with period, group, tag, and source filters
+- Related-file work scope guidance in the bundled Agendo skill: explicit permission for necessary changes outside the scanner's main reported file, with recording conventions, criteria guidance, and overlap reference rules
+- Scanner canvas import badges: Group pill for todos with a group field, and import-grouping pill (File/Rule/Issue import) showing how a scanner todo was imported
+- On-demand lifecycle help associated with the status control, showing meaning and generic next step for all six lifecycle states (pending, in-progress, ready, complete, backlogged, cancelled)
 - Targeted scanner refresh for individual imported todos via **Refresh Scanning Todo** context menu and command, using stored provenance to re-fetch only the relevant scope
 - Finding-level change accounting on refresh: reports new, changed, unchanged, and no-longer-returned findings per todo, with stable finding IDs across location moves
 - Scanner provenance and snapshot metadata persisted per todo, enabling precise refresh and change detection without full re-import
@@ -18,6 +28,16 @@ All notable changes to the Agendo extension are documented here.
 
 ### Changed
 
+- Native boards and in-canvas boards use a single host-neutral document, preserving existing card/layout controls and scope-specific snapshots without requiring Copilot
+- Canvas history includes scoped board views; returning from a work session can render the originating board inside the same workspace
+- Board mutations share native task guards, and deletion confirmation is handled by the host rather than browser dialogs inside the canvas iframe
+- Standalone canvas writes reject ambiguous IDs, unresolved ready dependencies, malformed frontmatter, and unsafe group values while preserving cancellation tags and filename/frontmatter mirrors
+- VS Code canvas status, priority, and group changes use guarded native task operations; dirty editors, untrusted workspaces, and ambiguous IDs cannot be overwritten through the canvas
+- Skill/canvas status rows open version review rather than immediately overwriting files; installing over an existing copy requires confirmation, including reinstalls and downgrades
+- Newer installed component versions are shown as newer than bundled rather than requiring an update; a version mismatch no longer claims that a copy came from source
+- Canvas activation no longer automatically overwrites an installed copy; bundled updates are offered for review, and source checks remain opt-in
+- Scanner canvas replaces the persistent "Needs triage" banner and empty-triage instructional content with default-hidden on-demand lifecycle help for all statuses
+- Canvas metadata row now shows source, status, priority, optional group pill, and optional import-grouping pill in that order
 - Refresh of ready or completed scanner todos surfaces a review-required warning without automatically reopening or changing lifecycle
 - Refresh validates scope and provenance before fetching, aborting on mismatch to prevent cross-repo or cross-project data corruption
 - Work-session canvas version 0.1.6 shows scanner problem context and evidence, prioritizes triage for pending todos, and remembers section expansion separately for each todo and status
@@ -25,10 +45,12 @@ All notable changes to the Agendo extension are documented here.
 - Scanner canvas includes a rule/count overview, a contents index grouped into affected files and rule context, collapsible per-file findings, and independently collapsed explanations, examples, and references
 - Canvas titles, dependencies, history options, and recent pills show short scanner IDs beside source indicators instead of repeating source prefixes in IDs and titles; navigation retains full IDs
 - Multi-rule scanner todos retain each rule's explanation, associate findings with rule IDs, and group canvas references and context by rule type
+- Bundled Agendo skill version 1.6.0 adds related-file work scope guidance for scanner todos, documenting how to handle necessary changes outside the main reported file while preserving independent todo ownership
 - Bundled Agendo skill version 1.5.1 documents file-default imports and the optional grouping choices
 
 ### Fixed
 
+- Clipboard import waits for repository refresh and reports a refresh failure separately from a file creation failure; corrected incomplete test mocks that caused a spurious creation-error notification during tests
 - Keep environment URL/token variable families paired and require a matching server before reusing an environment token
 - Verify the active SonarQube CLI server before and after every page request, aborting imports when a connection change is detected
 - Scanner evidence is no longer hidden in the canvas or mistaken for user-owned sections and editable acceptance criteria; scanner issue links open correctly

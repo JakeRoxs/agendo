@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
+import { buildAccomplishmentsPacket } from "./todos/accomplishmentsService";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import {
@@ -16,6 +17,7 @@ import {
   sonarQubeEnvironmentToken,
   validateSonarUrl,
 } from "./todos/codeScanningService";
+import { compareVersions, versionRelationship } from "./todos/componentVersions";
 import {
   type ConfigService,
   VIEW_MODES,
@@ -30,7 +32,7 @@ import {
   readScanningProvenance,
   type ScanningProvenance,
 } from "./todos/scanningSnapshot";
-import type { SkillManager } from "./todos/skillManager";
+import type { SkillManager, SkillStatus } from "./todos/skillManager";
 import type { StatusService } from "./todos/statusService";
 import { buildCollisionReconcileContext, findTodoCollisions } from "./todos/todoCollisions";
 import {
@@ -54,6 +56,7 @@ import {
   type TreeNode,
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
+import { boardReturnTarget } from "./todos/workspaceNavigation";
 
 export interface CommandServices {
   config: ConfigService;
@@ -135,6 +138,15 @@ export function registerCommands(
     );
     vscode.window.showInformationMessage(
       `Copied reconciliation context for ${collisions.length} ID collision(s).`,
+    );
+  });
+  register(Command.CopyAccomplishmentsContext, async () => {
+    await services.repository.refresh();
+    const todos = services.repository.getTodos();
+    const packet = buildAccomplishmentsPacket(todos, {});
+    await vscode.env.clipboard.writeText(packet.text);
+    vscode.window.showInformationMessage(
+      `Copied accomplishments context: ${packet.matched} completed todo(s), ${packet.included.length} included${packet.omittedCount > 0 ? `, ${packet.omittedCount} omitted` : ""}.`,
     );
   });
   if (services.scanning) {
@@ -587,6 +599,7 @@ function resolveRefreshableTodo(arg: unknown, todos: readonly Todo[]): Todo | un
  * driven by the operation's context key.
  */
 function registerLoadingCommands(register: Register): void {
+  register(Command.RefreshComponentsLoading, () => undefined);
   register(Command.CodeScanningRefreshLoading, () => undefined);
   register(Command.CodeScanningOpenBoardLoading, () => undefined);
   register(Command.CodeScanningShowDigestLoading, () => undefined);
@@ -744,7 +757,11 @@ function registerTodoCommands(
   register(Command.OpenCanvas, async (arg: unknown) => {
     const todo = resolveTodo(arg) ?? resolveBoardTodo(arg, repository.getTodos());
     if (todo) {
-      await config.openInCanvas(todo.uri);
+      const returnTo = boardReturnTarget(
+        arg && typeof arg === "object" ? (arg as Record<string, unknown>).returnTo : undefined,
+      );
+      if (returnTo && !matchesTodoScope(todo, returnTo.scope)) return;
+      await config.openInCanvas(todo.uri, returnTo);
     }
   });
 
@@ -1011,30 +1028,102 @@ function registerSkillCommands(
   busy: BusyIndicator,
 ): void {
   const { skill, canvas, refreshSkillStatus } = services;
+  let checking = false;
+  register(Command.RefreshComponents, async () => {
+    if (checking) return;
+    checking = true;
+    try {
+      await busy.run(
+        "Checking skill and canvas versions",
+        async () => {
+          const results = await Promise.allSettled([skill.getStatus(true), canvas.getStatus(true)]);
+          let updates = 0;
+          let uncertain = false;
+          const details = results.map((result, index) => {
+            const name = index === 0 ? "Skill" : "Canvas";
+            if (result.status === "rejected") {
+              uncertain = true;
+              return `${name}: version check unavailable`;
+            }
+            const status = result.value;
+            if (!status.installed) return `${name}: not installed`;
+            const available = [status.bundledVersion, status.sourceVersion].some((version) =>
+              Boolean(
+                version &&
+                  status.installedVersion &&
+                  compareVersions(version, status.installedVersion) > 0,
+              ),
+            );
+            if (available) updates++;
+            if (status.sourceError || !status.installedVersion || !status.bundledVersion)
+              uncertain = true;
+            return `${name}: installed v${status.installedVersion ?? "unknown"}; bundled v${status.bundledVersion ?? "unknown"} (${versionRelationship(status.installedVersion, status.bundledVersion)}); source ${status.sourceVersion ? `v${status.sourceVersion} (${versionRelationship(status.installedVersion, status.sourceVersion)})` : "unavailable"}`;
+          });
+          refreshSkillStatus();
+          const summary = `${updates ? `${updates} component(s) have newer versions available.` : "No newer versions found among checked versions."} ${uncertain ? "Some versions could not be checked. " : ""}${details.join(". ")}. No files were installed.`;
+          if (uncertain) await vscode.window.showWarningMessage(summary);
+          else await vscode.window.showInformationMessage(summary);
+        },
+        "agendo.componentsChecking",
+      );
+    } finally {
+      checking = false;
+    }
+  });
+
+  for (const component of ["skill", "canvas"] as const) {
+    register(component === "skill" ? Command.ManageSkill : Command.ManageCanvas, async () => {
+      const manager = component === "skill" ? skill : canvas;
+      const status: SkillStatus = await manager.getStatus(true);
+      const installed: string = status.installed
+        ? `v${status.installedVersion ?? "unknown"}`
+        : "not installed";
+      const sourceLabel = status.sourceVersion ? `v${status.sourceVersion}` : "unavailable";
+      const sourceDetail =
+        status.sourceError ||
+        (status.sourceVersion
+          ? versionRelationship(status.installedVersion, status.sourceVersion)
+          : "GitHub/main by default; may differ from the extension bundle");
+      const picked: (vscode.QuickPickItem & { action: string }) | undefined =
+        await vscode.window.showQuickPick(
+          [
+            {
+              label: `Install bundled version v${status.bundledVersion ?? "unknown"}`,
+              detail: `${versionRelationship(status.installedVersion, status.bundledVersion)}; includes extension defaults`,
+              action: "bundle",
+            },
+            {
+              label: `Install from source ${sourceLabel}`,
+              detail: sourceDetail,
+              action: "source",
+            },
+          ],
+          {
+            title: `Agendo ${component}: installed ${installed} | bundled v${status.bundledVersion ?? "?"} | source ${sourceLabel}`,
+            placeHolder: "Choose an action",
+          },
+        );
+      if (!picked) return;
+      await vscode.commands.executeCommand(
+        component === "skill"
+          ? picked.action === "bundle"
+            ? Command.EnableSkill
+            : Command.UpdateSkill
+          : picked.action === "bundle"
+            ? Command.InstallCanvas
+            : Command.UpdateCanvas,
+      );
+    });
+  }
 
   register(Command.EnableSkill, async () => {
     const status = await skill.getStatus();
-    if (status.installed && !status.updateAvailable) {
-      const canvasStatus = await canvas.getStatus();
-      if (!canvasStatus.installed || canvasStatus.updateAvailable) {
-        await canvas.install();
-        vscode.window.showInformationMessage(
-          `Agendo skill already installed (v${status.installedVersion ?? "?"}). Installed the work-session canvas (v${canvasStatus.bundledVersion ?? "?"}).`,
-        );
-        return;
-      }
-      vscode.window.showInformationMessage(
-        `Agendo skill already installed (v${status.installedVersion ?? "?"}).`,
-      );
-      return;
-    }
     try {
       const previousVersion = status.installedVersion;
       await busy.run(
         "Installing skill…",
         async () => {
           await skill.install();
-          await canvas.install();
           refreshSkillStatus();
         },
         "agendo.skillInstalling",
@@ -1042,10 +1131,12 @@ function registerSkillCommands(
       const newVersion = status.bundledVersion ?? "?";
       if (previousVersion) {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from v${previousVersion} to v${newVersion} (Extension).`,
+          `Agendo skill replaced: installed v${previousVersion} → bundled v${newVersion} (included in this extension).`,
         );
       } else {
-        vscode.window.showInformationMessage(`Agendo skill installed (v${newVersion} Extension).`);
+        vscode.window.showInformationMessage(
+          `Agendo skill installed: bundled v${newVersion} (included in this extension).`,
+        );
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install skill: ${error}`);
@@ -1065,8 +1156,8 @@ function registerSkillCommands(
       const version = (await canvas.getStatus()).bundledVersion ?? "?";
       vscode.window.showInformationMessage(
         previous.installedVersion
-          ? `Agendo work-session canvas updated from v${previous.installedVersion} to v${version}.`
-          : `Agendo work-session canvas installed (v${version}).`,
+          ? `Agendo canvas replaced: installed v${previous.installedVersion} → bundled v${version} (included in this extension).`
+          : `Agendo canvas installed: bundled v${version} (included in this extension).`,
       );
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to install canvas: ${error}`);
@@ -1074,7 +1165,8 @@ function registerSkillCommands(
   });
   register(Command.UpdateSkill, async () => {
     try {
-      const previousStatus = await skill.getStatus();
+      const previousStatus = await skill.getStatus(true);
+      if (previousStatus.sourceError) throw new Error(previousStatus.sourceError);
       await busy.run(
         "Updating skill…",
         async () => {
@@ -1086,15 +1178,41 @@ function registerSkillCommands(
       const newStatus = await skill.getStatus();
       if (previousStatus.installedVersion && newStatus.installedVersion) {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from v${previousStatus.installedVersion} to v${newStatus.installedVersion} (Source).`,
+          `Agendo skill replaced: installed v${previousStatus.installedVersion} → source v${newStatus.installedVersion} from ${previousStatus.sourceUrl}.`,
         );
       } else {
         vscode.window.showInformationMessage(
-          `Agendo skill updated from configured source (v${newStatus.installedVersion ?? "?"} Source).`,
+          `Agendo skill installed: source v${newStatus.installedVersion ?? "?"} from ${previousStatus.sourceUrl}.`,
         );
       }
     } catch (error) {
       vscode.window.showErrorMessage(`Failed to update skill: ${error}`);
+    }
+  });
+  register(Command.UpdateCanvas, async () => {
+    try {
+      const previousStatus = await canvas.getStatus(true);
+      if (previousStatus.sourceError) throw new Error(previousStatus.sourceError);
+      await busy.run(
+        "Updating canvas…",
+        async () => {
+          await canvas.updateFromSource();
+          refreshSkillStatus();
+        },
+        "agendo.canvasUpdating",
+      );
+      const newStatus = await canvas.getStatus();
+      if (previousStatus.installedVersion && newStatus.installedVersion) {
+        vscode.window.showInformationMessage(
+          `Agendo canvas replaced: installed v${previousStatus.installedVersion} → source v${newStatus.installedVersion} from ${previousStatus.sourceUrl}.`,
+        );
+      } else {
+        vscode.window.showInformationMessage(
+          `Agendo canvas installed: source v${newStatus.installedVersion ?? "?"} from ${previousStatus.sourceUrl}.`,
+        );
+      }
+    } catch (error) {
+      vscode.window.showErrorMessage(`Failed to update canvas: ${error}`);
     }
   });
   register(Command.ToggleSkillUpdateCheck, async () => {
@@ -1104,8 +1222,8 @@ function registerSkillCommands(
     await config.update(Settings.SkillUpdateCheck, newEnabled, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(
       newEnabled
-        ? "Agendo skill update check enabled. Will notify on activation when a newer skill version is available."
-        : "Agendo skill update check disabled.",
+        ? "Agendo skill and canvas update notifications enabled for newer bundled versions."
+        : "Agendo skill and canvas update notifications disabled.",
     );
   });
 }
@@ -1405,8 +1523,15 @@ TODO
     await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, "utf8"));
     await config.writeConfigFile?.({ force: true });
     await config.applyGitignore?.({ force: true });
-    repository.refresh();
-    vscode.window.showInformationMessage(
+    try {
+      await repository.refresh();
+    } catch (err) {
+      await vscode.window.showWarningMessage(
+        `Todo ${newId} was created, but refreshing the todo list failed: ${err}`,
+      );
+      return;
+    }
+    await vscode.window.showInformationMessage(
       `Created todo ${newId} from ${parsed.externalKey ?? url}.`,
     );
   } catch (err) {

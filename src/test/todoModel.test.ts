@@ -1262,15 +1262,27 @@ suite("todoModel", () => {
     const updateItem = provider.getTreeItem(updateNode);
     assert.strictEqual(updateItem.label, "Skill v1.1.0");
     assert.strictEqual(updateItem.description, "Bundled v1.2.0 available");
-    assert.strictEqual(updateItem.command?.command, Command.EnableSkill);
+    assert.strictEqual(updateItem.command?.command, Command.ManageSkill);
+    assert.match(String(updateItem.tooltip), /Installed version: 1\.1\.0/);
+    assert.match(String(updateItem.tooltip), /Bundled version \(included in extension\): 1\.2\.0/);
+    assert.match(String(updateItem.tooltip), /Source: GitHub main by default/);
+    assert.match(String(updateItem.tooltip), /source version not checked/);
+    assert.match(
+      String(updateItem.tooltip),
+      /Click to review versions and actions without installing/,
+    );
 
     const canvasItem = provider.getTreeItem(canvasNode);
     assert.strictEqual(canvasItem.label, "Canvas v0.1.0");
     assert.strictEqual(canvasItem.description, "Bundled v0.2.0 available");
-    assert.strictEqual(canvasItem.command?.command, Command.InstallCanvas);
+    assert.strictEqual(canvasItem.command?.command, Command.ManageCanvas);
+    assert.match(String(canvasItem.tooltip), /Installed version: 0\.1\.0/);
+    assert.match(String(canvasItem.tooltip), /Bundled version \(included in extension\): 0\.2\.0/);
+
     canvasStatus = { ...canvasStatus, installed: false, installedVersion: undefined as never };
     const missingCanvas = provider.getTreeItem((await provider.getChildren())[1]);
     assert.strictEqual(missingCanvas.label, "Install work-session canvas");
+    assert.strictEqual(missingCanvas.command?.command, Command.ManageCanvas);
 
     const viewModeItem = provider.getTreeItem(viewModeNode);
     assert.strictEqual(viewModeItem.label, "View");
@@ -1281,7 +1293,110 @@ suite("todoModel", () => {
     const [installedNode] = await provider.getChildren();
     const installedItem = provider.getTreeItem(installedNode);
     assert.strictEqual(installedItem.label, "Skill v1.2.0");
-    assert.strictEqual(installedItem.description, "Installed");
+    assert.strictEqual(installedItem.description, "v1.2.0");
+    assert.strictEqual(installedItem.command?.command, Command.ManageSkill);
+  });
+
+  test("skill status tree provider shows newer-than-bundled without update icon", async () => {
+    const status = {
+      installed: true,
+      installedVersion: "2.0.0",
+      bundledVersion: "1.0.0",
+      updateAvailable: false,
+    };
+    const provider = new SkillStatusTreeProvider(
+      { getStatus: async () => status } as never,
+      { viewMode: "preview" } as never,
+      { getStatus: async () => ({ ...status }) } as never,
+    );
+
+    const [skillNode, canvasNode] = await provider.getChildren();
+    const skillItem = provider.getTreeItem(skillNode);
+    assert.strictEqual(skillItem.label, "Skill v2.0.0");
+    assert.strictEqual(skillItem.description, "Installed v2.0.0 newer than bundled v1.0.0");
+    assert.strictEqual(skillItem.command?.command, Command.ManageSkill);
+    const skillIcon = skillItem.iconPath as vscode.ThemeIcon;
+    assert.strictEqual(skillIcon.id, "pass-filled");
+
+    const canvasItem = provider.getTreeItem(canvasNode);
+    assert.strictEqual(canvasItem.label, "Canvas v2.0.0");
+    assert.strictEqual(canvasItem.description, "Installed v2.0.0 newer than bundled v1.0.0");
+    assert.strictEqual(canvasItem.command?.command, Command.ManageCanvas);
+    const canvasIcon = canvasItem.iconPath as vscode.ThemeIcon;
+    assert.strictEqual(canvasIcon.id, "pass-filled");
+  });
+
+  test("skill status tree provider does not misattribute source for version mismatches", async () => {
+    const status = {
+      installed: true,
+      installedVersion: "1.5.0",
+      bundledVersion: "1.0.0",
+      updateAvailable: false,
+      sourceUrl: "https://raw.githubusercontent.com/user/repo/main/.skill-meta.json",
+      sourceVersion: undefined,
+      sourceError: undefined,
+    };
+    const provider = new SkillStatusTreeProvider(
+      { getStatus: async () => status } as never,
+      { viewMode: "preview" } as never,
+      { getStatus: async () => status } as never,
+    );
+
+    const [skillNode, canvasNode] = await provider.getChildren();
+    const skillItem = provider.getTreeItem(skillNode);
+    assert.strictEqual(skillItem.label, "Skill v1.5.0");
+    assert.ok(!String(skillItem.label).includes("Source"));
+    assert.ok(!String(skillItem.label).includes("(Source)"));
+    assert.ok(!String(skillItem.description).includes("Source"));
+
+    const canvasItem = provider.getTreeItem(canvasNode);
+    assert.strictEqual(canvasItem.label, "Canvas v1.5.0");
+    assert.ok(!String(canvasItem.label).includes("Source"));
+  });
+
+  test("skill status tree provider row clicks use manage commands only", async () => {
+    const status = {
+      installed: true,
+      installedVersion: "1.0.0",
+      bundledVersion: "1.0.0",
+      updateAvailable: false,
+    };
+    const provider = new SkillStatusTreeProvider(
+      { getStatus: async () => status } as never,
+      { viewMode: "preview" } as never,
+      { getStatus: async () => status } as never,
+    );
+
+    const nodes = await provider.getChildren();
+    for (const node of nodes) {
+      const item = provider.getTreeItem(node);
+      if (item.command) {
+        assert.ok(
+          item.command.command === Command.ManageSkill ||
+            item.command.command === Command.ManageCanvas ||
+            item.command.command === Command.SetViewMode,
+          `Unexpected command: ${item.command.command}`,
+        );
+      }
+    }
+
+    // Verify no install/update command is used directly
+    const updateStatus = { ...status, updateAvailable: true, bundledVersion: "2.0.0" };
+    const provider2 = new SkillStatusTreeProvider(
+      { getStatus: async () => updateStatus } as never,
+      { viewMode: "preview" } as never,
+      { getStatus: async () => updateStatus } as never,
+    );
+    const nodes2 = await provider2.getChildren();
+    for (const node of nodes2) {
+      const item = provider2.getTreeItem(node);
+      if (item.command) {
+        assert.notStrictEqual(item.command.command, Command.EnableSkill);
+        assert.notStrictEqual(item.command.command, Command.UpdateSkill);
+        assert.notStrictEqual(item.command.command, Command.InstallCanvas);
+        assert.notStrictEqual(item.command.command, Command.UpdateCanvas);
+      }
+    }
   });
 
   test("bundled canvas ships a readable version and every installed file", async () => {
@@ -1373,12 +1488,12 @@ suite("todoModel", () => {
       unknownItem.tooltip,
       "Agendo could not read the installed or bundled skill version.",
     );
-    assert.strictEqual(unknownItem.command?.command, Command.EnableSkill);
+    assert.strictEqual(unknownItem.command?.command, Command.ManageSkill);
 
-    assert.strictEqual(
-      unknownProvider.getTreeItem(unknownCanvasNode).label,
-      "Canvas status unknown",
-    );
+    const unknownCanvasItem = unknownProvider.getTreeItem(unknownCanvasNode);
+    assert.strictEqual(unknownCanvasItem.label, "Canvas status unknown");
+    assert.strictEqual(unknownCanvasItem.command?.command, Command.ManageCanvas);
+
     const viewModeItem = unknownProvider.getTreeItem(viewModeNode);
     assert.strictEqual(viewModeItem.label, "View");
     assert.strictEqual(viewModeItem.description, "Editor (source)");
@@ -1399,8 +1514,13 @@ suite("todoModel", () => {
     const installItem = installProvider.getTreeItem(installNode);
     assert.strictEqual(installItem.label, "Install Agendo skill");
     assert.strictEqual(installItem.description, "Bundled v1.2.0");
-    assert.strictEqual(installItem.tooltip, "Select to install the bundled Agendo skill.");
-    assert.strictEqual(installItem.command?.command, Command.EnableSkill);
+    assert.match(String(installItem.tooltip), /Installed version: not installed/);
+    assert.match(String(installItem.tooltip), /Bundled version \(included in extension\): 1\.2\.0/);
+    assert.match(
+      String(installItem.tooltip),
+      /Click to review versions and actions without installing/,
+    );
+    assert.strictEqual(installItem.command?.command, Command.ManageSkill);
   });
 
   test("board snapshot preserves status columns and applies filters", async () => {
@@ -2851,6 +2971,7 @@ suite("todoModel", () => {
   test("importFromClipboard shows error when clipboard is empty", async () => {
     const errorMessages: string[] = [];
     const originalShowErrorMessage = vscode.window.showErrorMessage;
+    const originalClipboard = Object.getOwnPropertyDescriptor(vscode.env, "clipboard");
     Object.defineProperty(vscode.window, "showErrorMessage", {
       value: async (message: string) => {
         errorMessages.push(message);
@@ -2865,18 +2986,22 @@ suite("todoModel", () => {
 
     const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
     const repository = { getTodos: () => [] } as never;
-    await importFromClipboard(config, repository);
-    assert.deepStrictEqual(errorMessages, ["No text in clipboard to import."]);
-
-    Object.defineProperty(vscode.window, "showErrorMessage", {
-      value: originalShowErrorMessage,
-      configurable: true,
-    });
+    try {
+      await importFromClipboard(config, repository);
+      assert.deepStrictEqual(errorMessages, ["No text in clipboard to import."]);
+    } finally {
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: originalShowErrorMessage,
+        configurable: true,
+      });
+      if (originalClipboard) Object.defineProperty(vscode.env, "clipboard", originalClipboard);
+    }
   });
 
   test("importFromClipboard shows error when no URL is in clipboard", async () => {
     const errorMessages: string[] = [];
     const originalShowErrorMessage = vscode.window.showErrorMessage;
+    const originalClipboard = Object.getOwnPropertyDescriptor(vscode.env, "clipboard");
     Object.defineProperty(vscode.window, "showErrorMessage", {
       value: async (message: string) => {
         errorMessages.push(message);
@@ -2891,56 +3016,75 @@ suite("todoModel", () => {
 
     const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
     const repository = { getTodos: () => [] } as never;
-    await importFromClipboard(config, repository);
-    assert.deepStrictEqual(errorMessages, ["No GitHub/GitLab issue URL found in clipboard."]);
-
-    Object.defineProperty(vscode.window, "showErrorMessage", {
-      value: originalShowErrorMessage,
-      configurable: true,
-    });
+    try {
+      await importFromClipboard(config, repository);
+      assert.deepStrictEqual(errorMessages, ["No GitHub/GitLab issue URL found in clipboard."]);
+    } finally {
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: originalShowErrorMessage,
+        configurable: true,
+      });
+      if (originalClipboard) Object.defineProperty(vscode.env, "clipboard", originalClipboard);
+    }
   });
 
   test("importFromClipboard creates a todo from a GitHub URL", async () => {
     const writtenFiles: { uri: vscode.Uri; data: Uint8Array }[] = [];
-    const originalFs = vscode.workspace.fs;
-    const originalShowInputBox = vscode.window.showInputBox;
-    Object.defineProperty(vscode.workspace, "fs", {
-      value: {
-        ...originalFs,
-        writeFile: async (uri: vscode.Uri, data: Uint8Array) => {
-          writtenFiles.push({ uri, data });
+    const errors: string[] = [];
+    const information: string[] = [];
+    const warnings: string[] = [];
+    let refreshes = 0;
+    const restores: Array<() => void> = [];
+    const mock = (target: object, key: string, value: unknown) => {
+      const original = Object.getOwnPropertyDescriptor(target, key);
+      Object.defineProperty(target, key, { configurable: true, value });
+      restores.push(() => {
+        if (original) Object.defineProperty(target, key, original);
+      });
+    };
+    mock(vscode.workspace, "fs", {
+      ...vscode.workspace.fs,
+      createDirectory: async () => {},
+      writeFile: async (uri: vscode.Uri, data: Uint8Array) => {
+        writtenFiles.push({ uri, data });
+      },
+    });
+    mock(vscode.window, "showInputBox", async () => "Imported Title");
+    mock(vscode.window, "showErrorMessage", async (message: string) => {
+      errors.push(message);
+    });
+    mock(vscode.window, "showWarningMessage", async (message: string) => {
+      warnings.push(message);
+    });
+    mock(vscode.window, "showInformationMessage", async (message: string) => {
+      information.push(message);
+    });
+    mock(vscode.env, "clipboard", {
+      readText: async () => "https://github.com/owner/repo/issues/99",
+    });
+    try {
+      const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
+      const repository = {
+        getTodos: () => [],
+        refresh: async () => {
+          refreshes++;
         },
-      } as never,
-      configurable: true,
-    });
-    Object.defineProperty(vscode.window, "showInputBox", {
-      value: async () => "Imported Title",
-      configurable: true,
-    });
-    Object.defineProperty(vscode.env, "clipboard", {
-      value: { readText: async () => "https://github.com/owner/repo/issues/99" },
-      configurable: true,
-    });
-
-    const config = { getRootUri: () => vscode.Uri.file("/tmp") } as never;
-    const repository = { getTodos: () => [] } as never;
-    await importFromClipboard(config, repository);
-    assert.strictEqual(writtenFiles.length, 1);
-    assert.ok(writtenFiles[0].uri.fsPath.endsWith("001-pending-p2-imported-title.md"));
-    const content = Buffer.from(writtenFiles[0].data).toString("utf8");
-    assert.ok(content.includes("status: pending"));
-    assert.ok(content.includes('issue_id: "001"'));
-    assert.ok(content.includes("key: owner/repo#99"));
-    assert.ok(content.includes("Imported Title"));
-
-    Object.defineProperty(vscode.workspace, "fs", {
-      value: originalFs,
-      configurable: true,
-    });
-    Object.defineProperty(vscode.window, "showInputBox", {
-      value: originalShowInputBox,
-      configurable: true,
-    });
+      } as never;
+      await importFromClipboard(config, repository);
+      assert.strictEqual(writtenFiles.length, 1);
+      assert.ok(writtenFiles[0].uri.fsPath.endsWith("001-pending-p2-imported-title.md"));
+      const content = Buffer.from(writtenFiles[0].data).toString("utf8");
+      assert.ok(content.includes("status: pending"));
+      assert.ok(content.includes('issue_id: "001"'));
+      assert.ok(content.includes("key: owner/repo#99"));
+      assert.ok(content.includes("Imported Title"));
+      assert.strictEqual(refreshes, 1);
+      assert.deepStrictEqual(errors, []);
+      assert.deepStrictEqual(warnings, []);
+      assert.deepStrictEqual(information, ["Created todo 001 from owner/repo#99."]);
+    } finally {
+      for (const restore of restores.reverse()) restore();
+    }
   });
 
   test("tree provider renders group nodes when todos have groups", () => {

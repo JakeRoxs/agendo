@@ -131,23 +131,27 @@ export class StatusService {
     }
     let content = await readText(todo.uri);
     const { data } = splitFrontmatter(content);
+    const groupValue =
+      newGroup && (/^[\w.-]+$/.test(newGroup) ? newGroup : JSON.stringify(newGroup));
     if (data) {
       const lineEnding = data.includes("\r\n") ? "\r\n" : "\n";
       const lines = data.split(lineEnding);
       const groupLineIndex = this.findFrontmatterFieldLine(lines, "group");
       if (newGroup) {
         if (groupLineIndex >= 0) {
-          lines[groupLineIndex] = `group: ${newGroup}`;
+          lines[groupLineIndex] = `group: ${groupValue}`;
           const newData = lines.join(lineEnding);
           content = content.replace(data, newData);
         } else {
-          const newData = `${data}${lineEnding}group: ${newGroup}`;
+          const newData = `${data}${lineEnding}group: ${groupValue}`;
           content = content.replace(data, newData);
         }
       } else if (groupLineIndex >= 0) {
         lines.splice(groupLineIndex, 1);
         content = content.replace(data, lines.join(lineEnding));
       }
+    } else if (newGroup) {
+      content = `---\ngroup: ${groupValue}\n---\n\n${content}`;
     }
     const newName = buildFileName(todo.id, todo.status, todo.priority, todo.description);
     return this.writeAndMove(todo, content, todo.folder, newName);
@@ -163,6 +167,13 @@ export class StatusService {
     const rootUri = this.config.getRootUri();
     if (!rootUri) {
       throw new Error("No workspace root configured for todos.");
+    }
+    if (
+      vscode.workspace.textDocuments.some(
+        (document) => document.uri.toString() === todo.uri.toString() && document.isDirty,
+      )
+    ) {
+      throw new Error("Save or discard unsaved todo changes before updating it.");
     }
 
     const targetDir = targetFolder ? vscode.Uri.joinPath(rootUri, targetFolder) : rootUri;

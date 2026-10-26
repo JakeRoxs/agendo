@@ -1,5 +1,5 @@
 ---
-status: pending
+status: complete
 priority: p2
 issue_id: "041"
 tags: [reporting, digest, completed-todos, agent-context]
@@ -66,3 +66,15 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 - Checked the active-task digest and existing export todo for overlap
 - Recorded the extension-compilation and agent-synthesis split suggested by the user
 - Captured bounded processing, source citations, and completion-date uncertainty as first-version requirements
+
+### 2026-10-26 - Implemented and Verified
+
+**By:** Kilo
+
+**Actions:**
+
+- Created `src/todos/accomplishmentsService.ts` with `buildAccomplishmentsPacket`
+- Added `CopyAccomplishmentsContext` command and registration
+- Added package.json command contribution
+- Added 9 regression tests covering filtering, date boundaries, and packet content
+- Verified: 194 extension tests passing, 20 canvas tests passing, lint clean, 0 audit vulnerabilities, vsix packaged
