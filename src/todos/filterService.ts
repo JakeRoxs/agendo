@@ -35,7 +35,6 @@ function matchesText(todo: Todo, text: string): boolean {
     todo.title,
     todo.description,
     todo.key ?? "",
-    todo.jira ?? "",
     todo.tags.join(" "),
     todo.dependencies.join(" "),
   ]

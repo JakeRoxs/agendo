@@ -120,20 +120,14 @@ suite("todoModel", () => {
     assert.deepStrictEqual(todo?.tags, ["alpha"]);
   });
 
-  test("parseTodo accepts generic and legacy external keys", () => {
+  test("parseTodo accepts external tracking key", () => {
     const uri = vscode.Uri.file("/tmp/061-pending-p3-track-work.md");
 
-    const generic = parseTodo(uri, "---\nkey: TSS-1601\njira: TSS-9999\n---\n# Track Work", "");
-    assert.strictEqual(generic?.key, "TSS-1601");
-    assert.strictEqual(generic?.jira, "TSS-9999");
-
-    const legacy = parseTodo(uri, "---\njira: TSS-1601\n---\n# Track Work", "");
-    assert.strictEqual(legacy?.key, "TSS-1601");
-    assert.strictEqual(legacy?.jira, "TSS-1601");
+    const tracked = parseTodo(uri, "---\nkey: TSS-1601\n---\n# Track Work", "");
+    assert.strictEqual(tracked?.key, "TSS-1601");
 
     const untracked = parseTodo(uri, "# Track Work", "");
     assert.strictEqual(untracked?.key, undefined);
-    assert.strictEqual(untracked?.jira, undefined);
   });
 
   test("parseTodo recognizes in-progress status and treats it as active", () => {

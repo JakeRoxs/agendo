@@ -82,8 +82,6 @@ export interface Todo {
   dependencies: string[];
   /** External tracking key, e.g. a Jira issue key. */
   key?: string;
-  /** Legacy Jira-specific alias retained for API compatibility. */
-  jira?: string;
   parent?: string;
   children: string[];
   epic: boolean;
@@ -399,7 +397,6 @@ export function parseTodo(uri: vscode.Uri, content: string, folder: string): Tod
   // used only when the filename is somehow ambiguous.
   const status = statusToken.toLowerCase() as TodoStatus;
   const priority = priorityToken.toLowerCase() as TodoPriority;
-  const jira = optionalString(frontmatter.jira);
 
   return {
     id,
@@ -411,8 +408,7 @@ export function parseTodo(uri: vscode.Uri, content: string, folder: string): Tod
     resumeContext: extractResumeContext(body),
     tags: toStringArray(frontmatter.tags),
     dependencies: toStringArray(frontmatter.dependencies),
-    key: optionalString(frontmatter.key) ?? jira,
-    jira,
+    key: optionalString(frontmatter.key),
     parent: optionalString(frontmatter.parent),
     children: toStringArray(frontmatter.children),
     epic: frontmatter.epic === true,

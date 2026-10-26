@@ -55,6 +55,10 @@ All notable changes to the Agendo extension are documented here.
 - Verify the active SonarQube CLI server before and after every page request, aborting imports when a connection change is detected
 - Scanner evidence is no longer hidden in the canvas or mistaken for user-owned sections and editable acceptance criteria; scanner issue links open correctly
 
+### Removed
+
+- Legacy `jira:` frontmatter alias — use the generic `key:` field for all external tracking keys (Jira, GitHub, etc.)
+
 ## [0.2.0] - 2026-10-25
 
 ### Added

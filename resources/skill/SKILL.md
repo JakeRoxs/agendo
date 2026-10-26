@@ -280,7 +280,7 @@ key: "JIRA-123"
 ```
 
 Do not add an empty `key`, and do not automatically include the key in the todo
-title or filename. Existing `jira:` fields are supported as a legacy alias.
+title or filename.
 
 **Authoritative filename, synchronized mirror:** the extension derives status and priority from the
 filename tokens. Frontmatter `status` and `priority` are human-readable mirrors and must match the

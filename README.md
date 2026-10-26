@@ -132,8 +132,7 @@ key: "JIRA-123"
 ```
 
 Dependencies drive blocked-state reporting, groups provide lightweight organization, and external
-tracking keys are displayed and searchable when present. Legacy `jira:` frontmatter remains
-supported as an alias for `key`.
+tracking keys are displayed and searchable when present.
 
 ## Quick start
 
