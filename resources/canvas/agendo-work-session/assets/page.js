@@ -153,6 +153,46 @@
     location.href = '/settings';
   });
 
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Webviews can deny the async clipboard API; try the legacy path next.
+    }
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    try {
+      return document.execCommand('copy');
+    } catch {
+      return false;
+    } finally {
+      area.remove();
+    }
+  }
+
+  function showManualCopy(text) {
+    message.textContent = 'Clipboard unavailable. Select the text below and copy it manually:';
+    let area = document.querySelector('[data-manual-copy]');
+    if (!area) {
+      area = document.createElement('textarea');
+      area.setAttribute('data-manual-copy', '');
+      area.setAttribute('readonly', '');
+      area.setAttribute('aria-label', 'Context to copy');
+      area.rows = 12;
+      area.style.width = '100%';
+      message.after(area);
+    }
+    area.value = text;
+    area.focus();
+    area.select();
+  }
+
   document.querySelector('[data-copy-context]')?.addEventListener('click', async event => {
     const button = event.currentTarget;
     button.disabled = true;
@@ -176,9 +216,12 @@
         '',
         data.scannerEvidence ? `## Scanner Evidence\n${data.scannerEvidence}` : ''
       ].filter(Boolean).join('\n');
-      await navigator.clipboard.writeText(text);
-      message.textContent = 'Context copied to clipboard';
-      setTimeout(() => { message.textContent = ''; }, 3000);
+      if (await copyText(text)) {
+        message.textContent = 'Context copied to clipboard';
+        setTimeout(() => { message.textContent = ''; }, 3000);
+      } else {
+        showManualCopy(text);
+      }
     } catch (err) {
       message.textContent = 'Could not copy context: ' + err.message;
     } finally {

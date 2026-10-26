@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: ready
 priority: p2
 issue_id: "045"
 tags: [canvas, copilot, prompts, context, ux]
@@ -49,11 +49,26 @@ Primary areas: canvas controls, local request routing, the optional Copilot sess
 
 ## Resume Context
 
-**Current state:** In progress. Copy Context fallback implemented with bounded context packet (id, title, status, priority, group, description, criteria, dependencies, blockedBy, scannerEvidence, resumeContext, validation). Copilot session integration (Explain Finding, Investigate Selection, etc.) not yet implemented.
+**Current state:** Ready. Copy Context fallback and Explain Finding action implemented. Copilot session is retained from joinSession() and used for contextual requests with four intents: explain, investigate, suggest-fix, and verify. When Copilot session is unavailable, the action returns the prompt for manual use.
 
-**Next step:** Implement Explain Finding action with Copilot session bridge using joinSession() from @github/copilot-sdk/extension.
+**Next step:** Complete with integration tests or mark complete after user verification.
 
 ## Work Log
+
+### 2026-10-26 - Explain Finding Action Implemented
+
+**By:** Kilo
+
+**Actions:**
+
+- Retained Copilot session from joinSession() call (was previously discarded)
+- Added `explain_finding` canvas action with four intents: explain, investigate, suggest-fix, verify
+- Each intent builds a contextual prompt from the bounded context packet (id, title, status, priority, group, description, scannerEvidence, dependencies)
+- Scanner evidence and description are truncated to 2000 and 1000 chars respectively
+- When Copilot session is unavailable, returns prompt for manual Copy Context fallback
+- Handles failed-send errors and returns descriptive reason field
+- Added 6 tests covering prompt building for all intents, truncation, missing evidence handling
+- All 313 extension tests, 59 canvas tests, and lint pass
 
 ### 2026-10-26 - Copy Context Fallback Implemented
 

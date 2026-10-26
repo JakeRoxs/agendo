@@ -260,9 +260,16 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
   </body></html>`;
 }
 
-export function renderGroupCanvas(groupName, members, nav, actions = {}) {
+export function renderGroupCanvas(groupName, members, nav, actions = {}, filters = {}) {
   const navigation = renderNavigation(nav, { id: `group:${groupName}`, title: `Group: ${groupName}`, status: 'pending', group: groupName });
-  const settingsButton = '<button type="button" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></button>';
+  const settingsButton = '<button type="button" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l-.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></button>';
+
+  const filterBadges = [];
+  if (filters?.status) filterBadges.push(`status: ${filters.status}`);
+  if (filters?.priority) filterBadges.push(`priority: ${filters.priority}`);
+  const filterBanner = filterBadges.length > 0
+    ? `<div class="filter-banner" role="status">Filters active: ${filterBadges.join(' · ')}</div>`
+    : '';
 
   // Count by status
   const statusCounts = {};
@@ -306,6 +313,7 @@ export function renderGroupCanvas(groupName, members, nav, actions = {}) {
   <body data-group="${escapeHtml(groupName)}">
     <main>
       ${navigation || settingsButton ? `<div class="canvas-toolbar">${navigation}${settingsButton}</div>` : ''}
+      ${filterBanner}
       <h1><span class="group-id">Group:</span> ${escapeHtml(groupName)}</h1>
       <div class="meta">
         <span class="badge badge-group">Group: ${escapeHtml(groupName)}</span>

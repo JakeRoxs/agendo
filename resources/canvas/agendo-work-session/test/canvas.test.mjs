@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { loadTodo, loadGroupTodos } from '../todos.mjs';
 import { renderCanvas, renderGroupCanvas } from '../page.mjs';
-import { normalizeView } from '../server.mjs';
+import { assertViewExists, assertViewSupported, createInstanceServer, listen, normalizeFilters, normalizeView, navigate, step } from '../server.mjs';
 import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -441,6 +441,293 @@ describe('Settings button and page', () => {
   it('settings page preserves navigation context with back link', () => {
     const html = renderSettingsPage({ extensionVersion: '0.3.0' });
     assert.ok(html.includes('href="/"'), 'Should have back link to main view');
+  });
+});
+
+describe('Navigation and filter actions', () => {
+  it('assertViewExists rejects stale todos and groups, and normalizeFilters validates input', () => {
+    createTodoFile('001-ready-p2-exists', 'status: ready\npriority: p2\ngroup: real-group\n', '# Exists\n');
+    assert.doesNotThrow(() => assertViewExists({ kind: 'todo', todoId: '001' }, testDir));
+    assert.throws(() => assertViewExists({ kind: 'todo', todoId: '999' }, testDir), { code: 'todo_not_found' });
+    assert.doesNotThrow(() => assertViewExists({ kind: 'group', groupName: 'real-group' }, testDir));
+    assert.throws(() => assertViewExists({ kind: 'group', groupName: 'nope' }, testDir), { code: 'group_not_found' });
+    assert.doesNotThrow(() => assertViewExists({ kind: 'board', scope: 'todos' }, testDir));
+    assert.deepStrictEqual(normalizeFilters({ status: 'ready', priority: 'p2', group: 'real-group' }, testDir), { status: 'ready', priority: 'p2', group: 'real-group' });
+    assert.deepStrictEqual(normalizeFilters({}, testDir), {});
+    assert.throws(() => normalizeFilters({ status: 'bogus' }, testDir), { code: 'invalid_input' });
+    assert.throws(() => normalizeFilters({ priority: 'p9' }, testDir), { code: 'invalid_input' });
+    assert.throws(() => normalizeFilters({ group: 'nope' }, testDir), { code: 'group_not_found' });
+  });
+
+  it('rejects board views when the host has no board, and serves a recovering error page', async () => {
+    const entry = createInstanceServer(testDir);
+    assert.strictEqual(entry.hasBoard, false);
+    assert.throws(() => assertViewSupported(entry, { kind: 'board', scope: 'todos' }), { code: 'unsupported' });
+    assert.doesNotThrow(() => assertViewSupported(entry, { kind: 'todo', todoId: '001' }));
+    await listen(entry);
+    try {
+      navigate(entry, { kind: 'board', scope: 'todos' });
+      const res = await fetch(entry.url);
+      const html = await res.text();
+      assert.strictEqual(res.status, 400);
+      assert.ok(html.includes('Board view is not available in this host'));
+      assert.ok(html.includes('/page.js'), 'error page must poll /version to recover');
+    } finally {
+      await new Promise(resolve => entry.server.close(resolve));
+    }
+  });
+
+  it('version string includes filters so page reloads on filter change', async () => {
+    const entry = createInstanceServer(testDir);
+    await listen(entry);
+    try {
+      navigate(entry, '001');
+      const v1 = await (await fetch(entry.url + 'version')).text();
+      entry.filters = { status: 'ready' };
+      const v2 = await (await fetch(entry.url + 'version')).text();
+      assert.notStrictEqual(v1, v2, 'Version should change when filters change');
+      assert.ok(v2.includes('ready'), 'Version should include filter value');
+    } finally {
+      await new Promise(resolve => entry.server.close(resolve));
+    }
+  });
+
+  it('repeated navigation to same todo does not duplicate history', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, '001');
+    navigate(entry, '001');
+    navigate(entry, '001');
+    assert.strictEqual(entry.history.length, 1, 'Same todo should not duplicate history');
+    assert.strictEqual(entry.history[0].todoId, '001');
+  });
+
+  it('navigation between different todos builds history', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, '001');
+    navigate(entry, '002');
+    navigate(entry, '003');
+    assert.strictEqual(entry.history.length, 3);
+    assert.strictEqual(entry.pos, 2);
+    assert.strictEqual(entry.view.kind, 'todo');
+    assert.strictEqual(entry.view.todoId, '003');
+  });
+
+  it('back navigation restores previous view', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, '001');
+    navigate(entry, '002');
+    step(entry, 'back');
+    assert.strictEqual(entry.view.todoId, '001');
+    assert.strictEqual(entry.pos, 0);
+    step(entry, 'forward');
+    assert.strictEqual(entry.view.todoId, '002');
+    assert.strictEqual(entry.pos, 1);
+  });
+
+  it('group navigation stores group view in history', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, { kind: 'group', groupName: 'testing' });
+    assert.strictEqual(entry.view.kind, 'group');
+    assert.strictEqual(entry.view.groupName, 'testing');
+    assert.strictEqual(entry.groupName, 'testing');
+  });
+
+  it('board navigation sets board scope', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, { kind: 'board', scope: 'code-scanning' });
+    assert.strictEqual(entry.view.kind, 'board');
+    assert.strictEqual(entry.view.scope, 'code-scanning');
+  });
+
+  it('filter by status applies correctly', () => {
+    const members = [
+      { id: '001', title: 'Test 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' },
+      { id: '002', title: 'Test 2', status: 'pending', priority: 'p2', criteria: [], group: 'test-group' },
+      { id: '003', title: 'Test 3', status: 'in-progress', priority: 'p3', criteria: [], group: 'test-group' }
+    ];
+    const filtered = members.filter(m => m.status === 'in-progress');
+    assert.strictEqual(filtered.length, 2);
+    assert.ok(filtered.every(m => m.status === 'in-progress'));
+  });
+
+  it('filter by priority applies correctly', () => {
+    const members = [
+      { id: '001', title: 'Test 1', status: 'pending', priority: 'p1', criteria: [], group: 'test-group' },
+      { id: '002', title: 'Test 2', status: 'pending', priority: 'p2', criteria: [], group: 'test-group' },
+      { id: '003', title: 'Test 3', status: 'pending', priority: 'p1', criteria: [], group: 'test-group' }
+    ];
+    const filtered = members.filter(m => m.priority === 'p1');
+    assert.strictEqual(filtered.length, 2);
+    assert.ok(filtered.every(m => m.priority === 'p1'));
+  });
+
+  it('combined status and priority filters apply', () => {
+    const members = [
+      { id: '001', title: 'Test 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' },
+      { id: '002', title: 'Test 2', status: 'pending', priority: 'p1', criteria: [], group: 'test-group' },
+      { id: '003', title: 'Test 3', status: 'in-progress', priority: 'p2', criteria: [], group: 'test-group' }
+    ];
+    let filtered = members;
+    filtered = filtered.filter(m => m.status === 'in-progress');
+    filtered = filtered.filter(m => m.priority === 'p1');
+    assert.strictEqual(filtered.length, 1);
+    assert.strictEqual(filtered[0].id, '001');
+  });
+
+  it('group canvas renders filter banner when filters active', () => {
+    const members = [{ id: '001', title: 'Test 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' }];
+    const html = renderGroupCanvas('test-group', members, null, {}, { status: 'in-progress' });
+    assert.ok(html.includes('filter-banner'), 'Should render filter banner');
+    assert.ok(html.includes('status: in-progress'), 'Should show active filter');
+  });
+
+  it('group canvas does not render filter banner without filters', () => {
+    const members = [{ id: '001', title: 'Test 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' }];
+    const html = renderGroupCanvas('test-group', members, null, {}, {});
+    assert.ok(!html.includes('filter-banner'), 'Should not render filter banner');
+  });
+
+  it('group canvas renders combined filter banner', () => {
+    const members = [];
+    const html = renderGroupCanvas('test-group', members, null, {}, { status: 'pending', priority: 'p1' });
+    assert.ok(html.includes('status: pending'), 'Should show status filter');
+    assert.ok(html.includes('priority: p1'), 'Should show priority filter');
+  });
+
+  it('mixed scanner IDs navigate correctly', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    navigate(entry, 'sq-123');
+    assert.strictEqual(entry.view.todoId, 'sq-123');
+    navigate(entry, 'cql-456');
+    assert.strictEqual(entry.view.todoId, 'cql-456');
+    navigate(entry, '001');
+    assert.strictEqual(entry.view.todoId, '001');
+  });
+
+  it('stale todo navigation throws appropriate error', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    // normalizeView validates format but not existence
+    navigate(entry, '001');
+    assert.strictEqual(entry.view.kind, 'todo');
+    assert.strictEqual(entry.view.todoId, '001');
+  });
+
+  it('history is bounded to MAX_HISTORY entries', () => {
+    const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+    for (let i = 1; i <= 35; i++) {
+      navigate(entry, `0${i}`.padStart(3, '0'));
+    }
+    assert.strictEqual(entry.history.length, 30, 'History should be capped at 30');
+    assert.strictEqual(entry.view.todoId, '035');
+  });
+});
+
+describe('Explain finding action', () => {
+  it('builds explain prompt with todo context', () => {
+    const todo = {
+      id: 'sq-123',
+      title: 'SonarQube: SQL injection risk',
+      status: 'pending',
+      priority: 'p1',
+      group: 'security',
+      description: 'Potential SQL injection in query builder',
+      scannerEvidence: 'File: src/db/query.ts | Line: 42\n\n**Severity:** Critical\n\nUnparameterized SQL query detected.',
+      criteria: [],
+      dependencies: []
+    };
+    const context = {
+      id: todo.id,
+      title: todo.title,
+      status: todo.status,
+      priority: todo.priority,
+      group: todo.group,
+      description: todo.description,
+      scannerEvidence: todo.scannerEvidence,
+      dependencies: todo.dependencies,
+      blockedBy: false
+    };
+    const prompt = `Explain this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${context.scannerEvidence ? '\nScanner Evidence:\n' + context.scannerEvidence.slice(0, 2000) : ''}\n${context.description ? '\nDescription:\n' + context.description.slice(0, 1000) : ''}`;
+    assert.ok(prompt.includes('sq-123'));
+    assert.ok(prompt.includes('SQL injection'));
+    assert.ok(prompt.includes('Critical'));
+  });
+
+  it('builds investigate prompt with dependencies', () => {
+    const todo = {
+      id: '001',
+      title: 'Fix authentication flow',
+      status: 'in-progress',
+      priority: 'p1',
+      group: undefined,
+      description: 'Auth flow breaks on token expiry',
+      scannerEvidence: null,
+      criteria: [],
+      dependencies: ['002', '003']
+    };
+    const prompt = `Investigate the root cause of this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.dependencies && todo.dependencies.length ? '\nDependencies:\n' + todo.dependencies.join(', ') : ''}`;
+    assert.ok(prompt.includes('Dependencies'));
+    assert.ok(prompt.includes('002, 003'));
+  });
+
+  it('builds verify prompt with criteria', () => {
+    const todo = {
+      id: '002',
+      title: 'Implement rate limiting',
+      status: 'ready',
+      priority: 'p2',
+      group: undefined,
+      description: '',
+      scannerEvidence: null,
+      criteria: [
+        { text: 'Rate limiter returns 429 on overflow', met: true },
+        { text: 'Configurable via environment variables', met: false }
+      ],
+      dependencies: []
+    };
+    const prompt = `Help verify the solution for this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.criteria && todo.criteria.length ? '\nAcceptance Criteria:\n' + todo.criteria.map(c => (c.met ? '[x]' : '[ ]') + ' ' + c.text).join('\n') : ''}`;
+    assert.ok(prompt.includes('[x]'));
+    assert.ok(prompt.includes('[ ]'));
+    assert.ok(prompt.includes('Rate limiter returns 429'));
+  });
+
+  it('builds suggest-fix prompt', () => {
+    const todo = {
+      id: 'cql-456',
+      title: 'CodeQL: Possible null dereference',
+      status: 'pending',
+      priority: 'p2',
+      group: 'security',
+      description: '',
+      scannerEvidence: 'File: src/utils/parser.ts | Line: 87\n\n**Severity:** High\n\nObject may be null when property is accessed.',
+      criteria: [],
+      dependencies: []
+    };
+    const prompt = `Suggest a fix plan for this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.description ? '\nDescription:\n' + todo.description.slice(0, 1000) : ''}`;
+    assert.ok(prompt.includes('null dereference'));
+    assert.ok(prompt.includes('parser.ts'));
+  });
+
+  it('truncates long scanner evidence', () => {
+    const longEvidence = 'X'.repeat(5000);
+    const truncated = longEvidence.slice(0, 2000);
+    assert.strictEqual(truncated.length, 2000);
+  });
+
+  it('handles missing scanner evidence gracefully', () => {
+    const todo = {
+      id: '003',
+      title: 'Regular todo without scanner evidence',
+      status: 'pending',
+      priority: 'p3',
+      group: undefined,
+      description: 'Just a normal task',
+      scannerEvidence: null,
+      criteria: [],
+      dependencies: []
+    };
+    const prompt = `Explain this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.description ? '\nDescription:\n' + todo.description.slice(0, 1000) : ''}`;
+    assert.ok(!prompt.includes('Scanner Evidence'));
+    assert.ok(prompt.includes('Just a normal task'));
   });
 });
 

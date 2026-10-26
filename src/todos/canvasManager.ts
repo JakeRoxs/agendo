@@ -13,10 +13,12 @@ const META_FILE = ".canvas-meta.json";
 const CANVAS_FILES = [
   "board.html",
   "board.mjs",
+  "copilot-extension.json",
   "errors.mjs",
   META_FILE,
   "extension.mjs",
   "server.mjs",
+  "settings.mjs",
   "todos.mjs",
   "page.mjs",
   "markdown.mjs",

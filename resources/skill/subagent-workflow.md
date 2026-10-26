@@ -18,8 +18,8 @@ the file workflows in SKILL.md.
    - Include branch/PR references and commands run (`ctest`, `dotnet test`, etc.).
 
 5. Resolve and complete:
-   - First move/rename the todo from `ready` to `complete`, before any final content edit.
-   - Then call: `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed; the todo has already moved to its complete path, so edit only that path" })`
+   - Call: `runSubagent({ agentName: "agendo", prompt: "complete 021 summary: fixes + tests passed" })`
+   - The subagent moves/renames the todo to its complete path and updates frontmatter so filename, status, and folder stay in sync.
 
 > This workflow is intended for a parent skill/agent orchestrating code tasks; `agendo` is invoked
 > as a child skill for data updates and audit-safe state changes.

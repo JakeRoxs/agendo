@@ -28,6 +28,7 @@ All notable changes to the Agendo extension are documented here.
 
 ### Changed
 
+- Bundled Agendo skill version 1.6.1 removes the move-before-edit rule, which only worked around an old Copilot editing behavior, and instead requires the filename, frontmatter status/priority, and folder to always stay in sync
 - Native boards and in-canvas boards use a single host-neutral document, preserving existing card/layout controls and scope-specific snapshots without requiring Copilot
 - Canvas history includes scoped board views; returning from a work session can render the originating board inside the same workspace
 - Board mutations share native task guards, and deletion confirmation is handled by the host rather than browser dialogs inside the canvas iframe

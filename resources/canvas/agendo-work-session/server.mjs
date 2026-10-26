@@ -8,7 +8,7 @@ import { CanvasError } from './errors.mjs';
 import { renderCanvas, renderGroupCanvas } from './page.mjs';
 import { renderBoardCanvas } from './board.mjs';
 import { renderSettingsPage } from './settings.mjs';
-import { assertTodoId, findTodoFile, getRelations, listGroups, listTodoSummaries, loadGroupTodos, loadTodo, setCriterionMet, setTodoGroup, setTodoPriority, setTodoStatus, todoFingerprint } from './todos.mjs';
+import { assertTodoId, findTodoFile, getRelations, listGroups, listTodoSummaries, loadGroupTodos, loadTodo, PRIORITIES, setCriterionMet, setTodoGroup, setTodoPriority, setTodoStatus, STATUSES, todoFingerprint } from './todos.mjs';
 
 const assetsDir = join(dirname(fileURLToPath(import.meta.url)), 'assets');
 const ASSETS = {
@@ -41,6 +41,39 @@ export function normalizeView(value) {
   throw new CanvasError('invalid_input', 'Expected a todo, group, or board selection');
 }
 
+// Rejects stale targets so agent navigation reports them instead of showing a missing todo or empty group.
+export function assertViewExists(view, workspaceRoot) {
+  if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot)) {
+    throw new CanvasError('todo_not_found', `Todo ${view.todoId} not found`);
+  }
+  if (view.kind === 'group' && !listGroups(workspaceRoot).includes(view.groupName)) {
+    throw new CanvasError('group_not_found', `Group "${view.groupName}" not found`);
+  }
+}
+
+export function assertViewSupported(entry, view) {
+  if (view.kind === 'board' && !entry.hasBoard) throw new CanvasError('unsupported', 'Board view is not available in this host');
+}
+
+export function normalizeFilters(input, workspaceRoot) {
+  const filters = {};
+  if (input?.status !== undefined) {
+    if (!STATUSES.includes(input.status)) throw new CanvasError('invalid_input', `status must be one of: ${STATUSES.join(', ')}`);
+    filters.status = input.status;
+  }
+  if (input?.priority !== undefined) {
+    if (!PRIORITIES.includes(input.priority)) throw new CanvasError('invalid_input', `priority must be one of: ${PRIORITIES.join(', ')}`);
+    filters.priority = input.priority;
+  }
+  if (input?.group !== undefined) {
+    if (typeof input.group !== 'string' || !listGroups(workspaceRoot).includes(input.group)) {
+      throw new CanvasError('group_not_found', `Group "${input.group}" not found`);
+    }
+    filters.group = input.group;
+  }
+  return filters;
+}
+
 const viewKey = view => JSON.stringify(view);
 
 function selectView(entry, view) {
@@ -66,7 +99,7 @@ export function navigate(entry, target, returnTo) {
   selectView(entry, view);
 }
 
-function step(entry, direction) {
+export function step(entry, direction) {
   const next = entry.pos + (direction === 'back' ? -1 : 1);
   if (next < 0 || next >= entry.history.length) {
     throw new CanvasError('invalid_input', `Cannot go ${direction}`);
@@ -96,6 +129,8 @@ function buildNav(entry, workspaceRoot) {
   });
   return { canBack: entry.pos > 0, canForward: entry.pos < entry.history.length - 1, recent, returnTo: entry.view?.kind === 'board' ? undefined : entry.returnTo };
 }
+
+const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -127,8 +162,9 @@ function send(res, status, type, body, extraHeaders = {}) {
  * todo file on every request, so reopening an instance always shows live state.
  */
 export function createInstanceServer(workspaceRoot, actions = {}) {
-  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null };
+  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
   const hasBoard = typeof actions.getBoardSnapshot === 'function' && typeof actions.handleBoardMessage === 'function';
+  entry.hasBoard = hasBoard;
   const boardScope = () => {
     if (!hasBoard || entry.view?.kind !== 'board') throw new CanvasError('unsupported', 'Board view is not available in this host');
     return entry.view.scope;
@@ -147,7 +183,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
       if (req.method === 'GET' && ASSETS[path]) {
         send(res, 200, ASSETS[path].type, readFileSync(join(assetsDir, ASSETS[path].file)));
       } else if (req.method === 'GET' && path === '/version') {
-        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${todoFingerprint(workspaceRoot)}`);
+        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${JSON.stringify(entry.filters)}|${todoFingerprint(workspaceRoot)}`);
       } else if (req.method === 'GET' && path === '/board-snapshot') {
         const snapshot = await actions.getBoardSnapshot(boardScope());
         send(res, 200, 'application/json', JSON.stringify(snapshot));
@@ -228,7 +264,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           step(entry, payload.direction);
         } else {
           const view = normalizeView(payload.view ?? payload.todoId);
-          if (view.kind === 'board' && !hasBoard) throw new CanvasError('unsupported', 'Board view is not available in this host');
+          assertViewSupported(entry, view);
           if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot)) {
             throw new CanvasError('todo_not_found', `Todo ${view.todoId} not found`);
           }
@@ -246,10 +282,13 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           return;
         } else if (entry.groupName !== undefined) {
           // Group overview view
-          const members = loadGroupTodos(entry.groupName, workspaceRoot);
+          let members = loadGroupTodos(entry.groupName, workspaceRoot);
+          if (entry.filters?.status) members = members.filter(m => m.status === entry.filters.status);
+          if (entry.filters?.priority) members = members.filter(m => m.priority === entry.filters.priority);
+          if (entry.filters?.group && entry.filters.group !== entry.groupName) members = members.filter(m => m.group === entry.filters.group);
           const nav = buildNav(entry, workspaceRoot);
           if (!actions.returnToBoard && !hasBoard) nav.returnTo = undefined;
-          html = renderGroupCanvas(entry.groupName, members, nav, actions);
+          html = renderGroupCanvas(entry.groupName, members, nav, actions, entry.filters);
         } else {
           let todo = null;
           let relations = null;
@@ -271,7 +310,13 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
       }
     } catch (e) {
       const status = e instanceof CanvasError || e instanceof SyntaxError ? 400 : 500;
-      send(res, status, 'text/plain', e instanceof Error ? e.message : 'Server error');
+      const text = e instanceof Error ? e.message : 'Server error';
+      if (req.method === 'GET' && path === '/') {
+        // page.js polls /version, so this page recovers once the view changes.
+        send(res, status, 'text/html; charset=utf-8', `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/page.css"></head><body><main class="empty"><h1>Agendo Work Session</h1><p class="error" role="alert">${escapeHtml(text)}</p><p id="status-message" role="status" aria-live="polite"></p></main><script src="/page.js"></script></body></html>`, { 'Content-Security-Policy': CSP });
+      } else {
+        send(res, status, 'text/plain', text);
+      }
     }
   });
 
