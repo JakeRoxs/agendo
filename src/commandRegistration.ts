@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -201,11 +202,15 @@ export function registerCommands(
     }
   });
   register(Command.ShowMcpConfig, async () => {
+    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
+    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
     const mcpConfig = {
       mcpServers: {
         agendo: {
           command: "node",
-          args: [path.join(context.extensionPath, "resources", "mcp", "server.mjs")],
+          args: [
+            existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs"),
+          ],
           description: "Agendo todo management",
         },
       },

@@ -926,19 +926,20 @@
   },
   "overrides": {
     "diff": "^8.0.4",
-    "serialize-javascript": "^7.1.0"
+    "serialize-javascript": "^7.1.3"
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run bundle",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "biome lint .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
+    "bundle": "esbuild out/extension.js --bundle --platform=node --format=cjs --target=node18 --external:vscode --outfile=out/extension.bundle.js && node -e \"require('node:fs').copyFileSync('out/extension.bundle.js','out/extension.js')\" && esbuild resources/mcp/server.mjs --bundle --platform=node --format=esm --target=node18 --outfile=resources/mcp/server.bundle.mjs",
     "test": "node ./out/test/runTest.js",
     "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js",
-    "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix",
+    "package:vsix": "node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix",
     "mcp": "node resources/mcp/server.mjs",
     "mcp:compile": "tsc src/mcp/server.ts --outDir out/mcp --module commonjs --target es2020 --esModuleInterop"
   },
@@ -950,6 +951,7 @@
     "@types/vscode": "^1.103.0",
     "@vscode/test-electron": "^3.1.0",
     "c8": "^12.0.0",
+    "esbuild": "^0.28.2",
     "glob": "^13.0.6",
     "mocha": "^12.0.3",
     "prettier": "^3.9.10",
