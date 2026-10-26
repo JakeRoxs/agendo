@@ -174,9 +174,9 @@ suite("separate todo and code-scanning views", () => {
       new FilterService(state, "agendo.codeScanning.filter").current,
       scanFilter.current,
     );
-    await normalFilter.set({ statuses: ["complete"] });
+    await normalFilter.set({ statuses: ["completed"] });
     await scanFilter.clear();
-    assert.deepStrictEqual(normalFilter.current, { statuses: ["complete"] });
+    assert.deepStrictEqual(normalFilter.current, { statuses: ["completed"] });
   });
 
   test("cross-source blockers do not hide scanner todos in dependency mode", () => {

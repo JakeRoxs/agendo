@@ -65,7 +65,7 @@ suite("Standalone canvas safety guards", () => {
 
   test("duplicate across folders block ambiguous write", () => {
     writeTodo("003", "pending", "p2", "main", "# Main\n");
-    writeTodo("003", "complete", "p2", "main", "# Done\n", "docs/todos/complete");
+    writeTodo("003", "completed", "p2", "main", "# Done\n", "docs/todos/completed");
     assert.throws(
       () => module.setTodoStatus("003", "ready", root),
       (e: any) => e.code === "invalid_input" && /ambiguous/i.test(e.message),
@@ -74,7 +74,7 @@ suite("Standalone canvas safety guards", () => {
 
   test("dependency with duplicate terminal candidate is unsatisfied", () => {
     writeTodo("004", "pending", "p2", "dep-blocker-a", "# A\n");
-    writeTodo("004", "complete", "p2", "dep-blocker-b", "# B\n", "docs/todos/complete");
+    writeTodo("004", "completed", "p2", "dep-blocker-b", "# B\n", "docs/todos/completed");
     writeTodo("005", "pending", "p2", "dependent", "---\ndependencies: [004]\n---\n# Dependent\n");
     const relations = module.getRelations("005", root);
     assert.strictEqual(relations.blocked, true);
@@ -191,7 +191,7 @@ suite("Standalone canvas safety guards", () => {
 
   test("dependency duplicate terminal blocks ready even if first-found is terminal", () => {
     // First found is terminal (complete) but there's also a duplicate active
-    writeTodo("014", "complete", "p2", "blocker-done", "# Done\n", "docs/todos/complete");
+    writeTodo("014", "completed", "p2", "blocker-done", "# Done\n", "docs/todos/completed");
     writeTodo("014", "pending", "p2", "blocker-active", "# Active\n");
     writeTodo("015", "pending", "p2", "dependent", "---\ndependencies: [014]\n---\n# Dependent\n");
     assert.throws(
@@ -229,14 +229,14 @@ suite("Standalone canvas safety guards", () => {
   test("repeated configured folder paths do not fabricate dependency ambiguity", () => {
     fs.writeFileSync(
       path.join(path.dirname(todoFile), ".agendo-config.json"),
-      JSON.stringify({ completeFolder: "complete", cancelledFolder: "complete" }),
+      JSON.stringify({ completeFolder: "completed", cancelledFolder: "completed" }),
     );
-    writeTodo("002", "complete", "p2", "done", "# Done\n", "docs/todos/complete");
+    writeTodo("002", "completed", "p2", "done", "# Done\n", "docs/todos/completed");
     fs.writeFileSync(todoFile, '---\ndependencies: ["002"]\n---\n# First\n');
     assert.strictEqual(module.getRelations("001", root).blocked, false);
     assert.strictEqual(
       module.findTodoFile("002", root),
-      path.join(root, "docs/todos/complete/002-complete-p2-done.md"),
+      path.join(root, "docs/todos/completed/002-completed-p2-done.md"),
     );
   });
 

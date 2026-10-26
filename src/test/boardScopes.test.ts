@@ -99,7 +99,7 @@ suite("board view scope", () => {
         "in-progress",
         "ready",
         "backlogged",
-        "complete",
+        "completed",
         "cancelled",
       ]);
     }
@@ -602,7 +602,7 @@ suite("board view scope", () => {
           `${prefix}-${index + 100}`,
           `code-scanning/${prefix === "cql" ? "codeql" : "sonarqube"}`,
         ),
-        status: "complete" as const,
+        status: "completed" as const,
       })),
     );
     const collision = {
@@ -693,7 +693,7 @@ suite("board view scope", () => {
       assert.strictEqual(regularSnapshots[regularSnapshots.length - 1].showMetadataLabels, false);
       for (const section of snapshot.sections) {
         assert.ok(!section.columns.some((column: any) => column.status === "cancelled"));
-        const terminal = section.columns.find((column: any) => column.status === "complete");
+        const terminal = section.columns.find((column: any) => column.status === "completed");
         assert.strictEqual(terminal.todos.length, 10);
         assert.strictEqual(terminal.totalCount, 12);
       }
@@ -741,7 +741,7 @@ suite("board view scope", () => {
       await controls.handleMessage({
         type: "setStatus",
         todoId: "001",
-        status: "complete",
+        status: "completed",
       });
       assert.strictEqual(statusChanges, 0);
       const html = panels.get("agendo.codeScanning.board")?.html ?? "";

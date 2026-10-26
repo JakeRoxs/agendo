@@ -1,14 +1,14 @@
 # Agendo Skill
 
-The Agendo skill (version 1.6.1) helps compatible AI-agent hosts create, triage, continue, and audit
+The Agendo skill helps compatible AI-agent hosts create, triage, continue, and audit 
 the Markdown todos used by the Agendo extension. It can also be used without the extension when the
 agent has access to the repository files.
 
 ## Install and invoke
 
 In VS Code, install **Bundled Agendo Skill** from the **Skill** section. The skill is installed for
-your agent host and can be used across workspaces. If your host supports user-invocable skills, call
-it with `/agendo` followed by a request:
+your agent host and can be used across workspaces. If your host supports user-invocable skills,
+call it with `/agendo` followed by a request:
 
 ```text
 /agendo

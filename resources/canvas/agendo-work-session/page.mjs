@@ -10,10 +10,10 @@ const PROFILES = {
   'in-progress': { order: ['resume', 'criteria', 'deps', 'work-log', 'scanner', 'description', 'triage'], open: ['resume', 'criteria', 'work-log'] },
   ready: { order: ['criteria', 'resume', 'work-log', 'deps', 'scanner', 'description', 'triage'], open: ['criteria', 'resume', 'work-log'] },
   backlogged: { order: ['scanner', 'description', 'triage', 'deps', 'criteria', 'resume', 'work-log'], open: ['scanner', 'description', 'triage'] },
-  complete: { order: ['description', 'scanner', 'work-log', 'criteria', 'triage', 'deps', 'resume'], open: ['description', 'work-log'] },
+  completed: { order: ['description', 'scanner', 'work-log', 'criteria', 'triage', 'deps', 'resume'], open: ['description', 'work-log'] },
   cancelled: { order: ['description', 'scanner', 'work-log', 'deps', 'criteria', 'triage', 'resume'], open: ['description', 'work-log'] }
 };
-export const STATUS_OPTIONS = ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'];
+export const STATUS_OPTIONS = ['pending', 'in-progress', 'ready', 'backlogged', 'completed', 'cancelled'];
 
 function todoSource(id) {
   if (id.startsWith('cql-')) return { key: 'codeql', label: 'cql' };
@@ -54,7 +54,7 @@ const LIFECYCLE_HELP = {
   pending: { meaning: 'Not started', next: 'Review the scope and evidence; move to in-progress when beginning investigation or implementation.' },
   'in-progress': { meaning: 'Investigation or implementation is underway', next: 'Work through findings and additional criteria; record relevant decisions and verification needs.' },
   ready: { meaning: 'Implementation is believed finished and needs verification', next: 'Check criteria, tests, and a fresh analysis where applicable; complete only when verified.' },
-  complete: { meaning: 'Work is recorded as finished and verified', next: 'Review its evidence; explicitly reopen if further work is needed.' },
+  completed: { meaning: 'Work is recorded as finished and verified', next: 'Review its evidence; explicitly reopen if further work is needed.' },
   backlogged: { meaning: 'Work is deferred', next: 'Revisit priority and scope before returning it to active work.' },
   cancelled: { meaning: 'Work is no longer being pursued', next: 'Review the reason and effects on related work before explicitly reopening.' }
 };
@@ -167,7 +167,97 @@ function renderScannerEvidence(markdown, expanded) {
     ${contextHtml ? `<div class="scanner-context" aria-label="Rule context">${contextHtml}</div>` : ''}`;
 }
 
-export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
+function renderAgentControls() {
+  return `<section class="agent-controls" aria-label="Ask agent">
+    <label>Ask agent <select data-agent-intent aria-label="Request intent">
+      <option value="explain">Explain Finding</option><option value="investigate">Investigate Selection</option>
+      <option value="suggest-fix">Suggest Fix Plan</option><option value="verify">Help Verify</option>
+    </select></label>
+    <button type="button" data-agent-preview>Preview Request</button>
+    <span class="agent-activity" data-agent-activity aria-live="polite"><span class="agent-activity-dot" data-agent-dot></span><span data-agent-status-text>Session status unknown</span></span>
+    <span class="hint">Read-only help. Nothing is sent until you confirm.</span>
+    <dialog class="agent-dialog" data-agent-dialog aria-labelledby="agent-preview-title">
+      <h2 id="agent-preview-title">Review Agent Request</h2>
+      <p>Review for sensitive information before sending or copying. This request does not authorize implementation or bypass approvals.</p>
+      <textarea data-agent-prompt readonly aria-label="Exact agent request" rows="14"></textarea>
+      <p data-agent-session role="status" aria-live="polite"></p>
+      <p data-agent-message role="status" aria-live="polite"></p>
+      <div class="agent-buttons"><button type="button" data-agent-send disabled>Send to Owning Copilot Session</button>
+      <button type="button" data-agent-copy>Copy Request</button><button type="button" data-agent-close>Close</button></div>
+    </dialog>
+  </section>`;
+}
+
+function renderReportControls(todoStatus) {
+  const isComplete = todoStatus === 'completed';
+  return `<section class="report-controls" aria-label="Generate report">
+    <button type="button" data-report-preview${isComplete ? '' : ' disabled'} title="${isComplete ? '' : 'Only completed todos generate reports'}">Generate Accomplishments Report</button>
+    <span class="hint">Synthesizes completed work into a readable report. Nothing changes without your confirmation.</span>
+    <dialog class="agent-dialog" data-report-dialog aria-labelledby="report-preview-title">
+      <h2 id="report-preview-title">Preview Report Request</h2>
+      <p>Review the selection and coverage before generating. The report links back to source todos and does not change todo state.</p>
+      <div data-report-summary role="status"></div>
+      <textarea data-report-prompt readonly aria-label="Exact report request" rows="14"></textarea>
+      <p data-report-message role="status" aria-live="polite"></p>
+      <div class="agent-buttons"><button type="button" data-report-generate disabled>Generate Report</button>
+      <button type="button" data-report-copy>Copy Request</button><button type="button" data-report-close>Close</button></div>
+    </dialog>
+  </section>`;
+}
+
+export function renderProposalPanel(proposals = [], canApply = false, policy = {}) {
+  const choice = policy.mode === 'auto' ? `auto-${policy.scope}` : 'manual';
+  const effectiveAuto = policy.effectiveMode === 'auto';
+  const scope = policy.scope === 'workspace' ? policy.workspaceRoot : policy.todoId;
+  const cards = proposals.map(proposal => {
+    const pending = proposal.changes.some(change => change.state === 'pending');
+    return `<article class="proposal-card" data-proposal-id="${escapeHtml(proposal.id)}">
+      <h3>${escapeHtml(proposal.title)} <span class="badge">${escapeHtml(proposal.state)}</span></h3>
+      ${proposal.approval ? `<p class="approval-result"><strong>${proposal.approval.mode === 'auto' ? 'Auto-approval' : 'Manual review'}: ${escapeHtml(proposal.approval.outcome)}</strong> ${escapeHtml(proposal.approval.message)}${proposal.approval.manualAction ? `<br>Later manual decision: ${escapeHtml(proposal.approval.manualAction)}` : ''}</p>` : ''}
+      <p class="hint">Target: ${escapeHtml(proposal.todoId)} | Workspace: ${escapeHtml(proposal.workspaceRoot)}<br>File: ${escapeHtml(proposal.revision.path)}<br>Revision: <code>${escapeHtml(proposal.revision.content)}</code></p>
+      <ul class="proposal-changes">${proposal.changes.map(change => `<li>
+        <label><input type="checkbox" data-proposal-change="${escapeHtml(change.id)}"${change.state !== 'pending' ? ' disabled' : ''}>
+        <span>Criterion ${change.criterionIndex + 1}: ${escapeHtml(change.text)}</span></label>
+        <p><strong>${change.before ? 'Met' : 'Not met'} -&gt; ${change.after ? 'Met' : 'Not met'}</strong> <span class="badge">${escapeHtml(change.state)}</span></p>
+        <p><strong>Rationale:</strong> ${escapeHtml(change.rationale)}</p>
+        <details><summary>Supporting Evidence</summary><pre>${escapeHtml(change.evidence)}</pre></details>
+      </li>`).join('')}</ul>
+      ${pending ? `<label class="proposal-confirm"><input type="checkbox" data-proposal-confirm> I reviewed the selected changes and authorize only those checkbox updates.</label>` : ''}
+      <div class="proposal-buttons">
+        <button type="button" data-proposal-apply disabled${!canApply ? ' title="Application requires a host with a native permission guard"' : ''}>Apply Selected Changes</button>
+        <button type="button" data-proposal-reject${pending ? '' : ' disabled'}>Reject Selected Changes</button>
+        <button type="button" data-proposal-copy>Copy Proposal</button>
+      </div>
+      <p data-proposal-message role="status" aria-live="polite"></p>
+    </article>`;
+  }).join('');
+  return `<section class="proposal-panel" data-proposals data-can-apply="${canApply}" aria-labelledby="proposals-heading">
+    <h2 id="proposals-heading">Proposed Criteria Changes</h2>
+    <div class="approval-policy" data-approval-policy>
+      <p role="status"><strong>Effective mode here: ${effectiveAuto ? 'Auto-approve new criteria proposals' : 'Manual review'}</strong></p>
+      <p class="hint">${policy.mode === 'auto' ? `Authorized scope: ${escapeHtml(scope)} (${escapeHtml(policy.scope)}).` : 'No automatic changes are authorized.'} Authorization lasts only for this canvas session and is cleared when it closes. It grants no shell, generic patch, or lifecycle permissions.</p>
+      <label>Approval mode <select data-approval-choice aria-label="Approval mode">
+        <option value="manual"${choice === 'manual' ? ' selected' : ''}>Manual review</option>
+        <option value="auto-todo"${choice === 'auto-todo' ? ' selected' : ''}${!canApply ? ' disabled' : ''}>Auto-approve this todo</option>
+        <option value="auto-workspace"${choice === 'auto-workspace' ? ' selected' : ''}${!canApply ? ' disabled' : ''}>Auto-approve workspace (this session)</option>
+      </select></label>
+      <div class="proposal-buttons"><button type="button" data-approval-set>Use Approval Mode</button>
+      <button type="button" data-approval-pause${policy.mode === 'auto' ? '' : ' disabled'}>Pause Auto-Approval</button></div>
+      <p class="hint">Mode changes affect only new submissions. Existing pending or rejected suggestions are never automatically applied. Switch to manual review for focused work.</p>
+    </div>
+    <p>Proposals are not applied work until their result says applied. In manual mode, select only the changes you accept. Local checkbox completion does not verify scanner clearance or change todo status.</p>
+    <p class="hint">Proposals and review decisions are temporary in this canvas session. Only explicitly applied checkbox updates are saved to the todo file.</p>
+    ${!canApply ? '<p class="hint">This host cannot apply proposals through a native permission guard. Inspect or copy a proposal, then make reviewed changes manually in your normal editor.</p>' : ''}
+    ${cards || '<p class="hint">No proposals for this todo. An agent can propose criteria changes, or you can import a proposal below.</p>'}
+    <details class="proposal-import"><summary>Import Agent Proposal</summary>
+      <p>Paste a JSON object with a <code>changes</code> array. Each change requires <code>criterionIndex</code> (zero-based), <code>met</code>, <code>rationale</code>, and <code>evidence</code>. Only this todo is targeted. ${effectiveAuto ? 'New submissions will be automatically applied through the active guarded policy.' : 'Importing creates a read-only preview, not a file change.'}</p>
+      <textarea data-proposal-input rows="6" aria-label="Proposal changes (JSON)" placeholder='{"changes":[{"criterionIndex":0,"met":true,"rationale":"Reason for this change","evidence":"Verification evidence"}]}'></textarea>
+      <button type="button" data-proposal-import>${effectiveAuto ? 'Submit Using Auto-Approval' : 'Preview Imported Changes'}</button>
+    </details>
+  </section>`;
+}
+
+export function renderCanvas(todo, relations, nav, actions = {}, groups = [], proposals = [], policy = {}) {
   if (!todo) {
     return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Agendo Work Session</title>
     <link rel="stylesheet" href="/page.css"></head>
@@ -197,7 +287,7 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
     ? collapsible('scanner', 'Scanner Problem & Evidence', `<div class="scanner-evidence">${renderScannerEvidence(todo.scannerEvidence, isOpen('scanner'))}</div>`, { open: isOpen('scanner') })
     : '';
 
-  const terminal = todo.status === 'complete' || todo.status === 'cancelled';
+  const terminal = todo.status === 'completed' || todo.status === 'cancelled';
   const depsHtml = relations ? renderRelations(relations, terminal, isOpen('deps')) : '';
 
   const triageHtml = todo.triage.length > 0
@@ -253,6 +343,9 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
         ${todo.group ? `<button type="button" data-open-group="${escapeHtml(todo.group)}" title="Open group overview">Group overview</button>` : ''}
         ${importPill}
       </div>
+      ${renderAgentControls()}
+      ${renderReportControls(todo.status)}
+      ${renderProposalPanel(proposals, typeof actions.assertWritable === 'function', policy)}
       ${sections}
       <p class="error" id="status-message" role="status" aria-live="polite"></p>
     </main>
@@ -277,7 +370,7 @@ export function renderGroupCanvas(groupName, members, nav, actions = {}, filters
   const terminalMembers = [];
   for (const todo of members) {
     statusCounts[todo.status] = (statusCounts[todo.status] ?? 0) + 1;
-    if (todo.status === 'complete' || todo.status === 'cancelled' || todo.status === 'backlogged') {
+    if (todo.status === 'completed' || todo.status === 'cancelled' || todo.status === 'backlogged') {
       terminalMembers.push(todo);
     } else {
       activeMembers.push(todo);
@@ -288,7 +381,7 @@ export function renderGroupCanvas(groupName, members, nav, actions = {}, filters
   if (statusCounts['in-progress']) summaryParts.push(`${statusCounts['in-progress']} in-progress`);
   if (statusCounts['pending']) summaryParts.push(`${statusCounts['pending']} pending`);
   if (statusCounts['ready']) summaryParts.push(`${statusCounts['ready']} ready`);
-  if (statusCounts['complete']) summaryParts.push(`${statusCounts['complete']} complete`);
+  if (statusCounts['completed']) summaryParts.push(`${statusCounts['completed']} completed`);
   if (statusCounts['cancelled']) summaryParts.push(`${statusCounts['cancelled']} cancelled`);
   if (statusCounts['backlogged']) summaryParts.push(`${statusCounts['backlogged']} backlogged`);
   const summary = summaryParts.join(' · ') || 'empty';
@@ -320,6 +413,7 @@ export function renderGroupCanvas(groupName, members, nav, actions = {}, filters
         <span class="badge">${members.length} todos</span>
       </div>
       <p class="group-summary">${escapeHtml(summary)}</p>
+      ${renderAgentControls()}
       ${activeMembers.length > 0 ? `
         <h2>Active</h2>
         <ul class="group-members">${activeMembers.map(renderTodoRow).join('')}</ul>` : ''}

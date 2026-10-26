@@ -30,7 +30,7 @@ export class StatusService {
     switch (status) {
       case "backlogged":
         return this.config.backlogFolder;
-      case "complete":
+      case "completed":
         return this.config.completeFolder;
       case "cancelled":
         return this.config.cancelledFolder;

@@ -182,7 +182,7 @@ describe('Status lifecycle help', () => {
     scan: { source: undefined, scope: undefined, grouping: undefined, target: undefined, refreshedAt: undefined, reviewRequired: false }
   };
 
-  const statuses = ['pending', 'in-progress', 'ready', 'complete', 'backlogged', 'cancelled'];
+  const statuses = ['pending', 'in-progress', 'ready', 'completed', 'backlogged', 'cancelled'];
 
   it('renders status help for all six states', () => {
     for (const status of statuses) {
@@ -239,7 +239,7 @@ describe('Group overview', () => {
   it('renders status counts in summary', () => {
     const members = [
       { id: '001', title: 'Test 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' },
-      { id: '002', title: 'Test 2', status: 'complete', priority: 'p2', criteria: [], group: 'test-group' }
+      { id: '002', title: 'Test 2', status: 'completed', priority: 'p2', criteria: [], group: 'test-group' }
     ];
     const html = renderGroupCanvas('test-group', members, null);
     assert.ok(html.includes('1 in-progress'), 'Should show in-progress count');
@@ -249,7 +249,7 @@ describe('Group overview', () => {
   it('separates active and terminal members', () => {
     const members = [
       { id: '001', title: 'Active 1', status: 'in-progress', priority: 'p1', criteria: [], group: 'test-group' },
-      { id: '002', title: 'Terminal 1', status: 'complete', priority: 'p2', criteria: [], group: 'test-group' },
+      { id: '002', title: 'Terminal 1', status: 'completed', priority: 'p2', criteria: [], group: 'test-group' },
       { id: '003', title: 'Terminal 2', status: 'backlogged', priority: 'p3', criteria: [], group: 'test-group' }
     ];
     const html = renderGroupCanvas('test-group', members, null);
@@ -362,7 +362,7 @@ describe('Settings button and page', () => {
         gitignored: true,
         backlogFolder: 'backlog',
         cancelledFolder: 'cancelled',
-        completeFolder: 'complete',
+        completeFolder: 'completed',
         codeScanningEnabled: true
       },
       viewOptions: { groupBy: 'status', sortByDate: true }
@@ -619,115 +619,6 @@ describe('Navigation and filter actions', () => {
     }
     assert.strictEqual(entry.history.length, 30, 'History should be capped at 30');
     assert.strictEqual(entry.view.todoId, '035');
-  });
-});
-
-describe('Explain finding action', () => {
-  it('builds explain prompt with todo context', () => {
-    const todo = {
-      id: 'sq-123',
-      title: 'SonarQube: SQL injection risk',
-      status: 'pending',
-      priority: 'p1',
-      group: 'security',
-      description: 'Potential SQL injection in query builder',
-      scannerEvidence: 'File: src/db/query.ts | Line: 42\n\n**Severity:** Critical\n\nUnparameterized SQL query detected.',
-      criteria: [],
-      dependencies: []
-    };
-    const context = {
-      id: todo.id,
-      title: todo.title,
-      status: todo.status,
-      priority: todo.priority,
-      group: todo.group,
-      description: todo.description,
-      scannerEvidence: todo.scannerEvidence,
-      dependencies: todo.dependencies,
-      blockedBy: false
-    };
-    const prompt = `Explain this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${context.scannerEvidence ? '\nScanner Evidence:\n' + context.scannerEvidence.slice(0, 2000) : ''}\n${context.description ? '\nDescription:\n' + context.description.slice(0, 1000) : ''}`;
-    assert.ok(prompt.includes('sq-123'));
-    assert.ok(prompt.includes('SQL injection'));
-    assert.ok(prompt.includes('Critical'));
-  });
-
-  it('builds investigate prompt with dependencies', () => {
-    const todo = {
-      id: '001',
-      title: 'Fix authentication flow',
-      status: 'in-progress',
-      priority: 'p1',
-      group: undefined,
-      description: 'Auth flow breaks on token expiry',
-      scannerEvidence: null,
-      criteria: [],
-      dependencies: ['002', '003']
-    };
-    const prompt = `Investigate the root cause of this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.dependencies && todo.dependencies.length ? '\nDependencies:\n' + todo.dependencies.join(', ') : ''}`;
-    assert.ok(prompt.includes('Dependencies'));
-    assert.ok(prompt.includes('002, 003'));
-  });
-
-  it('builds verify prompt with criteria', () => {
-    const todo = {
-      id: '002',
-      title: 'Implement rate limiting',
-      status: 'ready',
-      priority: 'p2',
-      group: undefined,
-      description: '',
-      scannerEvidence: null,
-      criteria: [
-        { text: 'Rate limiter returns 429 on overflow', met: true },
-        { text: 'Configurable via environment variables', met: false }
-      ],
-      dependencies: []
-    };
-    const prompt = `Help verify the solution for this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.criteria && todo.criteria.length ? '\nAcceptance Criteria:\n' + todo.criteria.map(c => (c.met ? '[x]' : '[ ]') + ' ' + c.text).join('\n') : ''}`;
-    assert.ok(prompt.includes('[x]'));
-    assert.ok(prompt.includes('[ ]'));
-    assert.ok(prompt.includes('Rate limiter returns 429'));
-  });
-
-  it('builds suggest-fix prompt', () => {
-    const todo = {
-      id: 'cql-456',
-      title: 'CodeQL: Possible null dereference',
-      status: 'pending',
-      priority: 'p2',
-      group: 'security',
-      description: '',
-      scannerEvidence: 'File: src/utils/parser.ts | Line: 87\n\n**Severity:** High\n\nObject may be null when property is accessed.',
-      criteria: [],
-      dependencies: []
-    };
-    const prompt = `Suggest a fix plan for this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.description ? '\nDescription:\n' + todo.description.slice(0, 1000) : ''}`;
-    assert.ok(prompt.includes('null dereference'));
-    assert.ok(prompt.includes('parser.ts'));
-  });
-
-  it('truncates long scanner evidence', () => {
-    const longEvidence = 'X'.repeat(5000);
-    const truncated = longEvidence.slice(0, 2000);
-    assert.strictEqual(truncated.length, 2000);
-  });
-
-  it('handles missing scanner evidence gracefully', () => {
-    const todo = {
-      id: '003',
-      title: 'Regular todo without scanner evidence',
-      status: 'pending',
-      priority: 'p3',
-      group: undefined,
-      description: 'Just a normal task',
-      scannerEvidence: null,
-      criteria: [],
-      dependencies: []
-    };
-    const prompt = `Explain this Agendo finding:\n\nTodo: #${todo.id} - ${todo.title}\nStatus: ${todo.status}\nPriority: ${todo.priority}\n${todo.scannerEvidence ? '\nScanner Evidence:\n' + todo.scannerEvidence.slice(0, 2000) : ''}\n${todo.description ? '\nDescription:\n' + todo.description.slice(0, 1000) : ''}`;
-    assert.ok(!prompt.includes('Scanner Evidence'));
-    assert.ok(prompt.includes('Just a normal task'));
   });
 });
 

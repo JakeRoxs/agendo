@@ -8,7 +8,7 @@ import type * as vscode from "vscode";
  * - `ready` is an active state for work that is likely done and being polished,
  *   still awaiting confirmation that it is complete and functional (root folder).
  * - `backlogged` is a deprioritized-but-open state (moves to the backlog subfolder).
- * - `complete` is a terminal state for work fully finished and verified.
+ * - `completed` is a terminal state for work fully finished and verified.
  * - `cancelled` is a terminal state for abandoned or superseded work.
  */
 export type TodoStatus =
@@ -16,7 +16,7 @@ export type TodoStatus =
   | "in-progress"
   | "ready"
   | "backlogged"
-  | "complete"
+  | "completed"
   | "cancelled";
 
 export type TodoPriority = "p1" | "p2" | "p3";
@@ -26,7 +26,7 @@ export const TODO_STATUSES: TodoStatus[] = [
   "in-progress",
   "ready",
   "backlogged",
-  "complete",
+  "completed",
   "cancelled",
 ];
 
@@ -36,7 +36,7 @@ export const TODO_PRIORITIES: TodoPriority[] = ["p1", "p2", "p3"];
 export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "in-progress", "ready"];
 
 /** Statuses that are terminal (finished or abandoned). */
-export const TERMINAL_STATUSES: TodoStatus[] = ["complete", "cancelled"];
+export const TERMINAL_STATUSES: TodoStatus[] = ["completed", "cancelled"];
 
 export const SCANNING_ID_PREFIX = { codeql: "cql", sonarqube: "sq" } as const;
 export type ScanningSource = keyof typeof SCANNING_ID_PREFIX;
@@ -103,7 +103,7 @@ export interface Todo {
  * Check whether a todo is blocked by any incomplete dependencies.
  *
  * A todo is "blocked" when at least one of its declared dependencies is not yet
- * in a terminal state (`complete` or `cancelled`). This is a pure function — the
+ * in a terminal state (`completed` or `cancelled`). This is a pure function — the
  * caller passes the full repository snapshot so the check remains stateless.
  */
 export function isBlocked(todo: Todo, allTodos: readonly Todo[]): boolean {
@@ -126,7 +126,7 @@ export function getBlockedBy(todo: Todo, allTodos: readonly Todo[]): string[] {
 }
 
 const FILENAME_RE =
-  /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|complete|cancelled)-(p[123])-(.+)\.md$/i;
+  /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|completed|cancelled)-(p[123])-(.+)\.md$/i;
 
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {

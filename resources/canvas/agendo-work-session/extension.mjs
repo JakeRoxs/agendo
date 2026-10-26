@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { CanvasError as SdkCanvasError, createCanvas, joinSession } from '@github/copilot-sdk/extension';
 
 import { CanvasError } from './errors.mjs';
+import { buildAgentPrompt, createSessionBridge } from './agent-requests.mjs';
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -28,6 +29,7 @@ const workspaceRoot = resolveWorkspaceRoot(dirname(fileURLToPath(import.meta.url
 
 const servers = new Map();
 let copilotSession = null;
+const sessionBridge = createSessionBridge(() => copilotSession);
 
 const todoIdSchema = { type: 'string', description: 'Todo ID, for example "033"' };
 
@@ -180,7 +182,7 @@ const canvas = createCanvas({
       inputSchema: {
         type: 'object',
         properties: {
-          status: { type: 'string', enum: ['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled'], description: 'Filter by status' },
+          status: { type: 'string', enum: ['pending', 'in-progress', 'ready', 'backlogged', 'completed', 'cancelled'], description: 'Filter by status' },
           priority: { type: 'string', enum: ['p1', 'p2', 'p3'], description: 'Filter by priority' },
           group: { type: 'string', description: 'Filter by group name' }
         }
@@ -221,7 +223,7 @@ const canvas = createCanvas({
     },
     {
       name: 'explain_finding',
-      description: 'Send a contextual explanation request about a todo/finding to the Copilot agent session',
+      description: 'Preview a read-only contextual request. Does not send messages; the user sends from the canvas after inspecting a preview.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -234,68 +236,57 @@ const canvas = createCanvas({
         },
         required: ['todoId', 'intent']
       },
-      handler: guard(async ({ input }) => {
+      handler: guard(async ({ input, instanceId }) => {
+        const entry = servers.get(instanceId);
+        if (!entry) throw new CanvasError('no_active_canvas', 'No active canvas instance');
         const todoId = assertTodoId(input?.todoId);
-        const intent = input?.intent;
-
-        // Load todo context
+        if (entry.todoId !== todoId) throw new CanvasError('invalid_input', 'Preview must match the selected todo');
         const todo = loadTodo(todoId, workspaceRoot);
-        const relations = getRelations(todoId, workspaceRoot);
-
-        // Build bounded context packet
-        const context = {
-          id: todo.id,
-          title: todo.title,
-          status: todo.status,
-          priority: todo.priority,
-          group: todo.group,
-          description: todo.description,
-          scannerEvidence: todo.scannerEvidence,
-          dependencies: relations.dependencies,
-          blockedBy: relations.blocked
-        };
-
-        // Build intent-specific prompt
-        const prompts = {
-          explain: `Explain this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${context.scannerEvidence ? '\nScanner Evidence:\n' + context.scannerEvidence.slice(0, 2000) : ''}\n${context.description ? '\nDescription:\n' + context.description.slice(0, 1000) : ''}`,
-          investigate: `Investigate the root cause of this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${context.scannerEvidence ? '\nScanner Evidence:\n' + context.scannerEvidence.slice(0, 2000) : ''}\n${context.dependencies && context.dependencies.length ? '\nDependencies:\n' + context.dependencies.join(', ') : ''}`,
-          'suggest-fix': `Suggest a fix plan for this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${context.scannerEvidence ? '\nScanner Evidence:\n' + context.scannerEvidence.slice(0, 2000) : ''}\n${context.description ? '\nDescription:\n' + context.description.slice(0, 1000) : ''}`,
-          verify: `Help verify the solution for this Agendo finding:\n\nTodo: #${context.id} - ${context.title}\nStatus: ${context.status}\nPriority: ${context.priority}\n${todo.criteria && todo.criteria.length ? '\nAcceptance Criteria:\n' + todo.criteria.map(c => (c.met ? '[x]' : '[ ]') + ' ' + c.text).join('\n') : ''}`
-        };
-
-        const prompt = prompts[intent];
-        if (!prompt) {
-          throw new CanvasError('invalid_input', `Unknown intent: ${intent}`);
-        }
-
-        // Check if Copilot session is available
-        if (!copilotSession) {
-          return {
-            success: false,
-            reason: 'copilot_session_unavailable',
-            message: 'Copilot session is not available. Use the Copy Context button to copy context manually.',
-            prompt
-          };
-        }
-
-        // Send to Copilot session
-        try {
-          await copilotSession.send(prompt);
-          return {
-            success: true,
-            reason: 'sent',
-            message: 'Request sent to Copilot session',
-            intent,
-            todoId
-          };
-        } catch (e) {
-          return {
-            success: false,
-            reason: 'send_failed',
-            message: `Failed to send to Copilot session: ${e.message}`,
-            prompt
-          };
-        }
+        return { success: true, reason: 'preview_only', prompt: buildAgentPrompt({
+          intent: input?.intent, todos: [todo], selection: { view: entry.view, filters: entry.filters }
+        }), message: 'Preview only. Use Preview Request in the canvas, then explicitly Send or Copy Request.' };
+      })
+    },
+    {
+      name: 'propose_criteria',
+      description: 'Submit selected todo checkbox changes under the user-controlled canvas approval policy. Manual mode creates a read-only proposal; explicitly authorized auto mode may apply supported changes through native guards. Include a unique requestId for replay-safe auto application. Agents cannot change the approval policy. Unsupported hosts remain inspect/copy-only.',
+      inputSchema: {
+        type: 'object', additionalProperties: false,
+        properties: {
+          todoId: todoIdSchema,
+          requestId: { type: 'string', minLength: 1, maxLength: 128, description: 'Unique submission ID, reused for retries of the same proposal only' },
+          changes: {
+            type: 'array', minItems: 1, maxItems: 20,
+            items: {
+              type: 'object', additionalProperties: false,
+              properties: {
+                criterionIndex: { type: 'integer', minimum: 0 }, met: { type: 'boolean' },
+                rationale: { type: 'string', minLength: 1, maxLength: 1000 },
+                evidence: { type: 'string', minLength: 1, maxLength: 1000 }
+              },
+              required: ['criterionIndex', 'met', 'rationale', 'evidence']
+            }
+          }
+        },
+        required: ['todoId', 'changes']
+      },
+      handler: guard(async ({ input, instanceId }) => {
+        const entry = servers.get(instanceId);
+        if (!entry) throw new CanvasError('no_active_canvas', 'No active canvas instance');
+        const todoId = assertTodoId(input?.todoId);
+        if (entry.todoId !== todoId) throw new CanvasError('invalid_input', 'Proposal must target the selected todo');
+        const proposal = await entry.approval.create({ todoId, changes: input?.changes, requestId: input?.requestId });
+        return { proposal, message: proposal.approval.message };
+      })
+    },
+    {
+      name: 'get_proposals',
+      description: 'Inspect proposals for the selected todo, including pending, applied, and rejected changes',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      handler: guard(async ({ instanceId }) => {
+        const entry = servers.get(instanceId);
+        if (!entry?.todoId) throw new CanvasError('no_active_canvas', 'Select a todo first');
+        return { todoId: entry.todoId, proposals: entry.approval.list(entry.todoId), policy: entry.approval.getPolicy() };
       })
     },
     {
@@ -325,6 +316,8 @@ const canvas = createCanvas({
     let entry = servers.get(instanceId);
     if (!entry) {
       entry = createInstanceServer(workspaceRoot, {
+        sendAgentRequest: sessionBridge.send,
+        getAgentState: sessionBridge.getState,
         edit: async (filePath) => {
           await openFile(filePath);
         },
@@ -340,8 +333,11 @@ const canvas = createCanvas({
     const entry = servers.get(instanceId);
     if (!entry) return;
     servers.delete(instanceId);
+    entry.disposeProposals();
     await new Promise(resolve => entry.server.close(() => resolve()));
   }
 });
 
 copilotSession = await joinSession({ canvases: [canvas] });
+sessionBridge.getState();
+process.once('exit', () => sessionBridge.dispose());

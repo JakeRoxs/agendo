@@ -16,7 +16,7 @@ The `docs/todos/` directory contains a file-based tracking system for managing c
 This skill should be used when:
 
 - Creating new todos from findings or feedback
-- Managing todo lifecycle (pending → in-progress → ready → complete, plus backlogged and cancelled)
+- Managing todo lifecycle (pending → in-progress → ready → completed, plus backlogged and cancelled)
 - Triaging pending items for approval
 - Checking or managing dependencies
 - Reconciling or auditing todos against the current codebase
@@ -48,7 +48,7 @@ directly — do not ask the user to repeat or rephrase what they already said.
 When invoked as `/agendo` without a specific operation, show a concise status summary instead of
 asking questions. Read the todos directory and report:
 
-1. **Counts by status** — pending, in-progress, ready, backlogged, complete, cancelled
+1. **Counts by status** — pending, in-progress, ready, backlogged, completed, cancelled
 2. **Pending items needing triage** — list titles and priorities
 3. **Active work** — in-progress and ready items with their next steps from Resume Context
 4. **Blocked items** — active items with unresolved dependencies
@@ -86,7 +86,7 @@ defaults to any missing key — or to the whole configuration when the file is a
 | `gitignored`      | `true`       |
 | `backlogFolder`   | `backlog`    |
 | `cancelledFolder` | `cancelled`  |
-| `completeFolder`  | `complete`   |
+| `completeFolder`  | `completed`   |
 | `codeScanning`    | `false`      |
 
 Example of a config with a single non-default setting:
@@ -136,7 +136,7 @@ Each source has an independent sequence: `cql-001-pending-p1-rule-name.md` and
 `sq-001-pending-p2-rule-name.md`. The full prefixed ID is the `issue_id` and dependency key.
 Regular numeric todos keep their existing sequence; scanner IDs do not advance it. Never reuse an ID.
 On a scanner status change, retain its source root, for example
-`{root}/code-scanning/codeql/{completeFolder}/cql-001-complete-p1-rule-name.md`.
+`{root}/code-scanning/codeql/{completeFolder}/cql-001-completed-p1-rule-name.md`.
 Reopening returns it to `{root}/code-scanning/codeql`, not the main root.
 
 Imports default to one todo per affected file, with optional grouping by rule/type or individual
@@ -204,7 +204,7 @@ Todo files follow this naming pattern:
 | `in-progress` | Actively being worked on                                          | `{root}`      |
 | `ready`       | Likely done, being tweaked/bug-fixed; needs confirmation it works | `{root}`      |
 | `backlogged`  | Deprioritized but still open                                      | `{backlog}`   |
-| `complete`    | Fully finished and verified (terminal)                            | `{complete}`  |
+| `completed`    | Fully finished and verified (terminal)                            | `{complete}`  |
 | `cancelled`   | Abandoned / superseded (terminal)                                 | `{cancelled}` |
 
 **Examples:**
@@ -213,7 +213,7 @@ Todo files follow this naming pattern:
 001-pending-p1-mailer-test.md
 002-in-progress-p1-fix-n-plus-1.md
 003-ready-p1-verify-n-plus-1-fix.md
-005-complete-p2-refactor-csv.md
+005-completed-p2-refactor-csv.md
 053-cancelled-p2-superseded-by-057.md
 061-backlogged-p3-nice-to-have-polish.md
 ```
@@ -264,7 +264,7 @@ scaffold.
 
 ```yaml
 ---
-status: ready # pending | in-progress | ready | backlogged | complete | cancelled
+status: ready # pending | in-progress | ready | backlogged | completed | cancelled
 priority: p1 # p1 | p2 | p3
 issue_id: "002"
 tags: [rails, performance, database]
@@ -395,7 +395,7 @@ confirmed as working), move it to `ready` so it can be verified:
 - Update frontmatter: `status: in-progress` → `status: ready`
 
 A `ready` todo is a candidate for completion — confirm it works and meets acceptance criteria
-before moving it to `complete`.
+before moving it to `completed`.
 
 ### Backlogging a Todo
 
@@ -412,7 +412,7 @@ and counts** (see below). To reactivate, move the file back to the root and set 
 ### Cancelling a Todo
 
 `cancelled` is a **terminal** state for work that is abandoned or superseded (as opposed to
-`complete`, which is finished successfully).
+`completed`, which is finished successfully).
 
 1. Move the file into the cancelled subfolder: `mv "{root}/{file}-{status}-{pri}-{desc}.md" "{cancelled}/{file}-cancelled-{pri}-{desc}.md"`
 2. Set frontmatter `status:` → `cancelled` and add a `cancelled` tag.
@@ -451,12 +451,12 @@ grep -R -l 'dependencies:.*"002"' "{root}"
 ```bash
 for dep in 001 002 003; do
   terminal_file=$(find "{complete}" "{cancelled}" -maxdepth 1 -type f \
-    \( -name "${dep}-complete-*.md" -o -name "${dep}-cancelled-*.md" \) -print -quit)
+    \( -name "${dep}-completed-*.md" -o -name "${dep}-cancelled-*.md" \) -print -quit)
   [ -n "$terminal_file" ] || echo "Issue $dep is not terminal"
 done
 ```
 
-Both `complete` and `cancelled` satisfy dependencies by design. Cancellation means the dependency
+Both `completed` and `cancelled` satisfy dependencies by design. Cancellation means the dependency
 will not be delivered, so dependent work must be reassessed rather than remain mechanically
 blocked.
 
@@ -524,14 +524,14 @@ metadata.
 
 ### Completing a Todo
 
-`complete` is for work that is fully finished and verified. Only move a `ready` todo here once it
+`completed` is for work that is fully finished and verified. Only move a `ready` todo here once it
 is confirmed done and functional.
 
 **To mark a todo as complete:**
 
 1. Verify all acceptance criteria checked off and the work is confirmed working
-2. Move and rename the file: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-complete-{pri}-{desc}.md"`
-3. Set frontmatter `status: ready` → `status: complete` and add the final Work Log entry.
+2. Move and rename the file: `mv "{root}/{file}-ready-{pri}-{desc}.md" "{complete}/{file}-completed-{pri}-{desc}.md"`
+3. Set frontmatter `status: ready` → `status: completed` and add the final Work Log entry.
 4. Check for newly unblocked active work: `grep -l 'dependencies:.*"{issue_id}"' "{root}"/*-{pending,in-progress,ready}-*.md`
 
 Do not commit, push, or create a pull request unless the user explicitly requests it.
@@ -547,8 +547,8 @@ When answering "what's next", counting work, or picking up new tasks:
   "find next work".
 - **`backlogged`** is open but **deprioritized** — exclude it from active / find-next-work queries
   and counts unless explicitly asked about the backlog.
-- **`complete`** and **`cancelled`** are both **terminal** — exclude both from active work. Keep them
-  distinguishable in queries and counts: `complete` = finished and verified, `cancelled` = abandoned.
+- **`completed`** and **`cancelled`** are both **terminal** — exclude both from active work. Keep them
+  distinguishable in queries and counts: `completed` = finished and verified, `cancelled` = abandoned.
 
 ## Integration with Development Workflows
 
@@ -561,7 +561,7 @@ in the host environment.
 **Finding work:**
 
 ```bash
-# List highest priority unblocked active work (excludes backlogged/complete/cancelled)
+# List highest priority unblocked active work (excludes backlogged/completed/cancelled)
 grep -l 'dependencies: \[\]' "{root}"/*-{pending,in-progress,ready}-p1-*.md
 
 # List all pending items needing triage
@@ -574,9 +574,9 @@ ls "{backlog}"/*.md
 find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'
 
 # Count by status
-for status in pending in-progress ready backlogged complete cancelled; do
+for status in pending in-progress ready backlogged completed cancelled; do
   case "$status" in
-    complete) path="{complete}" ;;
+    completed) path="{complete}" ;;
     cancelled) path="{cancelled}" ;;
     backlogged) path="{backlog}" ;;
     *) path="{root}" ;;

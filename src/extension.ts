@@ -276,6 +276,7 @@ export async function activate(context: vscode.ExtensionContext) {
     links,
     skill,
     canvas,
+    canvasViewer,
     busy,
     treeProvider,
     boardViewProvider,

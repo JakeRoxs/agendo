@@ -22,7 +22,7 @@ function makeTodo(
     epic: false,
     group,
     folder: "",
-    fileName: `${id}-complete-p2-test.md`,
+    fileName: `${id}-completed-p2-test.md`,
     uri: vscode.Uri.file(`/fake/${id}.md`),
     updatedAt,
     createdAt: updatedAt ? updatedAt - 1000 : undefined,
@@ -34,8 +34,8 @@ function makeTodo(
 suite("Accomplishments Service", () => {
   test("builds packet from all completed todos", () => {
     const todos = [
-      makeTodo("001", "complete", Date.now()),
-      makeTodo("002", "complete", Date.now() - 1000),
+      makeTodo("001", "completed", Date.now()),
+      makeTodo("002", "completed", Date.now() - 1000),
       makeTodo("003", "pending"),
     ];
     const packet = buildAccomplishmentsPacket(todos, {});
@@ -50,9 +50,9 @@ suite("Accomplishments Service", () => {
   test("filters by since date", () => {
     const now = Date.now();
     const todos = [
-      makeTodo("001", "complete", now),
-      makeTodo("002", "complete", now - 86400000), // 1 day ago
-      makeTodo("003", "complete", now - 172800000), // 2 days ago
+      makeTodo("001", "completed", now),
+      makeTodo("002", "completed", now - 86400000), // 1 day ago
+      makeTodo("003", "completed", now - 172800000), // 2 days ago
     ];
     const packet = buildAccomplishmentsPacket(todos, {
       since: new Date(now - 43200000), // 12 hours ago
@@ -64,7 +64,7 @@ suite("Accomplishments Service", () => {
 
   test("filters by until date", () => {
     const now = Date.now();
-    const todos = [makeTodo("001", "complete", now), makeTodo("002", "complete", now - 86400000)];
+    const todos = [makeTodo("001", "completed", now), makeTodo("002", "completed", now - 86400000)];
     const packet = buildAccomplishmentsPacket(todos, {
       until: new Date(now - 43200000),
     });
@@ -74,9 +74,9 @@ suite("Accomplishments Service", () => {
 
   test("filters by group", () => {
     const todos = [
-      makeTodo("001", "complete", Date.now(), "scanner-workflow"),
-      makeTodo("002", "complete", Date.now(), "reporting"),
-      makeTodo("003", "complete", Date.now(), "scanner-workflow"),
+      makeTodo("001", "completed", Date.now(), "scanner-workflow"),
+      makeTodo("002", "completed", Date.now(), "reporting"),
+      makeTodo("003", "completed", Date.now(), "scanner-workflow"),
     ];
     const packet = buildAccomplishmentsPacket(todos, { group: "scanner-workflow" });
     assert.strictEqual(packet.matched, 2);
@@ -85,9 +85,9 @@ suite("Accomplishments Service", () => {
 
   test("filters by tags", () => {
     const todos = [
-      makeTodo("001", "complete", Date.now(), undefined, ["bug", "critical"]),
-      makeTodo("002", "complete", Date.now(), undefined, ["bug"]),
-      makeTodo("003", "complete", Date.now(), undefined, ["feature"]),
+      makeTodo("001", "completed", Date.now(), undefined, ["bug", "critical"]),
+      makeTodo("002", "completed", Date.now(), undefined, ["bug"]),
+      makeTodo("003", "completed", Date.now(), undefined, ["feature"]),
     ];
     const packet = buildAccomplishmentsPacket(todos, { tags: ["bug"] });
     assert.strictEqual(packet.matched, 2);
@@ -96,9 +96,9 @@ suite("Accomplishments Service", () => {
 
   test("filters by scanner source", () => {
     const todos = [
-      { ...makeTodo("cql-001", "complete", Date.now()), id: "cql-001", title: "CQL test" },
-      { ...makeTodo("sq-001", "complete", Date.now()), id: "sq-001", title: "SQ test" },
-      makeTodo("001", "complete", Date.now()),
+      { ...makeTodo("cql-001", "completed", Date.now()), id: "cql-001", title: "CQL test" },
+      { ...makeTodo("sq-001", "completed", Date.now()), id: "sq-001", title: "SQ test" },
+      makeTodo("001", "completed", Date.now()),
     ];
     const packet = buildAccomplishmentsPacket(todos, { source: "codeql" });
     assert.strictEqual(packet.matched, 1);
@@ -113,13 +113,13 @@ suite("Accomplishments Service", () => {
   });
 
   test("includes filter info in packet text", () => {
-    const todos = [makeTodo("001", "complete", Date.now(), "scanner-workflow")];
+    const todos = [makeTodo("001", "completed", Date.now(), "scanner-workflow")];
     const packet = buildAccomplishmentsPacket(todos, { group: "scanner-workflow" });
     assert.ok(packet.text.includes("Filter: group scanner-workflow"));
   });
 
   test("marks undated todos", () => {
-    const todos = [makeTodo("001", "complete", undefined)];
+    const todos = [makeTodo("001", "completed", undefined)];
     const packet = buildAccomplishmentsPacket(todos, {});
     assert.ok(packet.text.includes("undated"));
   });

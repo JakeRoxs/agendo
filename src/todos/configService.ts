@@ -12,7 +12,7 @@ export const DEFAULT_TODOS_CONFIG = {
   gitignored: true,
   backlogFolder: "backlog",
   cancelledFolder: "cancelled",
-  completeFolder: "complete",
+  completeFolder: "completed",
 } as const;
 
 /**
@@ -69,7 +69,7 @@ export function viewModeLabel(mode: ViewMode): string {
  */
 const PREVIEW_EDITOR_VIEW_TYPE = "vscode.markdown.preview.editor";
 const TODO_FILE_PATTERN =
-  /^(?:(?:cql|sq)-)?\d{3,}-(pending|in-progress|ready|backlogged|complete|cancelled)-p[123]-[^/]+\.md$/;
+  /^(?:(?:cql|sq)-)?\d{3,}-(pending|in-progress|ready|backlogged|completed|cancelled)-p[123]-[^/]+\.md$/;
 
 /**
  * Bridges VS Code settings and the on-disk `.agendo-config.json` projection that

@@ -14,6 +14,8 @@ const CANVAS_NAME = "agendo-work-session";
 interface InstanceServer {
   url: string;
   server: Server;
+  resetApproval?: () => void;
+  disposeProposals?: () => void;
 }
 
 interface CanvasServerModule {
@@ -116,11 +118,26 @@ export class CanvasViewer implements vscode.Disposable {
       };
       this.panel.onDidDispose(() => {
         this.panel = undefined;
+        this.entry?.resetApproval?.();
       });
       this.panel.webview.onDidReceiveMessage((message: unknown) => {
-        const url = externalHttpsUrl(message);
-        if (url) {
-          void vscode.env.openExternal(vscode.Uri.parse(url));
+        if (typeof message !== "object" || !message) return;
+        const msg = message as { type?: string; url?: string; text?: string };
+        if (msg.type === "openExternal") {
+          const url = externalHttpsUrl(message);
+          if (url) {
+            void vscode.env.openExternal(vscode.Uri.parse(url));
+          }
+        } else if (msg.type === "copyToClipboard" && typeof msg.text === "string") {
+          void vscode.env.clipboard.writeText(msg.text).then(
+            () => {
+              this.panel?.webview.postMessage({ type: "clipboardResult", success: true });
+            },
+            (err) => {
+              out`Canvas clipboard copy failed: ${err}`;
+              this.panel?.webview.postMessage({ type: "clipboardResult", success: false });
+            },
+          );
         }
       });
     }
@@ -143,11 +160,15 @@ export class CanvasViewer implements vscode.Disposable {
 const vscode = acquireVsCodeApi();
 const frame = document.querySelector('iframe');
 window.addEventListener('message', event => {
-  if (event.source !== frame.contentWindow || event.data?.type !== 'agendo:openExternal') return;
-  try {
-    const url = new URL(event.data.url);
-    if (url.protocol === 'https:') vscode.postMessage({ type: 'openExternal', url: url.href });
-  } catch {}
+  if (event.source !== frame.contentWindow) return;
+  if (event.data?.type === 'agendo:openExternal') {
+    try {
+      const url = new URL(event.data.url);
+      if (url.protocol === 'https:') vscode.postMessage({ type: 'openExternal', url: url.href });
+    } catch {}
+  } else if (event.data?.type === 'agendo:copyToClipboard') {
+    vscode.postMessage({ type: 'copyToClipboard', text: event.data.text });
+  }
 });
 </script></body></html>`;
   }
@@ -156,6 +177,7 @@ window.addEventListener('message', event => {
     const entry = this.entry;
     this.entry = undefined;
     if (entry) {
+      entry.disposeProposals?.();
       await new Promise<void>((resolve) => entry.server.close(() => resolve()));
     }
   }

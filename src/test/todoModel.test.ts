@@ -50,7 +50,7 @@ import { TreeStateService } from "../todos/treeStateService";
 suite("todoModel", () => {
   test("isTodoFileName matches the naming contract", () => {
     assert.ok(isTodoFileName("060-pending-p3-vscode-extension.md"));
-    assert.ok(isTodoFileName("001-complete-p1-done.md"));
+    assert.ok(isTodoFileName("001-completed-p1-done.md"));
     assert.ok(isTodoFileName("053-cancelled-p2-superseded.md"));
     assert.ok(!isTodoFileName("readme.md"));
     assert.ok(!isTodoFileName("60-pending-p3-short-id.md"));
@@ -197,7 +197,7 @@ suite("todoModel", () => {
         if (key === Settings.DefaultPriority) return "p2";
         if (key === Settings.OpenInPreview) return false;
         if (key === Settings.GitignoreTodos) return true;
-        if (key === Settings.CompleteFolder) return "complete";
+        if (key === Settings.CompleteFolder) return "completed";
         if (key === Settings.CancelledFolder) return "cancelled";
         if (key === Settings.BacklogFolder) return "backlog";
         return undefined;
@@ -935,7 +935,7 @@ suite("todoModel", () => {
     const config = {
       getRootUri: () => rootUri,
       backlogFolder: "backlog",
-      completeFolder: "complete",
+      completeFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -1072,7 +1072,7 @@ suite("todoModel", () => {
     Object.defineProperty(service, "gitignored", { get: () => true });
     Object.defineProperty(service, "backlogFolder", { get: () => "backlog" });
     Object.defineProperty(service, "cancelledFolder", { get: () => "cancelled" });
-    Object.defineProperty(service, "completeFolder", { get: () => "complete" });
+    Object.defineProperty(service, "completeFolder", { get: () => "completed" });
 
     const rootUri = service.getRootUri();
     const subfolderUri = service.getSubfolderUri("backlog");
@@ -1145,10 +1145,10 @@ suite("todoModel", () => {
     const config = {
       getRootUri: () => rootUri,
       backlogFolder: "backlog",
-      completeFolder: "complete",
+      completeFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
-    Object.assign(config, { getTodoFolders: () => ["", "backlog", "complete", "cancelled"] });
+    Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
     const service = new LinkService(config);
 
     const references = await service.findReferencesToName(staleName, otherUri);
@@ -1452,9 +1452,9 @@ suite("todoModel", () => {
         path.join(todosDir, ".agendo-config.json"),
         JSON.stringify({ completeFolder: "done" }),
       );
-      todos.setTodoStatus("001", "complete", root);
-      await fs.stat(path.join(todosDir, "done", "001-complete-p2-sample.md"));
-      assert.strictEqual(todos.loadTodo("001", root).status, "complete");
+      todos.setTodoStatus("001", "completed", root);
+      await fs.stat(path.join(todosDir, "done", "001-completed-p2-sample.md"));
+      assert.strictEqual(todos.loadTodo("001", root).status, "completed");
     } finally {
       await fs.rm(root, { recursive: true, force: true });
     }
@@ -1559,7 +1559,7 @@ suite("todoModel", () => {
       },
       {
         id: "003",
-        status: "complete",
+        status: "completed",
         priority: "p3",
         title: "Done",
         description: "done",
@@ -1567,10 +1567,10 @@ suite("todoModel", () => {
         dependencies: [],
         children: [],
         epic: false,
-        folder: "complete",
-        fileName: "003-complete-p3-done.md",
-        uri: vscode.Uri.file("/tmp/003-complete-p3-done.md"),
-        frontmatter: { status: "complete", priority: "p3" },
+        folder: "completed",
+        fileName: "003-completed-p3-done.md",
+        uri: vscode.Uri.file("/tmp/003-completed-p3-done.md"),
+        frontmatter: { status: "completed", priority: "p3" },
       },
     ];
     const snapshot = buildBoardSnapshot(
@@ -1588,7 +1588,7 @@ suite("todoModel", () => {
 
     assert.deepStrictEqual(
       snapshot.columns.map((column) => column.status),
-      ["pending", "in-progress", "ready", "backlogged", "complete", "cancelled"],
+      ["pending", "in-progress", "ready", "backlogged", "completed", "cancelled"],
     );
     assert.deepStrictEqual(
       snapshot.columns.find((column) => column.status === "ready")?.todos.map((todo) => todo.id),
@@ -1604,7 +1604,7 @@ suite("todoModel", () => {
       "JIRA-002",
     );
     assert.strictEqual(
-      snapshot.columns.find((column) => column.status === "complete")?.todos.length,
+      snapshot.columns.find((column) => column.status === "completed")?.todos.length,
       0,
     );
     assert.strictEqual(
@@ -1719,11 +1719,11 @@ suite("todoModel", () => {
         totalCount: 2,
       },
       {
-        status: "complete",
+        status: "completed",
         label: "Complete",
         icon: "pass-filled",
         todos: Array.from({ length: 12 }, (_, index) =>
-          makeTodo(String(index + 1).padStart(3, "0"), "complete"),
+          makeTodo(String(index + 1).padStart(3, "0"), "completed"),
         ),
         totalCount: 12,
       },
@@ -1928,7 +1928,7 @@ suite("todoModel", () => {
       const send = async (message: unknown) => receiveMessage?.(message);
       await send({ type: "ready" });
       const before = messages.length;
-      await send({ type: "setStatus", todoId: "001", status: "complete" });
+      await send({ type: "setStatus", todoId: "001", status: "completed" });
       const busy = messages
         .slice(before)
         .find((message) => (message as { type?: string }).type === "busy");
@@ -1991,10 +1991,10 @@ suite("todoModel", () => {
     const config = {
       getRootUri: () => rootUri,
       backlogFolder: "backlog",
-      completeFolder: "complete",
+      completeFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
-    Object.assign(config, { getTodoFolders: () => ["", "backlog", "complete", "cancelled"] });
+    Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
     const repository = new TodoRepository(config);
 
     await repository.refresh();
@@ -2573,7 +2573,7 @@ suite("todoModel", () => {
     const allTodos: Todo[] = [
       {
         id: "001",
-        status: "complete",
+        status: "completed",
         priority: "p1",
         title: "First",
         description: "first",
@@ -2581,10 +2581,10 @@ suite("todoModel", () => {
         dependencies: [],
         children: [],
         epic: false,
-        folder: "complete",
-        fileName: "001-complete-p1-first.md",
-        uri: vscode.Uri.file("/tmp/001-complete-p1-first.md"),
-        frontmatter: { status: "complete", priority: "p1" },
+        folder: "completed",
+        fileName: "001-completed-p1-first.md",
+        uri: vscode.Uri.file("/tmp/001-completed-p1-first.md"),
+        frontmatter: { status: "completed", priority: "p1" },
       },
       {
         id: "002",
@@ -2608,7 +2608,7 @@ suite("todoModel", () => {
   test("getBlockedBy returns dependents that are not terminal", () => {
     const todo: Todo = {
       id: "001",
-      status: "complete",
+      status: "completed",
       priority: "p1",
       title: "First",
       description: "first",
@@ -2616,10 +2616,10 @@ suite("todoModel", () => {
       dependencies: [],
       children: [],
       epic: false,
-      folder: "complete",
-      fileName: "001-complete-p1-first.md",
-      uri: vscode.Uri.file("/tmp/001-complete-p1-first.md"),
-      frontmatter: { status: "complete", priority: "p1" },
+      folder: "completed",
+      fileName: "001-completed-p1-first.md",
+      uri: vscode.Uri.file("/tmp/001-completed-p1-first.md"),
+      frontmatter: { status: "completed", priority: "p1" },
     };
     const allTodos: Todo[] = [
       {
@@ -2639,7 +2639,7 @@ suite("todoModel", () => {
       },
       {
         id: "003",
-        status: "complete",
+        status: "completed",
         priority: "p3",
         title: "Third",
         description: "third",
@@ -2647,10 +2647,10 @@ suite("todoModel", () => {
         dependencies: ["001"],
         children: [],
         epic: false,
-        folder: "complete",
-        fileName: "003-complete-p3-third.md",
-        uri: vscode.Uri.file("/tmp/003-complete-p3-third.md"),
-        frontmatter: { status: "complete", priority: "p3" },
+        folder: "completed",
+        fileName: "003-completed-p3-third.md",
+        uri: vscode.Uri.file("/tmp/003-completed-p3-third.md"),
+        frontmatter: { status: "completed", priority: "p3" },
       },
     ];
     assert.deepStrictEqual(getBlockedBy(todo, allTodos), ["002"]);
@@ -2840,7 +2840,7 @@ suite("todoModel", () => {
     const config = {
       getRootUri: () => rootUri,
       backlogFolder: "backlog",
-      completeFolder: "complete",
+      completeFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -2895,7 +2895,7 @@ suite("todoModel", () => {
     const config = {
       getRootUri: () => rootUri,
       backlogFolder: "backlog",
-      completeFolder: "complete",
+      completeFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);

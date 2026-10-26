@@ -247,7 +247,7 @@ suite("canvasHostActions", () => {
     const todo = makeTodo("cql-001");
     const { actions, status } = createActions([todo]);
 
-    await actions.setStatus("cql-001", "complete");
+    await actions.setStatus("cql-001", "completed");
     assert.strictEqual(status.setStatusCalls.length, 1);
   });
 
@@ -262,7 +262,7 @@ suite("canvasHostActions", () => {
       links: links as never,
     });
 
-    await actions.setStatus("015", "complete");
+    await actions.setStatus("015", "completed");
 
     assert.strictEqual(links.warnCalls.length, 1);
     assert.strictEqual(links.warnCalls[0].oldName, todo.fileName);

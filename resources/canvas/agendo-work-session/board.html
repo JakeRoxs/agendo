@@ -54,7 +54,7 @@
     .card.accent-status-pending { border-left-color: var(--vscode-descriptionForeground, #aaa); }
     .card.accent-status-in-progress { border-left-color: var(--vscode-charts-orange, #f18f44); }
     .card.accent-status-backlogged { border-left-color: var(--vscode-charts-purple, #9a7fbf); }
-    .card.accent-status-complete { border-left-color: var(--vscode-charts-green, #4dbb5f); }
+    .card.accent-status-completed { border-left-color: var(--vscode-charts-green, #4dbb5f); }
     .card.blocked { box-shadow: inset 0 0 0 1px var(--vscode-charts-red, #f14c4c); }
     .collision-warning { color: var(--vscode-editorWarning-foreground, #cca700); font-size: 0.85em; margin: 4px 0; }
     .source-section { margin-bottom: 20px; overflow-x: auto; padding-bottom: 8px; }
@@ -238,7 +238,7 @@ function renderSettings(snapshot) {
   columnRulesTitle.className = "settings-section-title";
   columnRulesTitle.textContent = "Column rules";
   settings.append(columnRulesTitle);
-  for (const status of ["pending", "in-progress", "ready", "backlogged", "complete", "cancelled"]) {
+  for (const status of ["pending", "in-progress", "ready", "backlogged", "completed", "cancelled"]) {
     settings.append(createSelectSetting(
       status + " sort",
       snapshot.columnSorts[status] || "global",
@@ -561,7 +561,7 @@ function createCard(todo, snapshot) {
       ["in-progress", "In Progress"],
       ["ready", "Ready"],
       ["backlogged", "Backlog"],
-      ["complete", "Complete"],
+      ["completed", "Complete"],
       ["cancelled", "Cancelled"],
     ], "setStatus", "status", "Change status"),
     createQuickSelect(todo, todo.priority, [

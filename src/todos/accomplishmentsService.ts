@@ -90,7 +90,7 @@ export function buildAccomplishmentsPacket(
   todos: readonly Todo[],
   filter: AccomplishmentsFilter,
 ): AccomplishmentsPacket {
-  const completed = todos.filter((todo) => todo.status === "complete");
+  const completed = todos.filter((todo) => todo.status === "completed");
   const matched = completed.filter((todo) => matchesFilter(todo, filter));
 
   // Sort by completion date descending, then by ID for determinism.
