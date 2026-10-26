@@ -148,6 +148,7 @@ select.badge option{background:#2d2d2d;color:#e6e6e6;text-align:left;}
 .settings-section dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;}
 .settings-section dt{color:#8a8a8a;font-weight:400;}
 .settings-section dd{margin:0;}
+.settings-hint{color:#666;font-size:0.9em;margin-top:-8px;margin-bottom:12px;}
 .settings-actions{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;}
 .settings-link{display:inline-block;padding:4px 0;}
 .settings-link.active{font-weight:600;}

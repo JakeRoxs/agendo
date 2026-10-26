@@ -67,8 +67,17 @@ export async function activate(context: vscode.ExtensionContext) {
         extensionVersion: context.extension.packageJSON.version,
         skill: skillStatus,
         canvas: canvasStatus,
+        workspace: {
+          root: config.root,
+          gitignored: config.gitignored,
+          backlogFolder: config.backlogFolder,
+          cancelledFolder: config.cancelledFolder,
+          completeFolder: config.completeFolder,
+          codeScanningEnabled: get<boolean>(Settings.CodeScanningEnabled),
+        },
         viewOptions: {
           groupBy: get<string>(Settings.GroupBy),
+          sortByDate: get<boolean>(Settings.SortByDate),
         },
       };
     },

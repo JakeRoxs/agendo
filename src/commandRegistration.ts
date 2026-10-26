@@ -197,6 +197,23 @@ export function registerCommands(
       scanning = false;
     }
   });
+  register(Command.ShowMcpConfig, async () => {
+    const mcpConfig = {
+      mcpServers: {
+        agendo: {
+          command: "node",
+          args: [path.join(context.extensionPath, "resources", "mcp", "server.mjs")],
+          description: "Agendo todo management",
+        },
+      },
+    };
+    const json = JSON.stringify(mcpConfig, null, 2);
+    const doc = await vscode.workspace.openTextDocument({
+      content: json,
+      language: "json",
+    });
+    vscode.window.showTextDocument(doc, { preview: false });
+  });
 }
 
 async function runCodeScanningImport(

@@ -153,6 +153,39 @@
     location.href = '/settings';
   });
 
+  document.querySelector('[data-copy-context]')?.addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    message.textContent = '';
+    try {
+      const res = await post('/context', {});
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const text = [
+        `# ${data.id}: ${data.title}`,
+        `Status: ${data.status} | Priority: ${data.priority}${data.group ? ` | Group: ${data.group}` : ''}`,
+        '',
+        data.description ? `## Description\n${data.description}` : '',
+        '',
+        data.criteria?.length ? `## Acceptance Criteria (${data.criteria.filter(c => c.met).length}/${data.criteria.length} met)` : '',
+        ...(data.criteria || []).map((c, i) => `- [${c.met ? 'x' : ' '}] ${c.text}`),
+        '',
+        data.dependencies?.length ? `## Dependencies\n${data.dependencies.map(d => `- ${d.id}: ${d.title} (${d.status})`).join('\n')}` : '',
+        '',
+        data.resumeContext ? `## Resume Context\n${data.resumeContext}` : '',
+        '',
+        data.scannerEvidence ? `## Scanner Evidence\n${data.scannerEvidence}` : ''
+      ].filter(Boolean).join('\n');
+      await navigator.clipboard.writeText(text);
+      message.textContent = 'Context copied to clipboard';
+      setTimeout(() => { message.textContent = ''; }, 3000);
+    } catch (err) {
+      message.textContent = 'Could not copy context: ' + err.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
   // Recent views dropdown
   const titleButton = document.querySelector('[data-toggle-recent]');
   const recentDropdown = document.querySelector('[data-recent-dropdown]');
@@ -301,8 +334,13 @@
   const key = 'agendo-last-' + todoId;
   const last = JSON.parse(sessionStorage.getItem(key) || 'null');
   if (last) {
-    if (status === 'complete' && last.status !== 'complete') celebrate('Todo complete! 🎉');
-    else if (Number(percent) === 100 && last.percent < 100) celebrate('All criteria met! ✅');
+    if (status === 'complete' && last.status !== 'complete') {
+      // Only celebrate completion if criteria haven't already hit 100 (which would
+      // have fired its own celebration on the previous load).
+      if (last.percent < 100) celebrate('Todo complete! 🎉');
+    } else if (Number(percent) === 100 && last.percent < 100 && status !== 'complete') {
+      celebrate('All criteria met! ✅');
+    }
   }
   sessionStorage.setItem(key, JSON.stringify({ status, percent: Number(percent) }));
 

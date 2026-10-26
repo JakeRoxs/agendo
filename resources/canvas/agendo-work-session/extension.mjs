@@ -5,7 +5,7 @@ import { CanvasError as SdkCanvasError, createCanvas, joinSession } from '@githu
 import { CanvasError } from './errors.mjs';
 
 import { createInstanceServer, listen, navigate } from './server.mjs';
-import { assertTodoId, getRelations, loadTodo, resolveWorkspaceRoot, setCriterionMet } from './todos.mjs';
+import { assertTodoId, getRelations, listGroups, loadGroupTodos, loadTodo, resolveWorkspaceRoot, setCriterionMet } from './todos.mjs';
 
 // Works from a project install (.github/extensions/) or a user-level one (~/.copilot/extensions/).
 const workspaceRoot = resolveWorkspaceRoot(dirname(fileURLToPath(import.meta.url)));
@@ -116,6 +116,41 @@ const canvas = createCanvas({
           historyLength: entry.history.length,
           position: entry.pos
         };
+      })
+    },
+    {
+      name: 'navigate',
+      description: 'Navigate the canvas to a todo, group, or board view',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          view: {
+            oneOf: [
+              { type: 'string', description: 'Todo ID' },
+              { type: 'object', properties: { kind: { const: 'todo' }, todoId: todoIdSchema }, required: ['kind', 'todoId'] },
+              { type: 'object', properties: { kind: { const: 'group' }, groupName: { type: 'string' } }, required: ['kind', 'groupName'] },
+              { type: 'object', properties: { kind: { const: 'board' }, scope: { enum: ['todos', 'code-scanning'] } }, required: ['kind', 'scope'] }
+            ]
+          }
+        },
+        required: ['view']
+      },
+      handler: guard(async ({ input }) => {
+        const entry = [...servers.values()][0];
+        if (!entry) {
+          throw new CanvasError('no_active_canvas', 'No active canvas instance');
+        }
+        navigate(entry, input?.view);
+        return { success: true, view: entry.view, todoId: entry.todoId, groupName: entry.groupName };
+      })
+    },
+    {
+      name: 'list_groups',
+      description: 'List all todo groups with member counts',
+      inputSchema: { type: 'object', properties: {} },
+      handler: guard(async () => {
+        const groups = listGroups(workspaceRoot);
+        return { groups: groups.map(g => ({ name: g, memberCount: loadGroupTodos(g, workspaceRoot).length })) };
       })
     },
     {

@@ -224,6 +224,7 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
 
   const groupPill = `<label class="badge-select"><span class="visually-hidden">Change group</span><select data-group-select class="badge badge-group" aria-label="Change group"><option value=""${!todo.group ? ' selected' : ''}>no group</option>${groups.map(g => `<option value="${escapeHtml(g)}"${todo.group === g ? ' selected' : ''}>${escapeHtml(g)}</option>`).join('')}</select></label>`;
   const editButton = actions.edit ? '<button type="button" class="edit-button" data-edit title="Edit todo file" aria-label="Edit todo file"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m16 3 5 5-12 12H4v-5Z"/><path d="m13 6 5 5"/></svg><span>Edit</span></button>' : '';
+  const copyContextButton = '<button type="button" class="edit-button" data-copy-context title="Copy context to clipboard" aria-label="Copy context to clipboard"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>Copy Context</span></button>';
   const settingsButton = '<button type="button" class="edit-button" data-settings title="Settings and About" aria-label="Settings and About"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg><span>Settings</span></button>';
   const navigation = renderNavigation(nav, todo);
 
@@ -240,7 +241,7 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = []) {
   <link rel="stylesheet" href="/page.css"></head>
   <body data-todo-id="${escapeHtml(todo.id)}" data-status="${escapeHtml(todo.status)}" data-percent="${percent}">
     <main>
-      ${navigation || editButton || settingsButton ? `<div class="canvas-toolbar">${navigation}${editButton}${settingsButton}</div>` : ''}
+      ${navigation || editButton || settingsButton || copyContextButton ? `<div class="canvas-toolbar">${navigation}${editButton}${copyContextButton}${settingsButton}</div>` : ''}
       ${validationBanner}
       <h1><span class="todo-id">#${escapeHtml(displayId(todo.id))}</span>${escapeHtml(displayTitle(todo))}</h1>
       <div class="meta">

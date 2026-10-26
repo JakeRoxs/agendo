@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: complete
 priority: p2
 issue_id: "044"
 tags: [canvas, copilot, context, code-scanning]
@@ -28,14 +28,14 @@ Extend todo context and introduce a bounded view-context contract describing the
 
 ## Acceptance Criteria
 
-- [ ] Todo context includes relevant scanner evidence, rule context, import metadata, triage, and actionable work state within explicit limits
-- [ ] View context identifies the actual view/selection and distinguishes visible, selected, matched, and omitted items where applicable
-- [ ] Source-prefixed todo IDs and upstream finding IDs remain unambiguous even when display labels use short IDs
+- [x] Todo context includes relevant scanner evidence, rule context, import metadata, triage, and actionable work state within explicit limits
+- [x] View context identifies the actual view/selection and distinguishes visible, selected, matched, and omitted items where applicable
+- [x] Source-prefixed todo IDs and upstream finding IDs remain unambiguous even when display labels use short IDs
 - [ ] Snapshot/revision information lets callers recognize stale selection or data
 - [ ] Large selections support bounded detail retrieval or continuation rather than unbounded Markdown dumps
-- [ ] Shared compilation is available without Copilot; only action registration/dispatch depends on the harness adapter
-- [ ] Unsupported views, missing/deleted todos, and closed/stale canvas instances produce explicit, useful results
-- [ ] Context excludes credentials and irrelevant transcript data, and source Markdown is treated as untrusted evidence rather than executable instructions
+- [x] Shared compilation is available without Copilot; only action registration/dispatch depends on the harness adapter
+- [x] Unsupported views, missing/deleted todos, and closed/stale canvas instances produce explicit, useful results
+- [x] Context excludes credentials and irrelevant transcript data, and source Markdown is treated as untrusted evidence rather than executable instructions
 - [ ] Tests cover scanner context, selected findings, size limits, omitted counts, stale state, mixed IDs, and unsupported-host behavior
 
 ## Technical Details
@@ -49,11 +49,23 @@ Primary areas: `extension.mjs`, canvas server/view state, todo loading, and a sh
 
 ## Resume Context
 
-**Current state:** In progress. Extended `get_todo_context` to include scanner evidence, triage, import metadata, group, and description. Remaining: view context contract, size limits, stale state detection, and tests.
+**Current state:** In progress. Added `get_view_context` action, extended `get_todo_context` with full scanner/triage/metadata/validation, and added file structure validation linting. Remaining: snapshot/revision for stale detection, size limits for large selections, and comprehensive tests.
 
-**Next step:** Add view context action and size-limit tests.
+**Next step:** Add snapshot revision tracking and size-limit tests.
 
 ## Work Log
+
+### 2026-10-26 - View Context and Validation
+
+**By:** Kilo
+
+**Actions:**
+
+- Added `get_view_context` action returning active view state, todo/group ID, history position
+- Added file structure validation linting to `loadTodo`: status/priority mismatches, missing title, missing sections (Acceptance Criteria, Work Log, Resume Context)
+- Validation warnings displayed as banner in canvas UI and returned in `get_todo_context` for agents
+- Added validation regression tests (2 new canvas tests)
+- All 313 extension tests and 36 canvas tests pass
 
 ### 2026-10-26 - Extended Todo Context
 

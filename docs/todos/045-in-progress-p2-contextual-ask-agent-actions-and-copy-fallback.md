@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 priority: p2
 issue_id: "045"
 tags: [canvas, copilot, prompts, context, ux]
@@ -7,7 +7,7 @@ group: copilot-integration
 dependencies: ["044"]
 ---
 
-# Contextual Ask Copilot Actions and Copy Fallback
+# Contextual Ask Agent Actions and Copy Fallback
 
 Let users request help for a selected finding, todo, or group directly from the work surface without repeating its context in chat.
 
@@ -49,11 +49,23 @@ Primary areas: canvas controls, local request routing, the optional Copilot sess
 
 ## Resume Context
 
-**Current state:** Pending. No contextual request buttons or session-send bridge have been added.
+**Current state:** In progress. Copy Context fallback implemented with bounded context packet (id, title, status, priority, group, description, criteria, dependencies, blockedBy, scannerEvidence, resumeContext, validation). Copilot session integration (Explain Finding, Investigate Selection, etc.) not yet implemented.
 
-**Next step:** Use the packet contract from 044 to prototype one Explain Finding action with a supported-host path and Copy Context fallback.
+**Next step:** Implement Explain Finding action with Copilot session bridge using joinSession() from @github/copilot-sdk/extension.
 
 ## Work Log
+
+### 2026-10-26 - Copy Context Fallback Implemented
+
+**By:** Kilo
+
+**Actions:**
+
+- Added `/context` POST endpoint to canvas server returning bounded JSON context packet
+- Added "Copy Context" button to canvas toolbar with clipboard API integration
+- Context packet includes: id, title, status, priority, group, description, criteria (with met state), dependencies, blockedBy, scannerEvidence, resumeContext, validation
+- Added canvas regression test for copy context button rendering
+- All 313 extension tests and 38 canvas tests pass
 
 ### 2026-10-25 - Todo Created
 

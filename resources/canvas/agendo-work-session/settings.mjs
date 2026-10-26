@@ -19,6 +19,21 @@ export function renderSettingsPage(info) {
   const groupByLabels = { status: 'Status', priority: 'Priority', group: 'Group', none: 'None (flat)' };
   const groupByHtml = groupByOptions.map(mode => `<a href="#" data-action="set-group-by" data-scope="${mode}" class="settings-link${mode === groupBy ? ' active' : ''}">${groupByLabels[mode]}${mode === groupBy ? ' (current)' : ''}</a>`).join(' ');
 
+  const ws = info.workspace || {};
+  const workspaceSection = `
+      <section class="settings-section">
+        <h2>Workspace Settings</h2>
+        <p class="settings-hint">Projected to <code>.agendo-config.json</code> for agent visibility</p>
+        <dl>
+          <dt>Root folder</dt><dd><code>${escapeHtml(ws.root || 'docs/todos')}</code></dd>
+          <dt>Gitignored</dt><dd>${ws.gitignored ? 'Yes' : 'No'}</dd>
+          <dt>Backlog folder</dt><dd><code>${escapeHtml(ws.backlogFolder || 'backlog')}</code></dd>
+          <dt>Cancelled folder</dt><dd><code>${escapeHtml(ws.cancelledFolder || 'cancelled')}</code></dd>
+          <dt>Complete folder</dt><dd><code>${escapeHtml(ws.completeFolder || 'complete')}</code></dd>
+          <dt>Code scanning</dt><dd>${ws.codeScanningEnabled ? 'Enabled' : 'Disabled'}</dd>
+        </dl>
+      </section>`;
+
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Settings</title>
   <link rel="stylesheet" href="/page.css"></head>
   <body>
@@ -26,17 +41,17 @@ export function renderSettingsPage(info) {
       <div class="canvas-toolbar"><a href="/" class="edit-button" data-back title="Back" aria-label="Back">← Back</a></div>
       <h1>Settings and About</h1>
 
-      <section class="settings-section">
-        <h2>View Options</h2>
-        <p>Tree grouping mode:</p>
-        <div class="settings-actions">${groupByHtml}</div>
-      </section>
+      ${workspaceSection}
 
       <section class="settings-section">
-        <h2>Extension</h2>
+        <h2>Extension Settings</h2>
         <dl>
           <dt>Agendo version</dt><dd>${escapeHtml(extVersion)}</dd>
+          <dt>Tree grouping</dt><dd>${groupBy}</dd>
+          <dt>Sort by date</dt><dd>${info.viewOptions?.sortByDate ? 'Yes' : 'No'}</dd>
         </dl>
+        <p>Tree grouping mode:</p>
+        <div class="settings-actions">${groupByHtml}</div>
         <a href="#" data-action="open-extension-settings" class="settings-link">Open VS Code extension settings</a>
       </section>
 

@@ -165,7 +165,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         if (!actions.handleSettingsAction) throw new CanvasError('unsupported', 'Settings actions are not available in this host');
         const result = await actions.handleSettingsAction(payload);
         send(res, 200, 'application/json', JSON.stringify(result ?? { success: true }));
-      } else if (req.method === 'POST' && ['/toggle', '/open', '/nav', '/status', '/priority', '/group', '/edit', '/return-board', '/board-message'].includes(path)) {
+      } else if (req.method === 'POST' && ['/toggle', '/open', '/nav', '/status', '/priority', '/group', '/edit', '/return-board', '/board-message', '/context'].includes(path)) {
         // The custom header forces a CORS preflight, so other web pages cannot trigger writes.
         if (req.headers['x-agendo-canvas'] !== '1') {
           send(res, 403, 'text/plain', 'Forbidden');
@@ -192,6 +192,23 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         } else if (path === '/group') {
           if (actions.setGroup) await actions.setGroup(assertTodoId(entry.todoId), payload.group);
           else setTodoGroup(entry.todoId, payload.group, workspaceRoot);
+        } else if (path === '/context') {
+          const todo = loadTodo(assertTodoId(entry.todoId), workspaceRoot);
+          const relations = getRelations(entry.todoId, workspaceRoot);
+          return send(res, 200, 'application/json', JSON.stringify({
+            id: todo.id,
+            title: todo.title,
+            status: todo.status,
+            priority: todo.priority,
+            group: todo.group,
+            description: todo.description,
+            criteria: todo.criteria,
+            dependencies: relations.dependencies,
+            blockedBy: relations.blocked,
+            scannerEvidence: todo.scannerEvidence,
+            resumeContext: todo.resumeContext,
+            validation: todo.validation
+          }));
         } else if (path === '/return-board') {
           if (!entry.returnTo || (!actions.returnToBoard && !hasBoard)) throw new CanvasError('unsupported', 'No board return action is available in this host');
           if (hasBoard) {

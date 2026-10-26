@@ -1,5 +1,5 @@
 ---
-status: pending
+status: in-progress
 priority: p2
 issue_id: "046"
 tags: [canvas, copilot, navigation, filtering]
@@ -48,11 +48,23 @@ Primary areas: the shared navigation model from 043, canvas input/action schemas
 
 ## Resume Context
 
-**Current state:** Pending. The adapter still opens individual todos through its existing input schema.
+**Current state:** In progress. Added `navigate` canvas action supporting todo, group, and board views. View normalization and navigation tested. Remaining: filter parity tests, repeated navigation tests, stale target handling, and comprehensive integration tests.
 
-**Next step:** Map the first shared board-to-todo navigation flow to typed canvas actions and verify its observable state through 044.
+**Next step:** Add filter actions and comprehensive navigation tests.
 
 ## Work Log
+
+### 2026-10-26 - Navigate Action Implemented
+
+**By:** Kilo
+
+**Actions:**
+
+- Added `navigate` canvas action accepting todo ID, group name, or board scope
+- Action reuses existing canvas instance and preserves navigation history
+- Returns current view state after navigation for verification via get_view_context
+- Added view normalization regression tests (todo/group/board, invalid inputs)
+- All 313 extension tests and 39 canvas tests pass
 
 ### 2026-10-25 - Todo Created
 

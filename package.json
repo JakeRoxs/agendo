@@ -462,6 +462,11 @@
         "title": "Refresh Imported Todo",
         "category": "Agendo",
         "icon": "$(sync)"
+      },
+      {
+        "command": "agendo.showMcpConfig",
+        "title": "Show MCP Configuration",
+        "category": "Agendo"
       }
     ],
     "menus": {
@@ -933,7 +938,9 @@
     "format": "biome format --write .",
     "test": "node ./out/test/runTest.js",
     "test:coverage": "npm run compile && npm run lint && c8 --reporter=lcov --report-dir=coverage node ./out/test/runTest.js",
-    "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix"
+    "package:vsix": "npm run compile && node -e \"const fs=require('fs'); fs.mkdirSync('.artifacts', { recursive: true });\" && npx @vscode/vsce package --out .artifacts/agendo-${npm_package_version}.vsix",
+    "mcp": "node resources/mcp/server.mjs",
+    "mcp:compile": "tsc src/mcp/server.ts --outDir out/mcp --module commonjs --target es2020 --esModuleInterop"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
@@ -949,6 +956,7 @@
     "typescript": "^7.0.2"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "turndown": "^7.2.4"
   }
 }

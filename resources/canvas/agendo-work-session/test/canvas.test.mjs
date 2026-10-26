@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { loadTodo, loadGroupTodos } from '../todos.mjs';
 import { renderCanvas, renderGroupCanvas } from '../page.mjs';
+import { normalizeView } from '../server.mjs';
 import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -351,6 +352,64 @@ describe('Settings button and page', () => {
     const html = renderSettingsPage({});
     assert.ok(html.includes('?'), 'Should show placeholder for missing versions');
     assert.ok(html.includes('not installed'), 'Should show not installed for missing status');
+  });
+
+  it('renders workspace settings section', () => {
+    const html = renderSettingsPage({
+      extensionVersion: '0.3.0',
+      workspace: {
+        root: 'docs/todos',
+        gitignored: true,
+        backlogFolder: 'backlog',
+        cancelledFolder: 'cancelled',
+        completeFolder: 'complete',
+        codeScanningEnabled: true
+      },
+      viewOptions: { groupBy: 'status', sortByDate: true }
+    });
+    assert.ok(html.includes('Workspace Settings'), 'Should have workspace settings section');
+    assert.ok(html.includes('.agendo-config.json'), 'Should mention config file projection');
+    assert.ok(html.includes('docs/todos'), 'Should show root folder');
+    assert.ok(html.includes('Gitignored') && html.includes('Yes'), 'Should show gitignored status');
+    assert.ok(html.includes('backlog'), 'Should show backlog folder');
+    assert.ok(html.includes('Enabled'), 'Should show code scanning enabled');
+    assert.ok(html.includes('Extension Settings'), 'Should have extension settings section');
+    assert.ok(html.includes('Tree grouping'), 'Should show grouping setting');
+  });
+
+  it('renders copy context button in toolbar', () => {
+    const html = renderCanvas({
+      id: '001',
+      title: 'Test Todo',
+      status: 'pending',
+      priority: 'p2',
+      description: 'Test',
+      criteria: [],
+      dependencies: [],
+      workLog: [],
+      resumeContext: '',
+      scannerEvidence: '',
+      triage: {},
+      scan: null
+    }, { blocked: false, dependencies: [], dependents: [] }, { recent: [], pos: -1 });
+    assert.ok(html.includes('data-copy-context'), 'Should render copy context button');
+    assert.ok(html.includes('Copy Context'), 'Should have Copy Context label');
+  });
+
+  it('normalizes view inputs for navigation', () => {
+    // Todo by ID string
+    assert.deepEqual(normalizeView('001'), { kind: 'todo', todoId: '001' });
+    // Todo by object
+    assert.deepEqual(normalizeView({ kind: 'todo', todoId: '002' }), { kind: 'todo', todoId: '002' });
+    // Group by object
+    assert.deepEqual(normalizeView({ kind: 'group', groupName: 'testing' }), { kind: 'group', groupName: 'testing' });
+    // Board by object
+    assert.deepEqual(normalizeView({ kind: 'board', scope: 'todos' }), { kind: 'board', scope: 'todos' });
+    assert.deepEqual(normalizeView({ kind: 'board', scope: 'code-scanning' }), { kind: 'board', scope: 'code-scanning' });
+    // Invalid views throw
+    assert.throws(() => normalizeView({ kind: 'invalid' }), /Expected a todo, group, or board selection/);
+    assert.throws(() => normalizeView({ kind: 'board', scope: 'invalid' }), /Expected a todo, group, or board selection/);
+    assert.throws(() => normalizeView({ kind: 'group', groupName: '' }), /Expected a todo, group, or board selection/);
   });
 
   it('settings button is keyboard accessible', () => {
