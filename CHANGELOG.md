@@ -4,6 +4,17 @@ All notable changes to the Agendo extension are documented here.
 
 ## [Unreleased]
 
+Includes work-session canvas **0.1.11**.
+
+### Changed
+
+- Automatically install the bundled work-session canvas on extension activation when missing, or refresh equal and older versions, while preserving newer independently installed versions and leaving GitHub/source updates explicit
+
+### Fixed
+
+- Include the digest runtime module in bundled and source canvas installations so the Copilot harness can load and register the canvas instead of exiting with a missing-module error
+- Prevent duplicate scrollbars in the embedded canvas by disabling outer webview scrolling and removing the iframe baseline gap, while preserving scrolling within the canvas
+
 ## [0.3.0] - 2026-10-27
 
 Includes Agendo skill **1.6.2** and work-session canvas **0.1.10**.

@@ -2319,8 +2319,16 @@ suite("todoModel", () => {
       await fs.mkdir(path.join(canvasFixture, "assets"), { recursive: true });
       for (const name of [
         ".canvas-meta.json",
+        "agent-requests.mjs",
+        "proposals.mjs",
+        "approval.mjs",
+        "board.html",
+        "board.mjs",
+        "copilot-extension.json",
+        "digest.mjs",
         "extension.mjs",
         "server.mjs",
+        "settings.mjs",
         "todos.mjs",
         "page.mjs",
         "markdown.mjs",
@@ -2339,6 +2347,33 @@ suite("todoModel", () => {
       const originalHome = process.env.HOME;
       process.env.HOME = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-home-"));
       await activate(context as never);
+      assert.strictEqual(
+        JSON.parse(
+          await fs.readFile(
+            path.join(
+              process.env.COPILOT_HOME,
+              "extensions",
+              "agendo-work-session",
+              ".canvas-meta.json",
+            ),
+            "utf8",
+          ),
+        ).version,
+        "0.1.0",
+      );
+      assert.strictEqual(
+        await fs.readFile(
+          path.join(
+            process.env.COPILOT_HOME,
+            "extensions",
+            "agendo-work-session",
+            "assets",
+            "page.js",
+          ),
+          "utf8",
+        ),
+        "",
+      );
       assert.strictEqual(watcherCreationCount, 1);
       assert.deepStrictEqual(treeViewIds, [
         "agendo.todos",

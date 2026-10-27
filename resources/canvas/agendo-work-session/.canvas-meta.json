@@ -1,6 +1,6 @@
 {
   "name": "agendo-work-session",
   "description": "Interactive work session dashboard for Agendo todos with acceptance criteria tracking",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "installedVia": "agendo-extension"
 }

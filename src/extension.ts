@@ -37,6 +37,13 @@ export async function activate(context: vscode.ExtensionContext) {
   const links = new LinkService(config);
   const skill = new SkillManager(context.extensionUri);
   const canvas = new CanvasManager(context.extensionUri);
+  // Provision the local bundle before registering canvas actions. Source updates
+  // remain explicit, and a newer installed canvas is never downgraded.
+  try {
+    await canvas.ensureBundledInstalled();
+  } catch (error) {
+    out`Could not install the bundled work-session canvas automatically: ${error}`;
+  }
   const taskActions = createCanvasHostActions({ repository, status, links });
   const canvasViewer = new CanvasViewer(context.extensionUri, {
     ...taskActions,
