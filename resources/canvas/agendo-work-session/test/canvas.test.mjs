@@ -406,10 +406,14 @@ describe('Settings button and page', () => {
     // Board by object
     assert.deepEqual(normalizeView({ kind: 'board', scope: 'todos' }), { kind: 'board', scope: 'todos' });
     assert.deepEqual(normalizeView({ kind: 'board', scope: 'code-scanning' }), { kind: 'board', scope: 'code-scanning' });
+    // Digest by object
+    assert.deepEqual(normalizeView({ kind: 'digest', scope: 'todos' }), { kind: 'digest', scope: 'todos' });
+    assert.deepEqual(normalizeView({ kind: 'digest', scope: 'code-scanning' }), { kind: 'digest', scope: 'code-scanning' });
     // Invalid views throw
-    assert.throws(() => normalizeView({ kind: 'invalid' }), /Expected a todo, group, or board selection/);
-    assert.throws(() => normalizeView({ kind: 'board', scope: 'invalid' }), /Expected a todo, group, or board selection/);
-    assert.throws(() => normalizeView({ kind: 'group', groupName: '' }), /Expected a todo, group, or board selection/);
+    assert.throws(() => normalizeView({ kind: 'invalid' }), /Expected a todo, group, board, or digest selection/);
+    assert.throws(() => normalizeView({ kind: 'board', scope: 'invalid' }), /Expected a todo, group, board, or digest selection/);
+    assert.throws(() => normalizeView({ kind: 'digest', scope: 'invalid' }), /Expected a todo, group, board, or digest selection/);
+    assert.throws(() => normalizeView({ kind: 'group', groupName: '' }), /Expected a todo, group, board, or digest selection/);
   });
 
   it('settings button is keyboard accessible', () => {

@@ -1779,10 +1779,10 @@ suite("native code scanning", () => {
       dependents: [],
     };
     const html = renderCanvas(todo, relations, { canBack: true, canForward: false, recent });
-    assert.match(html, /<title>typescript:S3776<\/title>/);
-    assert.match(html, /<h1><span class="todo-id">#002<\/span>typescript:S3776<\/h1>/);
-    assert.match(html, /sq · #002 typescript:S3776/);
-    assert.match(html, /cql · #001 js\/example/);
+    assert.match(html, /<title>src\/foo\.ts<\/title>/);
+    assert.match(html, /<h1><span class="todo-id">#002<\/span>src\/foo\.ts<\/h1>/);
+    assert.match(html, /sq · #002 src\/foo\.ts/);
+    assert.match(html, /cql · #001 src\/baz\.ts/);
     assert.match(html, /source-sonarqube[^>]*>sq<\/span> #001<\/button>/);
     assert.match(html, /source-codeql[^>]*>cql<\/span> #001<\/button>/);
     assert.match(html, /class="todo-id">#999<\/span>/);
