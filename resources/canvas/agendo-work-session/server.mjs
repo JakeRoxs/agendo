@@ -422,14 +422,14 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         if (entry.view?.kind === 'board') {
           boardScope();
           const nonce = randomBytes(16).toString('hex');
-          const boardCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
+          const boardCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors * vscode-webview: vscode-file:;`;
           html = renderBoardCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, boardCsp);
           send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': boardCsp });
           return;
         } else if (entry.view?.kind === 'digest') {
           if (!hasDigest) throw new CanvasError('unsupported', 'Digest view is not available in this host');
           const nonce = randomBytes(16).toString('hex');
-          const digestCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
+          const digestCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors * vscode-webview: vscode-file:;`;
           html = renderDigestCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, digestCsp);
           send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': digestCsp });
           return;
