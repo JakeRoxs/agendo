@@ -4,6 +4,8 @@ All notable changes to the Agendo extension are documented here.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-27
+
 Includes work-session canvas **0.1.11**.
 
 ### Changed
