@@ -105,7 +105,7 @@ tracking keys are displayed and searchable when present.
 | `agendo.defaultPriority`                   | `p3`         | Default priority for new todos                                                        |
 | `agendo.completedFolder`                   | `completed`  | Folder for completed todos                                                            |
 | `agendo.cancelledFolder`                   | `cancelled`  | Folder for cancelled todos                                                            |
-| `agendo.backloggedFolder`                  | `backlog`    | Folder for backlogged todos                                                           |
+| `agendo.backloggedFolder`                  | `backlogged` | Folder for backlogged todos                                                           |
 | `agendo.viewMode`                          | `default`    | Open todos using VS Code default behavior, editor, preview, preview editor, or canvas |
 | `agendo.groupBy`                           | `status`     | Group the regular tree by status, priority, group, or not at all                      |
 | `agendo.sortByDate`                        | `false`      | Sort regular todos by modification date                                               |
@@ -116,6 +116,12 @@ tracking keys are displayed and searchable when present.
 | `agendo.codeScanning.sortByDate`           | `false`      | Sort scanning todos by modification date                                              |
 | `agendo.codeScanning.sonarqube.url`        | empty        | SonarQube server URL                                                                  |
 | `agendo.codeScanning.sonarqube.projectKey` | empty        | SonarQube project key                                                                 |
+
+The default parked-work folder is now `backlogged/`, matching the `backlogged` status. Existing
+`backlog/` folders are not renamed automatically: rename them to `backlogged/` after checking for
+conflicts, or explicitly set `agendo.backloggedFolder` to `backlog` to retain the previous layout.
+The same configured folder name applies inside each code-scanning source directory. Custom folder
+settings remain supported.
 
 ## Duplicate IDs
 

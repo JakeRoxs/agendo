@@ -4,7 +4,7 @@ import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
-import { buildAccomplishmentsPacket } from "./todos/accomplishmentsService";
+import { buildAccomplishmentsPacket, type AccomplishmentsFilter } from "./todos/accomplishmentsService";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import type { CanvasViewer } from "./todos/canvasViewer";
@@ -148,7 +148,8 @@ export function registerCommands(
   register(Command.CopyAccomplishmentsContext, async () => {
     await services.repository.refresh();
     const todos = services.repository.getTodos();
-    const packet = buildAccomplishmentsPacket(todos, {});
+    const filter = await promptAccomplishmentsFilter();
+    const packet = buildAccomplishmentsPacket(todos, filter);
     await vscode.env.clipboard.writeText(packet.text);
     const omittedSuffix = packet.omittedCount > 0 ? `, ${packet.omittedCount} omitted` : "";
     vscode.window.showInformationMessage(
@@ -1044,6 +1045,17 @@ function registerTodoCommands(
 function registerConfigCommands(register: Register, services: CommandServices): void {
   const { config } = services;
 
+  register(Command.OpenSettings, async (scope?: unknown) => {
+    const root = config.getWorkspaceFolder()?.uri.fsPath;
+    if (!root) {
+      return;
+    }
+    await services.canvasViewer.openSettings(
+      root,
+      scope === "todos" || scope === "code-scanning" ? { kind: "board", scope } : undefined,
+    );
+  });
+
   register(Command.ChooseRoot, async () => {
     const value = await vscode.window.showInputBox({
       prompt: "Workspace-relative path to the todos root folder",
@@ -1143,6 +1155,72 @@ function registerConfigCommands(register: Register, services: CommandServices): 
       await setDefault(Settings.ViewMode, picked.mode as ViewMode);
     }
   });
+}
+
+/** Prompt the user for a time range and optional filters for the accomplishments report. */
+async function promptAccomplishmentsFilter(): Promise<AccomplishmentsFilter> {
+  const filter: AccomplishmentsFilter = {};
+
+  const sinceInput = await vscode.window.showInputBox({
+    prompt: "Start date (inclusive, ISO YYYY-MM-DD; leave blank for none)",
+    placeHolder: "e.g. 2026-10-01",
+  });
+  if (sinceInput === undefined) {
+    return {};
+  }
+  if (sinceInput.trim()) {
+    filter.since = sinceInput.trim();
+  }
+
+  const untilInput = await vscode.window.showInputBox({
+    prompt: "End date (inclusive, ISO YYYY-MM-DD; leave blank for none)",
+    placeHolder: "e.g. 2026-10-31",
+  });
+  if (untilInput === undefined) {
+    return {};
+  }
+  if (untilInput.trim()) {
+    filter.until = untilInput.trim();
+  }
+
+  const groupInput = await vscode.window.showInputBox({
+    prompt: "Group filter (leave blank for none)",
+    placeHolder: "e.g. scanner-workflow",
+  });
+  if (groupInput === undefined) {
+    return {};
+  }
+  if (groupInput.trim()) {
+    filter.group = groupInput.trim();
+  }
+
+  const tagsInput = await vscode.window.showInputBox({
+    prompt: "Tags filter (comma-separated; todos must have all listed tags)",
+    placeHolder: "e.g. bug, critical",
+  });
+  if (tagsInput === undefined) {
+    return {};
+  }
+  if (tagsInput.trim()) {
+    filter.tags = tagsInput
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+  }
+
+  const sourcePick = await vscode.window.showQuickPick(
+    [
+      { label: "CodeQL", description: "source", value: "codeql" as const },
+      { label: "SonarQube", description: "source", value: "sonarqube" as const },
+      { label: "None (all sources)", value: undefined as unknown as string },
+    ],
+    { placeHolder: "Filter by scanner source" },
+  );
+  if (sourcePick && sourcePick.value !== undefined) {
+    filter.source = sourcePick.value as "codeql" | "sonarqube";
+  }
+
+  return filter;
 }
 
 function registerSkillCommands(

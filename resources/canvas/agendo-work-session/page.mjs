@@ -174,7 +174,7 @@ function renderAgentControls() {
       <option value="suggest-fix">Suggest Fix Plan</option><option value="verify">Help Verify</option>
     </select></label>
     <button type="button" data-agent-preview>Preview Request</button>
-    <span class="agent-activity" data-agent-activity aria-live="polite"><span class="agent-activity-dot" data-agent-dot></span><span data-agent-status-text>Session status unknown</span></span>
+    <span class="agent-activity" data-agent-activity><span class="agent-activity-dot" data-agent-dot></span><span data-agent-status-text></span></span>
     <dialog class="agent-dialog" data-agent-dialog aria-labelledby="agent-preview-title">
       <h2 id="agent-preview-title">Review Agent Request</h2>
       <p>Review for sensitive information before sending or copying. This request does not authorize implementation or bypass approvals.</p>
@@ -472,16 +472,18 @@ export function renderNavigation(nav, currentTodo) {
   if (!nav) return '';
   const multiple = nav.recent.length > 1;
   const current = nav.recent.find(r => r.current);
-  const currentTitle = currentTodo ? `#${displayId(currentTodo.id)} ${displayTitle(currentTodo)}` : (current?.kind === 'board' ? (current.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board') : current?.kind === 'group' ? `Group: ${current.groupName}` : 'No todo');
+  const currentTitle = currentTodo ? `#${displayId(currentTodo.id)} ${displayTitle(currentTodo)}` : (current?.kind === 'board' ? (current.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board') : current?.kind === 'group' ? `Group: ${current.groupName}` : current?.kind === 'digest' ? current.title : 'No todo');
   
   const dropdownItems = nav.recent.map(r => r.kind === 'board'
     ? `<button type="button" class="recent-item${r.current ? ' recent-current' : ''}" data-open-board="${escapeHtml(r.scope)}">${r.current ? '— ' : ''}${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}${r.current ? ' —' : ''}</button>`
     : r.kind === 'group' ? `<button type="button" class="recent-item${r.current ? ' recent-current' : ''}" data-open-group="${escapeHtml(r.groupName)}">${r.current ? '— ' : ''}Group: ${escapeHtml(r.groupName)}${r.current ? ' —' : ''}</button>`
+    : r.kind === 'digest' ? `<button type="button" class="recent-item status-border-${escapeHtml(r.status)}${r.current ? ' recent-current' : ''}" data-open-digest="${escapeHtml(r.scope)}">${r.current ? '— ' : ''}${r.title}${r.current ? ' —' : ''}</button>`
     : `<button type="button" class="recent-item status-border-${escapeHtml(r.status)}${r.current ? ' recent-current' : ''}" data-open="${escapeHtml(r.id)}">${r.current ? '— ' : ''}${todoSource(r.id).label} · #${escapeHtml(displayId(r.id))} ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})${r.current ? ' —' : ''}</button>`).join('');
   
   const chips = multiple ? `<ul class="recent" aria-label="Recent views">${nav.recent.filter(r => !r.current).slice(0, VISIBLE_CHIPS).map(r => r.kind === 'board'
     ? `<li><button type="button" class="chip" data-open-board="${escapeHtml(r.scope)}">${r.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board'}</button></li>`
     : r.kind === 'group' ? `<li><button type="button" class="chip" data-open-group="${escapeHtml(r.groupName)}">Group: ${escapeHtml(r.groupName)}</button></li>`
+    : r.kind === 'digest' ? `<li><button type="button" class="chip status-border-${escapeHtml(r.status)}" data-open-digest="${escapeHtml(r.scope)}">${r.title}</button></li>`
     : `<li><button type="button" class="chip source-${todoSource(r.id).key} ${escapeHtml(r.priority)} status-border-${escapeHtml(r.status)}" data-open="${escapeHtml(r.id)}" title="${todoSource(r.id).label}: ${escapeHtml(displayTitle(r))} (${escapeHtml(r.status)})">${sourceBadge(r.id)} #${escapeHtml(displayId(r.id))}</button></li>`).join('')}</ul>` : '';
   
   const titleButton = `<button type="button" class="current-todo-title status-border-${escapeHtml(current?.status ?? 'missing')}" data-toggle-recent aria-expanded="false" title="Click to see recent views">${escapeHtml(currentTitle)}</button>`;

@@ -82,27 +82,32 @@ export function normalizeFilters(input, workspaceRoot) {
 
 const viewKey = view => JSON.stringify(view);
 
-function selectView(entry, view) {
+function selectView(entry, view, returnTo) {
   entry.view = view;
   entry.todoId = view.kind === 'todo' ? view.todoId : undefined;
   entry.groupName = view.kind === 'group' ? view.groupName : undefined;
-  if (view.kind === 'board') entry.returnTo = { kind: 'board', scope: view.scope };
+  entry.returnTo = view.kind === 'todo' ? returnTo : undefined;
 }
 
 // History stores typed selections, never fabricated todo IDs for groups or boards.
 export function navigate(entry, target, returnTo) {
   const view = normalizeView(target);
-  if (returnTo !== undefined) {
-    if (returnTo !== null && (returnTo.kind !== 'board' || !['todos', 'code-scanning'].includes(returnTo.scope))) {
-      throw new CanvasError('invalid_input', 'Invalid board return target');
-    }
-    entry.returnTo = returnTo ? { kind: 'board', scope: returnTo.scope } : undefined;
+  if (returnTo !== undefined && returnTo !== null && (returnTo.kind !== 'board' || !['todos', 'code-scanning'].includes(returnTo.scope))) {
+    throw new CanvasError('invalid_input', 'Invalid board return target');
   }
+  // A return link belongs to this opening of a todo, not to the shared panel.
+  const previousBoard = entry.view?.kind === 'board' ? entry.view : undefined;
+  const origin = returnTo === undefined ? previousBoard : returnTo;
+  const boardReturn = view.kind === 'todo' && origin ? { kind: 'board', scope: origin.scope } : undefined;
+  entry.historyReturnTargets ??= [];
   if (viewKey(entry.history[entry.pos]) !== viewKey(view)) {
     entry.history = [...entry.history.slice(0, entry.pos + 1), view].slice(-MAX_HISTORY);
+    entry.historyReturnTargets = [...entry.historyReturnTargets.slice(0, entry.pos + 1), boardReturn].slice(-MAX_HISTORY);
     entry.pos = entry.history.length - 1;
+  } else {
+    entry.historyReturnTargets[entry.pos] = boardReturn;
   }
-  selectView(entry, view);
+  selectView(entry, view, boardReturn);
 }
 
 export function step(entry, direction) {
@@ -111,7 +116,7 @@ export function step(entry, direction) {
     throw new CanvasError('invalid_input', `Cannot go ${direction}`);
   }
   entry.pos = next;
-  selectView(entry, entry.history[next]);
+  selectView(entry, entry.history[next], entry.historyReturnTargets[next]);
 }
 
 function buildNav(entry, workspaceRoot) {
@@ -123,6 +128,15 @@ function buildNav(entry, workspaceRoot) {
     if (view.kind === 'board') return { ...view, title: view.scope === 'code-scanning' ? 'Code Scanning Board' : 'Todos Board', status: 'board', current };
     if (view.kind === 'group') {
       return { kind: 'group', groupName: view.groupName, title: `Group: ${view.groupName}`, status: 'group', current };
+    }
+    if (view.kind === 'digest') {
+      return {
+        kind: 'digest',
+        scope: view.scope,
+        title: view.scope === 'code-scanning' ? 'Code Scanning Digest' : 'Task Digest',
+        status: 'digest',
+        current,
+      };
     }
     const id = view.todoId;
     return {
@@ -168,7 +182,7 @@ function send(res, status, type, body, extraHeaders = {}) {
  * todo file on every request, so reopening an instance always shows live state.
  */
 export function createInstanceServer(workspaceRoot, actions = {}) {
-  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], pos: -1, url: '', server: null, filters: {} };
+  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], historyReturnTargets: [], pos: -1, url: '', server: null, filters: {} };
   const hasBoard = typeof actions.getBoardSnapshot === 'function' && typeof actions.handleBoardMessage === 'function';
   entry.hasBoard = hasBoard;
   const hasDigest = typeof actions.getDigest === 'function';
@@ -235,7 +249,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           return;
         }
         const payload = JSON.parse(await readBody(req));
-        if (!payload || typeof payload !== 'object') throw new CanvasError('invalid_input', 'Expected an object');
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new CanvasError('invalid_input', 'Expected an object');
         if (!actions.handleSettingsAction) throw new CanvasError('unsupported', 'Settings actions are not available in this host');
         const result = await actions.handleSettingsAction(payload);
         send(res, 200, 'application/json', JSON.stringify(result ?? { success: true }));
@@ -413,14 +427,14 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         if (entry.view?.kind === 'board') {
           boardScope();
           const nonce = randomBytes(16).toString('hex');
-          const boardCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
+          const boardCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors * vscode-webview: vscode-file:;`;
           html = renderBoardCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, boardCsp);
           send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': boardCsp });
           return;
         } else if (entry.view?.kind === 'digest') {
           if (!hasDigest) throw new CanvasError('unsupported', 'Digest view is not available in this host');
           const nonce = randomBytes(16).toString('hex');
-          const digestCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors *;`;
+          const digestCsp = `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors * vscode-webview: vscode-file:;`;
           html = renderDigestCanvas(entry.view.scope, buildNav(entry, workspaceRoot), nonce, digestCsp);
           send(res, 200, 'text/html; charset=utf-8', html, { 'Content-Security-Policy': digestCsp });
           return;

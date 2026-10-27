@@ -77,6 +77,17 @@ export class CanvasViewer implements vscode.Disposable {
     this.show(external.toString());
   }
 
+  async openSettings(workspaceRoot: string, returnView?: WorkspaceView): Promise<void> {
+    const server = await this.ensureServer(workspaceRoot);
+    if (returnView) {
+      this.module?.navigate(server, returnView, null);
+    }
+    const external = await vscode.env.asExternalUri(
+      vscode.Uri.parse(new URL("/settings", server.url).href),
+    );
+    this.show(external.toString());
+  }
+
   private async ensureServer(workspaceRoot: string): Promise<InstanceServer> {
     if (this.entry && this.root === workspaceRoot) {
       return this.entry;
@@ -175,7 +186,7 @@ export class CanvasViewer implements vscode.Disposable {
     const nonce = randomBytes(16).toString("base64");
     target.searchParams.set("t", String(Date.now()));
     return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; frame-src ${origin}; frame-ancestors * vscode-webview: vscode-file:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>html,body,iframe{margin:0;padding:0;width:100%;height:100%;border:0;}</style></head>
 <body><iframe src="${target.toString()}" title="Agendo work session"></iframe>
 <script nonce="${nonce}">

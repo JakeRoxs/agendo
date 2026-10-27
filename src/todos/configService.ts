@@ -10,7 +10,7 @@ import type { BoardReturnTarget } from "./workspaceNavigation";
 export const DEFAULT_TODOS_CONFIG = {
   root: "docs/todos",
   gitignored: true,
-  backloggedFolder: "backlog",
+  backloggedFolder: "backlogged",
   cancelledFolder: "cancelled",
   completedFolder: "completed",
 } as const;

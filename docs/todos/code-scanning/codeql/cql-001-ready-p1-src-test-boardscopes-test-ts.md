@@ -1,5 +1,5 @@
 ---
-status: complete
+status: ready
 priority: p1
 issue_id: "cql-001"
 tags: [code-scanning, codeql]

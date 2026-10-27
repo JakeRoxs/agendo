@@ -59,17 +59,37 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
   const resumeTodos = active
     .filter((todo) => Boolean(todo.resumeContext?.currentState || todo.resumeContext?.nextStep))
     .sort(compareTodos);
-  const resumeLines = resumeTodos.flatMap((todo) => {
-    const { currentState, nextStep } = todo.resumeContext ?? {};
-    const lines = [`${formatTodo(todo)}`];
-    if (currentState) {
-      lines.push(`  - **Now:** ${currentState}`);
+
+  // Group resume-context todos by status so the Now/Next steps are clearly
+  // sub-grouped below their in-progress (or other active) item.
+  const byStatus = new Map<string, Todo[]>();
+  for (const todo of resumeTodos) {
+    const bucket = byStatus.get(todo.status) ?? [];
+    bucket.push(todo);
+    byStatus.set(todo.status, bucket);
+  }
+
+  const statusOrder = ['in-progress', 'ready', 'pending', 'backlogged', 'completed', 'cancelled'];
+
+  const resumeLines: string[] = [];
+  for (const status of statusOrder) {
+    const group = byStatus.get(status);
+    if (!group || group.length === 0) continue;
+    resumeLines.push(`### ${status.charAt(0).toUpperCase() + status.slice(1)}`);
+    for (const todo of group) {
+      const { currentState, nextStep } = todo.resumeContext ?? {};
+      const lines = [
+        `- **${todo.priority.toUpperCase()}** · ${todo.status} · [${todo.id} · ${todo.title}](/open/${todo.id})`,
+      ];
+      if (currentState) {
+        lines.push(`  - **Now:** ${currentState}`);
+      }
+      if (nextStep) {
+        lines.push(`  - **Next:** ${nextStep}`);
+      }
+      resumeLines.push(...lines);
     }
-    if (nextStep) {
-      lines.push(`  - **Next:** ${nextStep}`);
-    }
-    return lines;
-  });
+  }
 
   return [
     "# Agendo Task Digest",

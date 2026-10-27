@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "041"
 tags: [reporting, digest, completed-todos, agent-context]
@@ -58,9 +58,9 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 
 ## Resume Context
 
-**Current state:** Reopened to refine the implementation. The current version places the report and settings on the todo page, making it busy. Needs to be separated into an on-demand report command with time-range selection and a dedicated settings panel.
+**Current state:** Accomplishments report refined. buildAccomplishmentsPacket now derives explicit completion-date semantics from updatedAt (undated when unavailable), includes source path/link, outcome, evidence disclaimer, and uncertainty note per todo; excludes non-completed statuses by default; enforces deterministic batching (date desc, then ID asc) and size limits (25 todos / 50 KB) with matched/included/omitted counts. CopyAccomplishmentsContext command now prompts for a time range (start/end date) and optional filters (group, tags, source) before building the packet. Added agendo.criteriaChanges.enabled setting (default false) registered in package.json with a toggle-criteria-changes handler in extension.ts for the dedicated settings panel.
 
-**Next step:** Move accomplishments report to a separate command with time-range parameters and move criteria settings to a settings panel.
+**Next step:** Wire the canvas "Proposed Criteria Changes" panel to the new criteriaChanges.enabled setting (panel code lives in the bundled canvas distribution under resources/canvas/). Confirm the setting toggles correctly end-to-end.
 
 ## Work Log
 
@@ -85,3 +85,19 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 - Added package.json command contribution
 - Added 9 regression tests covering filtering, date boundaries, and packet content
 - Verified: 194 extension tests passing, 20 canvas tests passing, lint clean, 0 audit vulnerabilities, vsix packaged
+
+### 2026-10-27 - Refined accomplishments report and criteria settings panel
+
+**By:** Kilo
+
+**Actions:**
+
+- Refined `buildAccomplishmentsPacket` for explicit completion-date semantics (undated when no `updatedAt`), per-todo source path/link, outcome, evidence disclaimer, and uncertainty note; excludes non-completed statuses by default; deterministic batching (date desc, then ID asc); size limits (25 todos / 50 KB) with matched/included/omitted counts.
+- Refined `CopyAccomplishmentsContext` command to prompt for a time range (start/end date) and optional filters (group, tags, source) before building the packet; remains on-demand and user-initiated.
+- Added `agendo.criteriaChanges.enabled` setting (default false) registered in package.json; added `toggle-criteria-changes` handler in extension.ts for the dedicated settings panel.
+- Added 8 regression tests covering exclusion of non-completed statuses, inclusive date boundaries, undated records, source path/link coverage, deterministic batches, size limits, and header counts.
+- Verified: `npm run compile` clean, `npm run lint` clean, `npm test` 364 passing.
+
+**Learnings:**
+
+- The canvas "Proposed Criteria Changes" panel UI lives in the bundled canvas distribution; the setting and handler are in place, but the panel-to-setting wiring remains as a follow-up.

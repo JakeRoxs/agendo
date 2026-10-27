@@ -4,82 +4,13 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="__AGENDO_BOARD_CSP__">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <style>
-    :root { color-scheme: light dark; }
-    body { color: var(--vscode-foreground, #d4d4d4); background: var(--vscode-sideBar-background, #1e1e1e); font-family: var(--vscode-font-family, system-ui, -apple-system, sans-serif); margin: 0; padding: 12px; }
-    .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; min-height: 28px; padding-bottom: 8px; }
-    .toolbar-label { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.85em; }
-    .settings-toggle { margin-left: auto; }
-    button { background: var(--vscode-button-secondaryBackground, #444); border: 0; color: var(--vscode-button-secondaryForeground, #ddd); cursor: pointer; padding: 4px 8px; }
-    button:hover { background: var(--vscode-button-secondaryHoverBackground, #555); }
-    .settings-panel { background: var(--vscode-editor-background, #252526); border: 1px solid var(--vscode-panel-border, #444); border-radius: 6px; margin: 0 0 10px auto; max-width: 400px; padding: 10px; }
-    .settings-panel[hidden] { display: none; }
-    .settings-title { font-size: 0.95em; font-weight: 600; margin-bottom: 2px; }
-    .settings-hint { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.8em; margin-bottom: 8px; }
-    .settings-section-title { font-size: 0.85em; font-weight: 600; margin: 12px 0 4px; }
-    .setting-control { align-items: center; display: grid; gap: 10px; grid-template-columns: 1fr minmax(130px, auto); margin: 6px 0; }
-    select { background: var(--vscode-dropdown-background, #3c3c3c); border: 1px solid var(--vscode-dropdown-border, #444); color: var(--vscode-dropdown-foreground, #ddd); padding: 3px 5px; }
-    .reset-settings { margin-top: 10px; width: 100%; }
-    .setting-row { align-items: center; border: 1px solid transparent; cursor: grab; display: flex; gap: 8px; padding: 5px; user-select: none; }
-    .setting-row:hover { background: var(--vscode-list-hoverBackground, #2a2d2e); }
-    .setting-row.drop-target { border-color: var(--vscode-focusBorder, #007fd4); }
-    .setting-row:active { cursor: grabbing; }
-    .board { display: grid; gap: 10px; grid-template-columns: repeat(var(--column-count, 1), minmax(150px, 1fr)); min-width: 780px; }
-    .board[data-column-width="narrow"] { grid-template-columns: repeat(var(--column-count, 1), minmax(120px, 1fr)); min-width: 650px; }
-    .board[data-column-width="wide"] { grid-template-columns: repeat(var(--column-count, 1), minmax(220px, 1fr)); min-width: 1100px; }
-    .column { background: var(--vscode-editor-background, #252526); border: 1px solid var(--vscode-panel-border, #444); border-radius: 6px; min-height: 180px; padding: 8px; }
-    .column.over-wip { border-color: var(--vscode-charts-red, #f14c4c); }
-    .column.drop-target { border-color: var(--vscode-focusBorder, #007fd4); background: var(--vscode-list-hoverBackground, #2a2d2e); }
-    .column-header { align-items: center; cursor: grab; display: flex; font-weight: 600; gap: 6px; justify-content: space-between; margin-bottom: 8px; user-select: none; }
-    .column-header:active { cursor: grabbing; }
-    .column-actions { align-items: center; display: flex; gap: 6px; }
-    .hide-column { font-size: 0.8em; }
-    .count { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.9em; font-weight: 400; }
-    .count.over-wip { color: var(--vscode-charts-red, #f14c4c); font-weight: 600; }
-    .group-header { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.78em; font-weight: 600; margin: 10px 2px 3px; text-transform: uppercase; }
-    .card { background: var(--vscode-sideBarSectionHeader-background, #252526); border: 1px solid var(--vscode-panel-border, #444); border-left: 3px solid var(--vscode-panel-border, #444); border-radius: 4px; cursor: grab; margin: 6px 0; padding: 8px; }
-    .board[data-density="compact"] .card { margin: 3px 0; padding: 5px; }
-    .board[data-density="compact"] .card-meta { margin-top: 2px; }
-    .board[data-density="spacious"] .card { margin: 9px 0; padding: 12px; }
-    .board[data-density="spacious"] .card-meta { margin-top: 7px; }
-    .card:active { cursor: grabbing; }
-    .card { position: relative; }
-    .card-busy { align-items: center; background: color-mix(in srgb, var(--vscode-sideBar-background, #1e1e1e) 72%, transparent); border-radius: 4px; display: none; inset: 0; justify-content: center; position: absolute; }
-    .card-busy::before { animation: agendo-spin 0.7s linear infinite; border: 2px solid var(--vscode-descriptionForeground, #aaa); border-radius: 50%; border-top-color: transparent; height: 18px; width: 18px; }
-    .card.busy .card-busy { display: flex; }
-    @keyframes agendo-spin { to { transform: rotate(360deg); } }
-    .card.accent-priority-p1, .card.accent-status-cancelled, .card.accent-blocked { border-left-color: var(--vscode-charts-red, #f14c4c); }
-    .card.accent-priority-p2 { border-left-color: var(--vscode-charts-yellow, #dbbd44); }
-    .card.accent-priority-p3, .card.accent-status-ready { border-left-color: var(--vscode-charts-blue, #4499d4); }
-    .card.accent-status-pending { border-left-color: var(--vscode-descriptionForeground, #aaa); }
-    .card.accent-status-in-progress { border-left-color: var(--vscode-charts-orange, #f18f44); }
-    .card.accent-status-backlogged { border-left-color: var(--vscode-charts-purple, #9a7fbf); }
-    .card.accent-status-completed { border-left-color: var(--vscode-charts-green, #4dbb5f); }
-    .card.blocked { box-shadow: inset 0 0 0 1px var(--vscode-charts-red, #f14c4c); }
-    .collision-warning { color: var(--vscode-editorWarning-foreground, #cca700); font-size: 0.85em; margin: 4px 0; }
-    .source-section { margin-bottom: 20px; overflow-x: auto; padding-bottom: 8px; }
-    .board.source-sections { display: block; min-width: 0; }
-    .source-section-title { font-size: 1.1em; font-weight: 700; margin: 0 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--vscode-panel-border, #444); }
-    .card-title { display: -webkit-box; font-weight: 600; overflow: hidden; -webkit-box-orient: vertical; }
-    .card-title.oneLine { -webkit-line-clamp: 1; }
-    .card-title.twoLines { -webkit-line-clamp: 2; }
-    .card-title.unlimited { display: block; overflow: visible; }
-    .card-description { color: var(--vscode-descriptionForeground, #aaa); display: -webkit-box; font-size: 0.9em; margin-top: 5px; overflow: hidden; -webkit-box-orient: vertical; }
-    .card-description.oneLine { -webkit-line-clamp: 1; }
-    .card-description.twoLines { -webkit-line-clamp: 2; }
-    .card-meta { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.85em; margin-top: 5px; }
-    .card-actions { display: none; flex-wrap: wrap; gap: 4px; margin-top: 7px; }
-    .card:hover .card-actions, .card:focus-within .card-actions { display: flex; }
-    .card-actions select, .card-actions button { font-size: 0.78em; min-width: 0; padding: 2px 4px; }
-    .empty { color: var(--vscode-descriptionForeground, #aaa); font-size: 0.9em; padding: 12px 4px; }
-    .workspace-navigation { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-    .workspace-navigation a, .workspace-navigation button { padding: 4px 8px; }
-    @media (max-width: 900px) { .board { grid-template-columns: repeat(5, minmax(130px, 1fr)); } }
-  </style>
+  __AGENDO_BOARD_STYLES__
 </head>
-<body>
-__AGENDO_BOARD_NAV__
-  <div id="toolbar" class="toolbar" aria-label="Board controls"></div>
+<body class="board-page">
+  <div class="canvas-toolbar">
+    __AGENDO_BOARD_NAV__
+    <div id="toolbar" aria-label="Board controls"></div>
+  </div>
   <section id="settings" class="settings-panel" aria-label="Board card settings" hidden></section>
   <main id="board" class="board" aria-label="Agendo task board"></main>
   <script nonce="__AGENDO_BOARD_NONCE__">
@@ -95,19 +26,6 @@ let settingsOpen = Boolean(host.getState?.()?.settingsOpen);
 
 function renderToolbar(snapshot) {
   toolbar.replaceChildren();
-  if (snapshot.hiddenStatuses.length) {
-    const label = document.createElement("span");
-    label.className = "toolbar-label";
-    label.textContent = "Hidden:";
-    toolbar.append(label);
-    for (const status of snapshot.hiddenStatuses) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = "Show " + status;
-      button.addEventListener("click", () => host.postMessage({ type: "showStatus", status }));
-      toolbar.append(button);
-    }
-  }
   const prefix = snapshot.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
   for (const [label, action] of [["Refresh", "refresh"], ["Filter", "filter"], ["Search", "search"], ["Clear Filters", "clearFilters"]]) {
     const button = document.createElement("button");

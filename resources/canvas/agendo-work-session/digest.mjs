@@ -5,11 +5,77 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
   if (!['todos', 'code-scanning'].includes(scope)) throw new Error('Invalid digest scope');
   const bootstrap = String.raw`
     (() => {
+      // Minimal Markdown renderer: headings, paragraphs, bullet/numbered lists,
+      // fenced code, inline bold/italic styles.
+      function inlineMarkdown(text) {
+        return String(text)
+          .replace(new RegExp('\\*\\*(.+?)\\*\\*', 'g'), '<strong>$1</strong>')
+          .replace(new RegExp('(^|[^*\\w])\\*(?!\\s)([^*]+?)\\*(?!\\w)', 'g'), '$1<em>$2</em>');
+      }
+      function renderMarkdown(markdown) {
+        const lines = String(markdown).split(new RegExp('\\r?\\n'));
+        const out = [];
+        let paragraph = [];
+        let list = null;
+        let fence = null;
+        const flushParagraph = () => {
+          if (paragraph.length) out.push('<p>' + inlineMarkdown(paragraph.join(' ')) + '</p>');
+          paragraph = [];
+        };
+        const flushList = () => {
+          if (list) out.push('<' + list.tag + '>' + list.items.map(i => '<li>' + inlineMarkdown(i) + '</li>').join('') + '</' + list.tag + '>');
+          list = null;
+        };
+        for (const line of lines) {
+          if (fence !== null) {
+            if (line.trim().startsWith('\`\`\`')) {
+              out.push('<pre><code>' + fence.join('\n') + '</code></pre>');
+              fence = null;
+            } else {
+              fence.push(line);
+            }
+            continue;
+          }
+          if (line.trim().startsWith('\`\`\`')) {
+            flushParagraph();
+            flushList();
+            fence = [];
+            continue;
+          }
+          const heading = line.match(new RegExp('^(#{1,6})\\s+(.+)$'));
+          const bullet = line.match(new RegExp('^\\s*[-*]\\s+(.+)$'));
+          const ordered = line.match(new RegExp('^\\s*\\d+\\.\\s+(.+)$'));
+          if (heading) {
+            flushParagraph();
+            flushList();
+            const level = Math.max(3, heading[1].length);
+            out.push('<h' + level + '>' + inlineMarkdown(heading[2]) + '</h' + level + '>');
+          } else if (bullet || ordered) {
+            flushParagraph();
+            const tag = bullet ? 'ul' : 'ol';
+            if (list && list.tag !== tag) flushList();
+            list ??= { tag, items: [] };
+            list.items.push((bullet || ordered)[1]);
+          } else if (line.trim() === '') {
+            flushParagraph();
+            flushList();
+          } else {
+            flushList();
+            paragraph.push(line.trim());
+          }
+        }
+        if (fence !== null) out.push('<pre><code>' + fence.join('\n') + '</code></pre>');
+        flushParagraph();
+        flushList();
+        return out.join('');
+      }
+
       const scope = ${JSON.stringify(scope)};
       const status = document.createElement('p');
+      status.className = 'error';
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
-      document.body.prepend(status);
+      document.body.append(status);
       const refresh = async () => {
         try {
           const response = await fetch('/digest-snapshot');
@@ -18,10 +84,10 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
           const container = document.getElementById('digest-content');
           if (container) {
             container.innerHTML = '';
-            const pre = document.createElement('pre');
-            pre.className = 'digest-markdown';
-            pre.textContent = digest.content;
-            container.appendChild(pre);
+            const div = document.createElement('div');
+            div.className = 'digest-markdown';
+            div.innerHTML = renderMarkdown(digest.content);
+            container.appendChild(div);
           }
         } catch (error) {
           status.textContent = 'Could not load digest: ' + error.message;
@@ -51,9 +117,21 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
       for (const button of document.querySelectorAll('[data-open-board]')) {
         button.addEventListener('click', () => open('/open', { view: { kind: 'board', scope: button.dataset.openBoard } }));
       }
+      for (const button of document.querySelectorAll('[data-open-digest]')) {
+        button.addEventListener('click', () => open('/open', { view: { kind: 'digest', scope: button.dataset.openDigest } }));
+      }
+      // Clicking a todo reference in the digest opens that todo in the canvas.
+      for (const link of document.querySelectorAll('a[href^="/open/"]')) {
+        link.addEventListener('click', (e) => {
+          e.preventDefault();
+          const href = link.getAttribute('href');
+          const todoId = href?.split('/').pop();
+          if (todoId) open('/open', { todoId });
+        });
+      }
     })();
   `;
-  const navigation = `<div class="workspace-navigation">${renderNavigation(nav)}</div>`;
+  const navigation = `<div class="canvas-toolbar">${renderNavigation(nav)}</div>`;
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -63,15 +141,31 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
   <link rel="stylesheet" href="/page.css">
   <style>
     .digest-markdown {
-      white-space: pre-wrap;
       font-family: inherit;
       font-size: 0.95rem;
       line-height: 1.6;
       margin: 0;
       padding: 1rem;
-      background: var(--bg-secondary, #f5f5f5);
+      background: var(--bg-secondary, #252525);
+      color: var(--fg-secondary, #d4d4d4);
       border-radius: 6px;
-      border: 1px solid var(--border, #ddd);
+      border: 1px solid var(--border, #3a3a3a);
+    }
+    .digest-markdown h3 {
+      margin-top: 1rem;
+      margin-bottom: 0.5rem;
+      font-size: 1.1rem;
+    }
+    .digest-markdown ul,
+    .digest-markdown ol {
+      margin: 0.5rem 0;
+      padding-left: 1.5rem;
+    }
+    .digest-markdown li {
+      margin-bottom: 0.25rem;
+    }
+    .digest-markdown strong {
+      font-weight: bold;
     }
   </style>
 </head>

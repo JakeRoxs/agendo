@@ -3,7 +3,7 @@ import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Command } from "./commands";
-import { get, Settings, set } from "./configuration";
+import { get, Settings, set, setDefault } from "./configuration";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
 import { createCanvasHostActions } from "./todos/canvasHostActions";
@@ -15,6 +15,7 @@ import { LinkService } from "./todos/linkService";
 import { SkillManager } from "./todos/skillManager";
 import { SkillStatusTreeProvider } from "./todos/skillStatusTreeProvider";
 import { StatusService } from "./todos/statusService";
+import { SettingsService } from "./todos/settingsService";
 import { findTodoCollisions } from "./todos/todoCollisions";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
@@ -58,79 +59,10 @@ export async function activate(context: vscode.ExtensionContext) {
       return { content };
     },
     getSettingsInfo: async () => {
-      let skillStatus: unknown;
-      try {
-        skillStatus = await skill.getStatus();
-      } catch {
-        /* ignore */
-      }
-      let canvasStatus: unknown;
-      try {
-        canvasStatus = await canvas.getStatus();
-      } catch {
-        /* ignore */
-      }
-      return {
-        extensionVersion: context.extension.packageJSON.version,
-        skill: skillStatus,
-        canvas: canvasStatus,
-        workspace: {
-          root: config.root,
-          gitignored: config.gitignored,
-          backloggedFolder: config.backloggedFolder,
-          cancelledFolder: config.cancelledFolder,
-          completedFolder: config.completedFolder,
-          codeScanningEnabled: get<boolean>(Settings.CodeScanningEnabled),
-        },
-        viewOptions: {
-          groupBy: get<string>(Settings.GroupBy),
-          sortByDate: get<boolean>(Settings.SortByDate),
-        },
-      };
+      return settingsService.getSettingsInfo();
     },
     handleSettingsAction: async (payload) => {
-      const { action, component, scope } = payload as {
-        action: string;
-        component?: string;
-        scope?: string;
-      };
-      switch (action) {
-        case "open-extension-settings":
-          await vscode.commands.executeCommand(
-            "workbench.action.openSettings",
-            `@ext:agendo.agendo`,
-          );
-          return { success: true, reload: false };
-        case "open-board":
-          if (scope === "code-scanning") {
-            await vscode.commands.executeCommand(Command.CodeScanningOpenBoard);
-          } else {
-            await vscode.commands.executeCommand(Command.OpenBoard);
-          }
-          return { success: true, reload: false };
-        case "open-tree":
-          await vscode.commands.executeCommand("workbench.view.extension.agendo");
-          return { success: true, reload: false };
-        case "check-source":
-        case "install":
-          if (component === "skill") {
-            await vscode.commands.executeCommand(Command.ManageSkill);
-          } else {
-            await vscode.commands.executeCommand(Command.ManageCanvas);
-          }
-          return { success: true };
-        case "set-group-by": {
-          const validModes = ["status", "priority", "group", "none"];
-          const mode = scope ?? "";
-          if (!validModes.includes(mode)) {
-            throw new Error(`Invalid groupBy mode: ${mode}`);
-          }
-          await set(Settings.GroupBy, mode);
-          return { success: true, reload: false };
-        }
-        default:
-          throw new Error(`Unknown settings action: ${action}`);
-      }
+      return settingsService.handleSettingsAction(payload);
     },
   });
   context.subscriptions.push(canvasViewer);
@@ -180,6 +112,41 @@ export async function activate(context: vscode.ExtensionContext) {
     "code-scanning",
     taskActions,
   );
+
+  const settingsService = new SettingsService({
+    get,
+    set,
+    setDefault,
+    executeCommand: async (command: string, ...args: unknown[]) => {
+      return vscode.commands.executeCommand(command, ...args);
+    },
+    config,
+    boardViewProvider,
+    scanningBoardViewProvider,
+    repository,
+    treeProvider,
+    scanningTreeProvider,
+    skillStatusTreeProvider,
+    extensionVersion: context.extension.packageJSON.version,
+    getSkillStatus: async () => {
+      let status: unknown;
+      try {
+        status = await skill.getStatus();
+      } catch {
+        /* ignore */
+      }
+      return status;
+    },
+    getCanvasStatus: async () => {
+      let status: unknown;
+      try {
+        status = await canvas.getStatus();
+      } catch {
+        /* ignore */
+      }
+      return status;
+    },
+  });
 
   const treeView = vscode.window.createTreeView("agendo.todos", {
     treeDataProvider: treeProvider,

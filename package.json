@@ -320,6 +320,12 @@
         "icon": "$(open-preview)"
       },
       {
+        "command": "agendo.openSettings",
+        "title": "Open Settings and About",
+        "category": "Agendo",
+        "icon": "$(settings-gear)"
+      },
+      {
         "command": "agendo.setStatus.pending",
         "title": "Set Status: Pending",
         "category": "Agendo"
@@ -852,7 +858,7 @@
         },
         "agendo.backloggedFolder": {
           "type": "string",
-          "default": "backlog",
+          "default": "backlogged",
           "description": "Subfolder name (under the root) for backlogged todos."
         },
         "agendo.openInPreview": {
@@ -920,6 +926,11 @@
           ],
           "default": "status",
           "description": "How todos are grouped in the tree view: by status (default), priority, group, or flat (none)."
+        },
+        "agendo.criteriaChanges.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, criteria change settings are exposed in a dedicated settings panel instead of the per-todo page view."
         }
       }
     }

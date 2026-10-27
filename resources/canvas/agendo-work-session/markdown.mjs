@@ -9,10 +9,13 @@ export function escapeHtml(value) {
 
 export function inlineMarkdown(text) {
   return String(text)
-    .split(/(\[[^\]]+\]\((?:<https?:\/\/[^>\s]*>|https?:\/\/[^)\s]+)\)|`[^`]+`)/)
+    .split(/(\[[^\]]+\]\((?:<[^>]*>|https?:\/\/[^)\s]+|\/[^)\s]+)\)|`[^`]+`)/)
     .map(part => {
-      const link = part.match(/^\[([^\]]+)\]\((?:<(https?:\/\/[^>\s]*)>|(https?:\/\/[^)\s]+))\)$/);
-      if (link) return `<a href="${escapeHtml(link[2] || link[3])}" target="_blank" rel="noopener noreferrer">${inlineMarkdown(link[1])}</a>`;
+      const link = part.match(/^\[([^\]]+)\]\((<[^>]*>|https?:\/\/[^)\s]+|\/[^)\s]+)\)$/);
+      if (link) {
+        const destination = link[2].replace(/^<([^>]*)>$/, '$1');
+        return `<a href="${escapeHtml(destination)}" target="_blank" rel="noopener noreferrer">${inlineMarkdown(link[1])}</a>`;
+      }
       if (part.startsWith('`') && part.endsWith('`')) return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
       return escapeHtml(part)
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')

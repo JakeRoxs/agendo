@@ -6,6 +6,8 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
 import { ConfigService } from "../todos/configService";
+import { CanvasViewer } from "../todos/canvasViewer";
+import type { WorkspaceView } from "../todos/workspaceNavigation";
 import { StatusService } from "../todos/statusService";
 import { parseTodo } from "../todos/todoModel";
 import { boardReturnTarget } from "../todos/workspaceNavigation";
@@ -184,6 +186,48 @@ suite("Shared workspace host boundary", () => {
     await config.openInCanvas(uri, { kind: "board", scope: "todos" });
     assert.deepStrictEqual(opened, [[uri.toString(), { kind: "board", scope: "todos" }]]);
     assert.strictEqual(config.viewMode, previous);
+  });
+
+  test("opening Settings reuses the canvas server and preserves or seeds the return view", async () => {
+    const viewer = new CanvasViewer(vscode.Uri.file(root));
+    const server = { url: "http://127.0.0.1:12345/" };
+    const navigated: WorkspaceView[] = [];
+    const shown: string[] = [];
+    const internals = viewer as unknown as {
+      module: { navigate: (entry: unknown, target: WorkspaceView, returnTo: null) => void };
+      ensureServer: (workspaceRoot: string) => Promise<typeof server>;
+      show: (url: string) => void;
+    };
+    internals.ensureServer = async (workspaceRoot) => {
+      assert.strictEqual(workspaceRoot, root);
+      return server;
+    };
+    internals.module = {
+      navigate: (entry, target, returnTo) => {
+        assert.strictEqual(entry, server);
+        assert.strictEqual(returnTo, null);
+        navigated.push(target);
+      },
+    };
+    internals.show = (url) => shown.push(url);
+    const original = Object.getOwnPropertyDescriptor(vscode.env, "asExternalUri");
+    Object.defineProperty(vscode.env, "asExternalUri", {
+      configurable: true,
+      value: async (uri: vscode.Uri) => uri,
+    });
+    try {
+      await viewer.openSettings(root);
+      assert.deepStrictEqual(navigated, [], "Existing selection must survive opening Settings");
+      await viewer.openSettings(root, { kind: "board", scope: "code-scanning" });
+      assert.deepStrictEqual(navigated, [{ kind: "board", scope: "code-scanning" }]);
+      assert.deepStrictEqual(shown, [
+        "http://127.0.0.1:12345/settings",
+        "http://127.0.0.1:12345/settings",
+      ]);
+    } finally {
+      if (original) Object.defineProperty(vscode.env, "asExternalUri", original);
+      viewer.dispose();
+    }
   });
 
   test("native group updates preserve special characters and create missing frontmatter", async () => {

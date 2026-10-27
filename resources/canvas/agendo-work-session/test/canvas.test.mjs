@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { loadTodo, loadGroupTodos } from '../todos.mjs';
+import { loadTodo, loadGroupTodos, setTodoStatus } from '../todos.mjs';
 import { renderCanvas, renderGroupCanvas } from '../page.mjs';
 import { assertViewExists, assertViewSupported, createInstanceServer, listen, normalizeFilters, normalizeView, navigate, step } from '../server.mjs';
-import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { writeFileSync, rmSync, mkdirSync, mkdtempSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -22,6 +22,43 @@ function createTodoFile(id, frontmatter = '', body = '') {
 function cleanTodoFiles() {
   rmSync(testDir, { recursive: true, force: true });
 }
+
+describe('Backlogged folder naming', () => {
+  for (const folder of ['backlogged', 'backlog', 'parked']) {
+    it(`discovers and moves regular and scanning todos using ${folder === 'backlogged' ? 'the backlogged default' : `the explicit ${folder} custom folder`}`, () => {
+      const root = mkdtempSync(join(tmpdir(), 'agendo-backlogged-'));
+      const todosRoot = join(root, 'docs', 'todos');
+      mkdirSync(todosRoot, { recursive: true });
+      if (folder !== 'backlogged') {
+        writeFileSync(join(todosRoot, '.agendo-config.json'), JSON.stringify({ backloggedFolder: folder }));
+      }
+      try {
+        for (const [id, source] of [['001', ''], ['cql-001', 'code-scanning/codeql'], ['sq-001', 'code-scanning/sonarqube']]) {
+          const base = join(todosRoot, source);
+          mkdirSync(base, { recursive: true });
+          const ready = join(base, `${id}-ready-p2-example.md`);
+          const parked = join(base, folder, `${id}-backlogged-p2-example.md`);
+          writeFileSync(ready, `---\nstatus: ready\npriority: p2\nissue_id: "${id}"\n---\n# Example\n`);
+          setTodoStatus(id, 'backlogged', root);
+          assert.ok(existsSync(parked), `Missing ${parked}`);
+          assert.ok(!existsSync(ready));
+          assert.strictEqual(loadTodo(id, root).status, 'backlogged');
+          setTodoStatus(id, 'ready', root);
+          assert.ok(existsSync(ready));
+          assert.ok(!existsSync(parked));
+          assert.strictEqual(loadTodo(id, root).status, 'ready');
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('shows backlogged as the Settings default while preserving an explicit backlog custom value', () => {
+    assert.match(renderSettingsPage({}), /id="set-backlogged-folder"[^>]*value="backlogged"/);
+    assert.match(renderSettingsPage({ workspace: { backloggedFolder: 'backlog' } }), /id="set-backlogged-folder"[^>]*value="backlog"/);
+  });
+});
 
 describe('Canvas todo loading with group and scan fields', () => {
   it('loads group field from frontmatter', () => {
@@ -370,9 +407,9 @@ describe('Settings button and page', () => {
     assert.ok(html.includes('Workspace Settings'), 'Should have workspace settings section');
     assert.ok(html.includes('.agendo-config.json'), 'Should mention config file projection');
     assert.ok(html.includes('docs/todos'), 'Should show root folder');
-    assert.ok(html.includes('Gitignored') && html.includes('Yes'), 'Should show gitignored status');
+    assert.match(html, /data-setting="set-gitignored" checked/, 'Should show current gitignore setting');
     assert.ok(html.includes('backlog'), 'Should show backlog folder');
-    assert.ok(html.includes('Enabled'), 'Should show code scanning enabled');
+    assert.match(html, /data-setting="set-code-scanning-enabled" checked/, 'Should show code scanning enabled');
     assert.ok(html.includes('Extension Settings'), 'Should have extension settings section');
     assert.ok(html.includes('Tree grouping'), 'Should show grouping setting');
   });
@@ -449,6 +486,105 @@ describe('Settings button and page', () => {
 });
 
 describe('Navigation and filter actions', () => {
+  for (const scope of ['todos', 'code-scanning']) {
+    it(`only shows a ${scope} return link for a todo opened from that board`, async () => {
+      const root = join(testDir, `return-${scope}`);
+      const dir = join(root, 'docs', 'todos');
+      mkdirSync(dir, { recursive: true });
+      for (const id of ['001', '002']) {
+        writeFileSync(join(dir, `${id}-pending-p2-example.md`), `---\nstatus: pending\npriority: p2\n---\n# Todo ${id}\n`);
+      }
+      const entry = createInstanceServer(root, {
+        getBoardSnapshot: async () => ({ scope, columns: [] }),
+        handleBoardMessage: async () => {},
+      });
+      await listen(entry);
+      const html = async () => (await fetch(entry.url)).text();
+      const open = async view => {
+        const response = await fetch(new URL('/open', entry.url), {
+          method: 'POST', headers: { 'X-Agendo-Canvas': '1' }, body: JSON.stringify({ view }),
+        });
+        assert.strictEqual(response.status, 200);
+      };
+      try {
+        navigate(entry, '001');
+        assert.doesNotMatch(await html(), /data-return-board/);
+        await open({ kind: 'board', scope });
+        assert.strictEqual(entry.returnTo, undefined);
+        await open({ kind: 'todo', todoId: '001' });
+        assert.deepStrictEqual(entry.returnTo, { kind: 'board', scope });
+        assert.match(await html(), /data-return-board/);
+
+        // Unrelated todos must not inherit the panel's old board origin.
+        await open({ kind: 'todo', todoId: '002' });
+        assert.doesNotMatch(await html(), /data-return-board/);
+        step(entry, 'back');
+        assert.deepStrictEqual(entry.returnTo, { kind: 'board', scope });
+        assert.match(await html(), /data-return-board/);
+        step(entry, 'back');
+        assert.strictEqual(entry.returnTo, undefined);
+        step(entry, 'back');
+        assert.doesNotMatch(await html(), /data-return-board/);
+        step(entry, 'forward');
+        step(entry, 'forward');
+        assert.match(await html(), /data-return-board/);
+
+        // Reopening even the same todo directly clears its previous origin.
+        navigate(entry, '001', null);
+        assert.doesNotMatch(await html(), /data-return-board/);
+        navigate(entry, '002', { kind: 'board', scope });
+        assert.match(await html(), /data-return-board/);
+        await open({ kind: 'board', scope });
+        await open({ kind: 'group', groupName: 'test-group' });
+        assert.doesNotMatch(await html(), /data-return-board/);
+        await open({ kind: 'todo', todoId: '001' });
+        assert.doesNotMatch(await html(), /data-return-board/);
+        const rejected = await fetch(new URL('/return-board', entry.url), {
+          method: 'POST', headers: { 'X-Agendo-Canvas': '1' }, body: '{}',
+        });
+        assert.strictEqual(rejected.status, 400);
+      } finally {
+        await new Promise(resolve => entry.server.close(resolve));
+      }
+    });
+  }
+
+  for (const scope of ['todos', 'code-scanning']) {
+    it(`serves a styled ${scope} board with a CSP that permits the shared stylesheet`, async () => {
+      const entry = createInstanceServer(testDir, {
+        getBoardSnapshot: async () => ({ scope, columns: [] }),
+        handleBoardMessage: async () => ({ success: true }),
+      });
+      await listen(entry);
+      try {
+        navigate(entry, { kind: 'board', scope });
+        const res = await fetch(entry.url);
+        const html = await res.text();
+        assert.strictEqual(res.status, 200);
+        assert.match(res.headers.get('content-security-policy'), /style-src 'self' 'unsafe-inline'/);
+        assert.match(html, /<meta[^>]+Content-Security-Policy[^>]+style-src 'self' 'unsafe-inline'/);
+        assert.match(html, /<link[^>]+href="\/page\.css"/);
+        assert.match(html, /<div class="canvas-toolbar">/);
+        assert.ok(html.includes('document.body.append(status)'), 'Status messages belong below the board, not above its toolbar');
+        assert.ok(!html.includes('document.body.prepend(status)'), 'Empty status messages must not offset the toolbar');
+        assert.match(html, /<\/head>\s*<body/);
+        assert.ok(!html.includes('__AGENDO_BOARD_'), 'all host placeholders must be resolved');
+        const cssResponse = await fetch(new URL('/page.css', entry.url));
+        assert.strictEqual(cssResponse.status, 200);
+        assert.match(cssResponse.headers.get('content-type'), /text\/css/);
+        const css = await cssResponse.text();
+        assert.match(css, /\.canvas-toolbar\s*\{[^}]*display:\s*flex/);
+        assert.match(css, /\.board\s*\{[^}]*display:\s*grid/);
+        assert.match(css, /\.card\s*\{[^}]*border/);
+        assert.match(css, /\.card:hover \.card-actions/);
+        assert.match(css, /\[data-density="compact"\]/);
+        assert.match(css, /\.board\.source-sections/);
+      } finally {
+        await new Promise(resolve => entry.server.close(resolve));
+      }
+    });
+  }
+
   it('assertViewExists rejects stale todos and groups, and normalizeFilters validates input', () => {
     createTodoFile('001-ready-p2-exists', 'status: ready\npriority: p2\ngroup: real-group\n', '# Exists\n');
     assert.doesNotThrow(() => assertViewExists({ kind: 'todo', todoId: '001' }, testDir));

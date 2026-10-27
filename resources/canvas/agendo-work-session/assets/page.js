@@ -82,6 +82,18 @@
     });
   }
 
+  for (const button of document.querySelectorAll('[data-open-digest]')) {
+    button.addEventListener('click', async () => {
+      try {
+        const res = await post('/open', { view: { kind: 'digest', scope: button.dataset.openDigest } });
+        if (!res.ok) throw new Error(await res.text());
+        location.reload();
+      } catch (err) {
+        message.textContent = 'Could not open digest: ' + err.message;
+      }
+    });
+  }
+
   document.querySelector('[data-return-board]')?.addEventListener('click', async e => {
     const button = e.currentTarget;
     button.disabled = true;
@@ -527,6 +539,8 @@
             await post('/open', { view: { kind: 'board', scope: item.dataset.openBoard } });
           } else if (item.dataset.openGroup) {
             await post('/open', { view: { kind: 'group', groupName: item.dataset.openGroup } });
+          } else if (item.dataset.openDigest) {
+            await post('/open', { view: { kind: 'digest', scope: item.dataset.openDigest } });
           } else if (item.dataset.open) {
             await post('/open', { todoId: item.dataset.open });
           }
@@ -676,6 +690,7 @@
     };
     const info = statusMap[state.status] ?? statusMap['unknown'];
     activityText.textContent = !state.supported ? 'Agent unavailable on this host' : info.text;
+    activityDot.title = !state.supported ? 'Agent unavailable on this host' : info.text;
     activityDot.className = 'agent-activity-dot' + (info.class ? ' ' + info.class : '');
   }
 
