@@ -34,7 +34,9 @@ describe('renderSettingsPage', () => {
     assert.ok(html.includes('backlog'));
     assert.ok(html.includes('cancelled'));
     assert.ok(html.includes('completed'));
-    assert.ok(html.includes('https://sonar.example.com'));
+    const sonarQubeUrlInput = html.match(/<input id="set-sonarqube-url"[^>]*>/)?.[0];
+    assert.ok(sonarQubeUrlInput, 'SonarQube URL input should be rendered');
+    assert.strictEqual(sonarQubeUrlInput.match(/\bvalue="([^"]*)"/)?.[1], 'https://sonar.example.com');
     assert.ok(html.includes('proj:key'));
     assert.ok(html.includes('Extension Settings'));
     assert.ok(html.includes('Tree grouping'));

@@ -14,8 +14,8 @@ import type { TodoRepository } from "./todoRepository";
 import type { TodoTreeProvider } from "./todoTreeProvider";
 import type { SkillStatusTreeProvider } from "./skillStatusTreeProvider";
 
-const GROUP_BY_MODES = ["status", "priority", "group", "none"];
-const DEFAULT_PRIORITIES = ["p1", "p2", "p3"];
+const GROUP_BY_MODES = new Set<string>(["status", "priority", "group", "none"]);
+const DEFAULT_PRIORITIES = new Set<string>(["p1", "p2", "p3"]);
 
 /** Lifecycle statuses used to validate board visibility actions. */
 const TODO_STATUS_SET = new Set<TodoStatus>(TODO_STATUSES);
@@ -148,6 +148,55 @@ export class SettingsService {
     const scope = this.requireOptionalString(payload, "scope");
     switch (action) {
       case "open-extension-settings":
+      case "open-board":
+      case "open-tree":
+      case "check-source":
+      case "install":
+        return this.handleCommandAction(action, component, scope);
+      case "set-group-by":
+        return this.handleGroupByAction(payload);
+      case "toggle-criteria-changes":
+      case "set-criteria-changes-enabled":
+        return this.handleCriteriaChangesAction(payload);
+      case "set-view-mode":
+        return this.handleViewModeAction(payload);
+      case "set-sort-by-date":
+      case "set-code-scanning-sort-by-date":
+      case "set-show-dependency-nodes":
+        return this.handleTreeBooleanAction(payload);
+      case "set-root":
+      case "set-gitignored":
+      case "set-backlogged-folder":
+      case "set-cancelled-folder":
+      case "set-completed-folder":
+      case "set-code-scanning-enabled":
+        return this.handleFolderSetting(action, payload);
+      case "set-sonarqube-url":
+      case "set-sonarqube-project-key":
+        return this.handleSonarQubeSetting(action, payload);
+      case "set-default-root":
+      case "set-default-priority":
+      case "set-default-preview":
+        return this.handleDefaultSetting(action, payload);
+      case "set-skill-update-check":
+        return this.handleSkillUpdateCheckAction(payload);
+      case "set-skill-update-source":
+      case "set-canvas-update-source":
+        return this.handleUpdateSource(action, payload);
+      case "set-board-status-visibility":
+        return this.handleBoardStatusVisibility(payload);
+      default:
+        throw new Error(`Unknown settings action: ${action}`);
+    }
+  }
+
+  private async handleCommandAction(
+    action: string,
+    component: string | undefined,
+    scope: string | undefined,
+  ): Promise<SettingsActionResult> {
+    switch (action) {
+      case "open-extension-settings":
         await this.executeCommand("workbench.action.openSettings", "@ext:agendo.agendo");
         return { success: true, reload: false };
       case "open-board":
@@ -173,181 +222,187 @@ export class SettingsService {
         );
         return { success: true };
       }
-      case "set-group-by": {
-        const obj = this.requireObject(payload);
-        const value = obj.value;
-        const mode = value !== undefined ? value : obj.scope;
-        if (typeof mode !== "string" || !GROUP_BY_MODES.includes(mode)) {
-          throw new Error(`Invalid groupBy mode: ${mode}`);
-        }
-        await this.set(Settings.GroupBy, mode);
-        await this.treeProvider.refresh();
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "toggle-criteria-changes": {
-        const enabled = this.get<boolean>(Settings.CriteriaChangesEnabled);
-        await this.set(Settings.CriteriaChangesEnabled, !enabled);
-        await this.treeProvider.refresh();
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-criteria-changes-enabled": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.CriteriaChangesEnabled, enabled);
-        await this.treeProvider.refresh();
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-view-mode": {
-        const mode = this.requireString(payload, "value");
-        if (!isViewMode(mode)) {
-          throw new Error(`Invalid view mode: ${mode}`);
-        }
-        await this.set(Settings.ViewMode, mode);
-        this.skillStatusTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-sort-by-date": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.SortByDate, enabled);
-        await this.treeProvider.refresh();
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-code-scanning-sort-by-date": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.CodeScanningSortByDate, enabled);
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-root": {
-        const value = this.requireRelativePath(payload, "value");
-        await this.set(Settings.Root, value);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-gitignored": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.GitignoreTodos, enabled);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-backlogged-folder": {
-        const value = this.requireFolderName(payload, "value");
-        await this.set(Settings.BackloggedFolder, value);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-cancelled-folder": {
-        const value = this.requireFolderName(payload, "value");
-        await this.set(Settings.CancelledFolder, value);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-completed-folder": {
-        const value = this.requireFolderName(payload, "value");
-        await this.set(Settings.CompletedFolder, value);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-code-scanning-enabled": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.CodeScanningEnabled, enabled);
-        await this.refreshConfigProjection();
-        await this.repository.refresh();
-        return { success: true };
-      }
-      case "set-sonarqube-url": {
-        const value = this.requireString(payload, "value");
-        const trimmed = value.trim();
-        if (trimmed) {
-          validateSonarUrl(trimmed);
-        }
-        await this.set(Settings.SonarQubeUrl, trimmed);
-        return { success: true };
-      }
-      case "set-sonarqube-project-key": {
-        const value = this.requireString(payload, "value");
-        await this.set(Settings.SonarQubeProjectKey, value.trim());
-        return { success: true };
-      }
-      case "set-default-root": {
-        const value = this.requireRelativePath(payload, "value");
-        await this.setDefault(Settings.Root, value);
-        return { success: true };
-      }
-      case "set-default-priority": {
-        const value = this.requireString(payload, "value");
-        if (!DEFAULT_PRIORITIES.includes(value)) {
-          throw new Error(`Invalid default priority: ${value}`);
-        }
-        await this.setDefault(Settings.DefaultPriority, value);
-        return { success: true };
-      }
-      case "set-default-preview": {
-        const mode = this.requireString(payload, "value");
-        if (!isViewMode(mode)) {
-          throw new Error(`Invalid default preview mode: ${mode}`);
-        }
-        await this.setDefault(Settings.ViewMode, mode);
-        return { success: true };
-      }
-      case "set-show-dependency-nodes": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.ShowDependencyNodes, enabled);
-        await this.treeProvider.refresh();
-        await this.scanningTreeProvider.refresh();
-        return { success: true };
-      }
-      case "set-skill-update-check": {
-        const enabled = this.requireBoolean(payload, "value");
-        await this.set(Settings.SkillUpdateCheck, enabled);
-        return { success: true };
-      }
-      case "set-skill-update-source": {
-        const value = this.requireString(payload, "value");
-        const trimmed = value.trim();
-        if (trimmed && !isValidSourceUrl(trimmed)) {
-          throw new Error("Use an HTTPS skill update source URL without credentials, query, or fragment.");
-        }
-        await this.set(Settings.SkillUpdateSource, trimmed);
-        return { success: true };
-      }
-      case "set-canvas-update-source": {
-        const value = this.requireString(payload, "value");
-        const trimmed = value.trim();
-        if (trimmed && !isValidSourceUrl(trimmed)) {
-          throw new Error("Use an HTTPS canvas update source URL without credentials, query, or fragment.");
-        }
-        await this.set(Settings.CanvasUpdateSource, trimmed);
-        return { success: true };
-      }
-      case "set-board-status-visibility": {
-        const visible = this.requireBoolean(payload, "value");
-        const boardScope = this.requireBoardScope(payload, "scope");
-        const status = this.requireTodoStatus(payload, "status");
-        const provider =
-          boardScope === "code-scanning" ? this.scanningBoardViewProvider : this.boardViewProvider;
-        await provider.setStatusVisibility(status, visible);
-        provider.refresh();
-        return { success: true };
-      }
       default:
         throw new Error(`Unknown settings action: ${action}`);
     }
+  }
+
+  private async handleGroupByAction(payload: unknown): Promise<SettingsActionResult> {
+    const obj = this.requireObject(payload);
+    const value = obj.value;
+    const mode = value !== undefined ? value : obj.scope;
+    if (typeof mode !== "string" || !GROUP_BY_MODES.has(mode)) {
+      throw new Error(`Invalid groupBy mode: ${mode}`);
+    }
+    await this.set(Settings.GroupBy, mode);
+    this.treeProvider.refresh();
+    this.scanningTreeProvider.refresh();
+    return { success: true };
+  }
+
+  private async handleCriteriaChangesAction(payload: unknown): Promise<SettingsActionResult> {
+    const obj = this.requireObject(payload);
+    if (obj.action === "toggle-criteria-changes") {
+      const enabled = this.get<boolean>(Settings.CriteriaChangesEnabled);
+      await this.set(Settings.CriteriaChangesEnabled, !enabled);
+      this.treeProvider.refresh();
+      this.scanningTreeProvider.refresh();
+      return { success: true };
+    }
+    const enabled = this.requireBoolean(payload, "value");
+    await this.set(Settings.CriteriaChangesEnabled, enabled);
+    this.treeProvider.refresh();
+    this.scanningTreeProvider.refresh();
+    return { success: true };
+  }
+
+  private async handleViewModeAction(payload: unknown): Promise<SettingsActionResult> {
+    const mode = this.requireString(payload, "value");
+    if (!isViewMode(mode)) {
+      throw new Error(`Invalid view mode: ${mode}`);
+    }
+    await this.set(Settings.ViewMode, mode);
+    this.skillStatusTreeProvider.refresh();
+    return { success: true };
+  }
+
+  private async handleTreeBooleanAction(payload: unknown): Promise<SettingsActionResult> {
+    const obj = this.requireObject(payload);
+    const enabled = this.requireBoolean(payload, "value");
+    if (obj.action === "set-sort-by-date") {
+      await this.set(Settings.SortByDate, enabled);
+      this.treeProvider.refresh();
+      this.scanningTreeProvider.refresh();
+      return { success: true };
+    }
+    if (obj.action === "set-show-dependency-nodes") {
+      await this.set(Settings.ShowDependencyNodes, enabled);
+      this.treeProvider.refresh();
+      this.scanningTreeProvider.refresh();
+      return { success: true };
+    }
+    await this.set(Settings.CodeScanningSortByDate, enabled);
+    this.scanningTreeProvider.refresh();
+    return { success: true };
+  }
+
+  private async handleSkillUpdateCheckAction(payload: unknown): Promise<SettingsActionResult> {
+    const enabled = this.requireBoolean(payload, "value");
+    await this.set(Settings.SkillUpdateCheck, enabled);
+    return { success: true };
+  }
+
+  private async handleFolderSetting(
+    action: string,
+    payload: unknown,
+  ): Promise<SettingsActionResult> {
+    let key: Settings;
+    let value: unknown;
+    if (action === "set-root") {
+      value = this.requireRelativePath(payload, "value");
+      key = Settings.Root;
+    } else if (action === "set-gitignored") {
+      value = this.requireBoolean(payload, "value");
+      key = Settings.GitignoreTodos;
+    } else if (action === "set-backlogged-folder") {
+      value = this.requireFolderName(payload, "value");
+      key = Settings.BackloggedFolder;
+    } else if (action === "set-cancelled-folder") {
+      value = this.requireFolderName(payload, "value");
+      key = Settings.CancelledFolder;
+    } else if (action === "set-completed-folder") {
+      value = this.requireFolderName(payload, "value");
+      key = Settings.CompletedFolder;
+    } else {
+      value = this.requireBoolean(payload, "value");
+      key = Settings.CodeScanningEnabled;
+    }
+    await this.set(key, value);
+    await this.refreshConfigProjection();
+    await this.repository.refresh();
+    return { success: true };
+  }
+
+  private async handleSonarQubeSetting(
+    action: string,
+    payload: unknown,
+  ): Promise<SettingsActionResult> {
+    const value = this.requireString(payload, "value");
+    if (action === "set-sonarqube-url") {
+      const trimmed = value.trim();
+      if (trimmed) {
+        validateSonarUrl(trimmed);
+      }
+      await this.set(Settings.SonarQubeUrl, trimmed);
+      return { success: true };
+    }
+    await this.set(Settings.SonarQubeProjectKey, value.trim());
+    return { success: true };
+  }
+
+  private async handleDefaultSetting(
+    action: string,
+    payload: unknown,
+  ): Promise<SettingsActionResult> {
+    if (action === "set-default-root") {
+      const value = this.requireRelativePath(payload, "value");
+      await this.setDefault(Settings.Root, value);
+      return { success: true };
+    }
+    if (action === "set-default-priority") {
+      const value = this.requireString(payload, "value");
+      if (!DEFAULT_PRIORITIES.has(value)) {
+        throw new Error(`Invalid default priority: ${value}`);
+      }
+      await this.setDefault(Settings.DefaultPriority, value);
+      return { success: true };
+    }
+    const mode = this.requireString(payload, "value");
+    if (!isViewMode(mode)) {
+      throw new Error(`Invalid default preview mode: ${mode}`);
+    }
+    await this.setDefault(Settings.ViewMode, mode);
+    return { success: true };
+  }
+
+  private async handleUpdateSource(
+    action: string,
+    payload: unknown,
+  ): Promise<SettingsActionResult> {
+    const value = this.requireString(payload, "value");
+    const trimmed = value.trim();
+    if (trimmed && !isValidSourceUrl(trimmed)) {
+      throw new Error(
+        action === "set-skill-update-source"
+          ? "Use an HTTPS skill update source URL without credentials, query, or fragment."
+          : "Use an HTTPS canvas update source URL without credentials, query, or fragment.",
+      );
+    }
+    await this.set(
+      action === "set-skill-update-source"
+        ? Settings.SkillUpdateSource
+        : Settings.CanvasUpdateSource,
+      trimmed,
+    );
+    return { success: true };
+  }
+
+  private async handleBoardStatusVisibility(payload: unknown): Promise<SettingsActionResult> {
+    const visible = this.requireBoolean(payload, "value");
+    const boardScope = this.requireBoardScope(payload, "scope");
+    const status = this.requireTodoStatus(payload, "status");
+    const provider =
+      boardScope === "code-scanning" ? this.scanningBoardViewProvider : this.boardViewProvider;
+    await provider.setStatusVisibility(status, visible);
+    provider.refresh();
+    return { success: true };
   }
 
   private requireString(payload: unknown, key: string): string {
     const obj = this.requireObject(payload);
     const value = obj[key];
     if (typeof value !== "string") {
-      throw new Error(`Missing or invalid string setting: ${key}`);
+      throw new TypeError(`Missing or invalid string setting: ${key}`);
     }
     return value;
   }
@@ -359,7 +414,7 @@ export class SettingsService {
       return undefined;
     }
     if (typeof value !== "string") {
-      throw new Error(`Missing or invalid string setting: ${key}`);
+      throw new TypeError(`Missing or invalid string setting: ${key}`);
     }
     return value;
   }
@@ -368,7 +423,7 @@ export class SettingsService {
     const obj = this.requireObject(payload);
     const value = obj[key];
     if (typeof value !== "boolean") {
-      throw new Error(`Missing or invalid boolean setting: ${key}`);
+      throw new TypeError(`Missing or invalid boolean setting: ${key}`);
     }
     return value;
   }
@@ -387,7 +442,7 @@ export class SettingsService {
       throw new Error(`Invalid relative path: ${value}`);
     }
     // Reject null/control characters.
-    if (trimmed.split("").some((ch) => ch.charCodeAt(0) < 0x20)) {
+    if (Array.from(trimmed).some((ch) => (ch.codePointAt(0) ?? 0) < 0x20)) {
       throw new Error(`Invalid relative path: ${value}`);
     }
     const normalized = trimmed.replace(/\\/g, "/");
