@@ -98,10 +98,6 @@ jobs:
           name: sonar-test-results
           path: .
 
-      - name: Report resolved Sonar version
-        shell: bash
-        run: echo "Sonar project version = ${{ needs.build-test-package.outputs.package_version }}"
-
       # Restore the newest accessible snapshot; the content hash is known only after scanning.
       - name: Restore SonarScanner downloads
         id: sonar-cache
