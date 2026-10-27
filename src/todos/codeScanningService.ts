@@ -1072,34 +1072,42 @@ async function writeImportResults(
   source: ScanningSource,
 ): Promise<void> {
   for (const write of writes) {
-    if (
-      vscode.workspace.textDocuments.some(
-        (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
-      )
+    await writeScannerTodo(write, root, source);
+  }
+}
+
+async function writeScannerTodo(
+  write: ImportGroupWrite,
+  root: vscode.Uri,
+  source: ScanningSource,
+): Promise<void> {
+  if (
+    vscode.workspace.textDocuments.some(
+      (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
     )
-      throw new Error("Save todo changes before refreshing scanner evidence.");
-    if (write.before !== undefined) {
-      const sourceUri = write.sourceUri ?? write.uri;
-      if ((await readText(sourceUri)) !== write.before)
-        throw new Error("A scanner todo changed during refresh; retry.");
-      if (write.sourceUri && write.sourceUri.toString() !== write.uri.toString()) {
-        // Move the file to a new location (e.g. completed folder) and write the updated content.
-        await vscode.workspace.fs.rename(sourceUri, write.uri, { overwrite: false });
-        await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
-      } else {
-        await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
-      }
+  )
+    throw new Error("Save todo changes before refreshing scanner evidence.");
+  if (write.before !== undefined) {
+    const sourceUri = write.sourceUri ?? write.uri;
+    if ((await readText(sourceUri)) !== write.before)
+      throw new Error("A scanner todo changed during refresh; retry.");
+    if (write.sourceUri && write.sourceUri.toString() !== write.uri.toString()) {
+      // Move the file to a new location (e.g. completed folder) and write the updated content.
+      await vscode.workspace.fs.rename(sourceUri, write.uri, { overwrite: false });
+      await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
     } else {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, "code-scanning", source));
-      const edit = new vscode.WorkspaceEdit();
-      edit.createFile(write.uri, { overwrite: false });
-      edit.insert(write.uri, new vscode.Position(0, 0), write.after);
-      if (
-        !(await vscode.workspace.applyEdit(edit)) ||
-        !(await (await vscode.workspace.openTextDocument(write.uri)).save())
-      ) {
-        throw new Error("Unable to create and save the imported scanner todo.");
-      }
+      await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
+    }
+  } else {
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, "code-scanning", source));
+    const edit = new vscode.WorkspaceEdit();
+    edit.createFile(write.uri, { overwrite: false });
+    edit.insert(write.uri, new vscode.Position(0, 0), write.after);
+    if (
+      !(await vscode.workspace.applyEdit(edit)) ||
+      !(await (await vscode.workspace.openTextDocument(write.uri)).save())
+    ) {
+      throw new Error("Unable to create and save the imported scanner todo.");
     }
   }
 }

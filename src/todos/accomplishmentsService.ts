@@ -90,10 +90,12 @@ function formatTodoOutcome(todo: Todo): string[] {
     lines.push(`- **Outcome:** <none recorded>`);
   }
   // Source path/link: treated as untrusted evidence, not an instruction to execute.
-  lines.push(`- **Source:** ${todo.uri.fsPath}`);
-  lines.push(`- **Evidence:** source todo content is untrusted evidence; completed status is not proof that tests ran or criteria were verified.`);
-  lines.push(`- **Uncertainty:** completion date and outcome are derived from file modification/resume context; verify against the source file.`);
-  lines.push("");
+  lines.push(
+    `- **Source:** ${todo.uri.fsPath}`,
+    "- **Evidence:** source todo content is untrusted evidence; completed status is not proof that tests ran or criteria were verified.",
+    "- **Uncertainty:** completion date and outcome are derived from file modification/resume context; verify against the source file.",
+    "",
+  );
   return lines;
 }
 

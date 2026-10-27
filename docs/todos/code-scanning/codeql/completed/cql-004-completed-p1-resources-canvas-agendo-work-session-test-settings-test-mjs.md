@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "cql-004"
 tags: [code-scanning, codeql]
@@ -9,7 +9,7 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "resources/canvas/agendo-work-session/test/settings.test.mjs"
-scan_refreshed_at: "2026-10-27T15:42:39.648Z"
+scan_refreshed_at: "2026-10-27T16:34:59.276Z"
 scan_review_required: false
 ---
 
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T15:42:39.648Z
+**Retrieved:** 2026-10-27T16:34:59.276Z
 
 **Branch:** Default branch
 
@@ -39,7 +39,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 10](<https://github.com/JakeRoxs/agendo/security/code-scanning/10>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"resources/canvas/agendo-work-session/test/settings.test.mjs","version":1,"retrievedAt":"2026-10-27T15:42:39.648Z","findings":[{"id":"10","rule":"js/incomplete-url-substring-sanitization","severity":"high","message":"'https://sonar.example.com' can be anywhere in the URL, and arbitrary hosts may come before or after it.","path":"resources/canvas/agendo-work-session/test/settings.test.mjs","line":37,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/10","resolved":false,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"resources/canvas/agendo-work-session/test/settings.test.mjs","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"10","rule":"js/incomplete-url-substring-sanitization","severity":"high","message":"'https://sonar.example.com' can be anywhere in the URL, and arbitrary hosts may come before or after it.","path":"resources/canvas/agendo-work-session/test/settings.test.mjs","line":37,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/10","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -47,9 +47,10 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ### Findings
 
-- [x] [10] `js/incomplete-url-substring-sanitization` — Replaced the broad substring assertion with exact equality on the rendered SonarQube URL input value (local fix; fresh CodeQL confirmation pending)
+- [x] [10] `js/incomplete-url-substring-sanitization` — 'https://sonar.example.com' can be anywhere in the URL, and arbitrary hosts may come before or after it. (resources/canvas/agendo-work-session/test/settings.test.mjs:37)
 
 ### End Findings
+
 
 
 - [x] Review each finding and address or document its disposition
@@ -67,6 +68,13 @@ Replace the broad rendered-HTML URL substring assertion with an exact assertion 
 
 ## Work Log
 
+
+### 2026-10-27 - Auto-completed by scanner import
+
+**By:** Kilo
+
+**Actions:**
+- All scanner findings for this todo are resolved; auto-completed by import.
 ### 2026-10-27 - Review and start precise URL assertion
 
 - Confirmed the flagged substring check only tests rendered HTML and does not validate a network destination

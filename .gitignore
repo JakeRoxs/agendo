@@ -3,6 +3,7 @@ out/
 coverage/
 reports/
 .scannerwork/
+.sonar/
 .artifacts/
 *.vsix
 resources/mcp/server.bundle.mjs

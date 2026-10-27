@@ -9,7 +9,7 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/test/codeScanning.test.ts"
-scan_refreshed_at: "2026-10-27T15:42:39.648Z"
+scan_refreshed_at: "2026-10-27T16:34:59.276Z"
 scan_review_required: true
 ---
 
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T15:42:39.648Z
+**Retrieved:** 2026-10-27T16:34:59.276Z
 
 **Branch:** Default branch
 
@@ -39,7 +39,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 6](<https://github.com/JakeRoxs/agendo/security/code-scanning/6>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/codeScanning.test.ts","version":1,"retrievedAt":"2026-10-27T15:42:39.648Z","findings":[{"id":"6","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/codeScanning.test.ts","line":1319,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/6","resolved":true,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/codeScanning.test.ts","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"6","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/codeScanning.test.ts","line":1319,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/6","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -50,6 +50,7 @@ Review these scanner findings and verify any fix before completing this todo.
 - [ ] [6] `js/bad-tag-filter` — This regular expression does not match upper case \<SCRIPT\> tags. (src/test/codeScanning.test.ts:1319)
 
 ### End Findings
+
 
 
 

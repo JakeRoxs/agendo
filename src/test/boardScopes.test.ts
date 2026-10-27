@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import { Script } from "node:vm";
 import * as vscode from "vscode";
+import { extractScript } from "./extractScript";
 import { Command } from "../commands";
 import { BoardViewProvider, buildBoardSnapshot } from "../todos/boardViewProvider";
 import { FilterService } from "../todos/filterService";
@@ -32,10 +33,6 @@ function makeRepository(todos: Todo[]): TodoRepository {
     getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
     onDidChange: () => new vscode.Disposable(() => {}),
   } as unknown as TodoRepository;
-}
-
-function extractScript(html: string): string | undefined {
-  return /<script[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html)?.[1];
 }
 
 suite("board view scope", () => {
@@ -589,6 +586,43 @@ suite("board view scope", () => {
 
   test("webview script extraction accepts uppercase script tags", () => {
     assert.strictEqual(extractScript("<SCRIPT>test()</SCRIPT>"), "test()");
+  });
+
+  test("webview script extraction accepts script end tags with trailing whitespace", () => {
+    assert.strictEqual(extractScript("<script>test()</script >"), "test()");
+  });
+
+  test("webview script extraction accepts script end tags with whitespace and content before close", () => {
+    assert.strictEqual(extractScript("<script>test()</script\t\n bar>"), "test()");
+  });
+
+  test("webview script extraction extracts from script tag with attributes", () => {
+    assert.strictEqual(extractScript('<script nonce="abc">test()</script>'), "test()");
+  });
+
+  test("webview script extraction returns undefined when no script tag is present", () => {
+    assert.strictEqual(extractScript("<div>no script</div>"), undefined);
+  });
+
+  test("script extraction skips repeated lookalike tags and requires a complete tag name", () => {
+    assert.strictEqual(extractScript("<scripty>x</scripty><script2>y</script2>"), undefined);
+    assert.strictEqual(
+      extractScript("<scripty>x</scripty><script2>y</script2><script>ok()</script>"),
+      "ok()",
+    );
+    assert.strictEqual(
+      extractScript('<script>const s = "</script2>";</script>'),
+      'const s = "</script2>";',
+    );
+  });
+
+  test("script extraction preserves offsets after Unicode and ignores quoted attribute delimiters", () => {
+    assert.strictEqual(extractScript('\u0130<script data-example=">">ok()</script>'), "ok()");
+    assert.strictEqual(extractScript("<script>ok()</script"), undefined);
+    assert.strictEqual(
+      extractScript("<script>first()</script><script>second()</script>"),
+      "first()",
+    );
   });
 
   test("boards coexist with isolated preferences, source-local limits, and scoped command validation", async () => {
