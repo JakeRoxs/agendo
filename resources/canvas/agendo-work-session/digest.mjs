@@ -72,9 +72,10 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
 
       const scope = ${JSON.stringify(scope)};
       const status = document.createElement('p');
+      status.className = 'error';
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
-      document.body.prepend(status);
+      document.body.append(status);
       const refresh = async () => {
         try {
           const response = await fetch('/digest-snapshot');
@@ -130,7 +131,7 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
       }
     })();
   `;
-  const navigation = `<div class="workspace-navigation">${renderNavigation(nav)}</div>`;
+  const navigation = `<div class="canvas-toolbar">${renderNavigation(nav)}</div>`;
   const html = `<!doctype html>
 <html lang="en">
 <head>

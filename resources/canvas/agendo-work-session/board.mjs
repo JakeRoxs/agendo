@@ -13,9 +13,10 @@ export function renderBoardCanvas(scope, nav, nonce, csp) {
       let revision = 0;
       let lastSnapshot;
       const status = document.createElement('p');
+      status.className = 'error';
       status.setAttribute('role', 'status');
       status.setAttribute('aria-live', 'polite');
-      document.body.prepend(status);
+      document.body.append(status);
       const emit = message => { for (const listener of listeners) listener(message); };
       const post = async (path, payload) => {
         const response = await fetch(path, {
@@ -72,6 +73,26 @@ export function renderBoardCanvas(scope, nav, nonce, csp) {
       for (const button of document.querySelectorAll('[data-open]')) button.addEventListener('click', () => open('/open', { todoId: button.dataset.open }));
       for (const button of document.querySelectorAll('[data-open-group]')) button.addEventListener('click', () => open('/open', { view: { kind: 'group', groupName: button.dataset.openGroup } }));
       for (const button of document.querySelectorAll('[data-open-board]')) button.addEventListener('click', () => open('/open', { view: { kind: 'board', scope: button.dataset.openBoard } }));
+      const recentToggle = document.querySelector('[data-toggle-recent]');
+      const recentMenu = document.querySelector('.recent-dropdown');
+      const closeRecent = () => {
+        if (recentMenu) recentMenu.hidden = true;
+        recentToggle?.setAttribute('aria-expanded', 'false');
+      };
+      recentToggle?.addEventListener('click', () => {
+        if (!recentMenu) return;
+        recentMenu.hidden = !recentMenu.hidden;
+        recentToggle.setAttribute('aria-expanded', String(!recentMenu.hidden));
+      });
+      document.addEventListener('click', event => {
+        if (!recentToggle?.contains(event.target) && !recentMenu?.contains(event.target)) closeRecent();
+      });
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && recentMenu && !recentMenu.hidden) {
+          closeRecent();
+          recentToggle?.focus();
+        }
+      });
       document.querySelector('[data-open-select]')?.addEventListener('change', event => {
         const option = event.target.selectedOptions[0];
         const view = option.dataset.boardScope ? { kind: 'board', scope: option.dataset.boardScope }
@@ -81,10 +102,11 @@ export function renderBoardCanvas(scope, nav, nonce, csp) {
       });
     })();
   `;
-  const navigation = `<div class="workspace-navigation">${renderNavigation(nav)}</div>`;
+  const navigation = renderNavigation(nav);
   return readFileSync(new URL('./board.html', import.meta.url), 'utf8')
     .replaceAll('__AGENDO_BOARD_NONCE__', nonce)
     .replace('__AGENDO_BOARD_CSP__', csp)
     .replace('__AGENDO_BOARD_HOST__', () => bootstrap)
+    .replace('__AGENDO_BOARD_STYLES__', '<link rel="stylesheet" href="/page.css">')
     .replace('__AGENDO_BOARD_NAV__', () => navigation);
 }

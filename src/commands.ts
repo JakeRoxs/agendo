@@ -37,6 +37,7 @@ export enum Command {
   CreateTodoLoading = "agendo.createTodo.loading",
   OpenPreview = "agendo.openPreview",
   OpenCanvas = "agendo.openCanvas",
+  OpenSettings = "agendo.openSettings",
   InstallCanvas = "agendo.installCanvas",
   SetViewMode = "agendo.setViewMode",
   SetStatusPending = "agendo.setStatus.pending",

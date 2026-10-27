@@ -91,12 +91,13 @@ suite("shared board presentation", () => {
     assert.ok(template.includes("__AGENDO_BOARD_NONCE__"), "Missing nonce placeholder");
     assert.ok(template.includes("__AGENDO_BOARD_NAV__"), "Missing navigation placeholder");
     assert.ok(template.includes("__AGENDO_BOARD_HOST__"), "Missing host bootstrap placeholder");
+    assert.ok(template.includes("__AGENDO_BOARD_STYLES__"), "Missing host stylesheet placeholder");
   });
 
   test("shared board.html preserves control, card field, DnD, and status ordering features", () => {
     const template = readFileSync(BOARD_HTML_PATH, "utf8");
     assert.ok(template.includes("hideStatus"), "Missing hideStatus handler");
-    assert.ok(template.includes("showStatus"), "Missing showStatus handler");
+    assert.ok(!template.includes("showStatus"), "Show-column controls now belong in Settings");
     assert.ok(template.includes("reorderStatuses"), "Missing reorderStatuses handler");
     assert.ok(template.includes("setStatus"), "Missing setStatus handler");
     assert.ok(template.includes("setPriority"), "Missing setPriority handler");
@@ -171,6 +172,10 @@ suite("shared board presentation", () => {
     });
     try {
       board.open();
+      assert.strictEqual(
+        board.getSnapshot().columns.find((column) => column.status === "backlogged")?.label,
+        "Backlogged",
+      );
       assert.ok(capturedHtml.length > 0, "Expected HTML to be set on webview panel");
       assert.ok(
         capturedHtml.includes("acquireVsCodeApi"),
@@ -184,7 +189,10 @@ suite("shared board presentation", () => {
       assert.doesNotThrow(() => new Script(script), "Native HTML script must compile");
       assert.ok(script.includes("workSession.disabled = Boolean(todo.collision)"));
       assert.ok(script.includes("columnElement.parentElement.children"));
-      assert.ok(capturedHtml.includes(".board.source-sections { display: block"));
+      assert.match(capturedHtml, /<style>[\s\S]*\.board\s*\{[^}]*display:\s*grid/);
+      assert.match(capturedHtml, /\.canvas-toolbar\s*\{[^}]*display:\s*flex/);
+      assert.ok(!capturedHtml.includes('href="/page.css"'), "Native styles must not use HTTP paths");
+      assert.ok(!capturedHtml.includes("__AGENDO_BOARD_"), "Native placeholders must be resolved");
     } finally {
       board.dispose();
       Object.defineProperty(vscode.window, "createWebviewPanel", {
@@ -221,8 +229,8 @@ suite("shared board presentation", () => {
     assert.ok(html.includes("/board-snapshot"), "HTTP HTML must fetch board snapshots");
     assert.ok(html.includes("/board-message"), "HTTP HTML must post board messages");
     assert.ok(
-      html.includes('<div class="workspace-navigation">'),
-      "HTTP HTML must include navigation",
+      html.includes('<div class="canvas-toolbar">'),
+      "HTTP HTML must include shared toolbar navigation",
     );
 
     const script = extractScript(html);
@@ -234,7 +242,8 @@ suite("shared board presentation", () => {
 
     assert.ok(script.includes("workSession.disabled = Boolean(todo.collision)"));
     assert.ok(script.includes("columnElement.parentElement.children"));
-    assert.ok(html.includes(".board.source-sections { display: block"));
+    assert.match(html, /<link[^>]+href="\/page\.css"/);
+    assert.ok(!html.includes("__AGENDO_BOARD_"), "HTTP placeholders must be resolved");
   });
 
   test("HTTP renderBoardCanvas for code-scanning scope", async () => {
@@ -631,14 +640,18 @@ suite("shared board presentation", () => {
       "setHideEmptyColumns",
       "applyPreset",
       "host.onMessage(",
-      ".board.source-sections { display: block",
-      "accent-priority-p1",
-      "accent-status-complete",
       "card-busy",
     ];
     for (const feature of sharedFeatureStrings) {
       assert.ok(nativeHtml.includes(feature), `Native HTML missing shared feature: ${feature}`);
       assert.ok(httpHtml.includes(feature), `HTTP HTML missing shared feature: ${feature}`);
+    }
+
+    const sharedCss = readFileSync(path.join(path.dirname(BOARD_HTML_PATH), "assets/page.css"), "utf8");
+    assert.ok(nativeHtml.includes(sharedCss), "Native board must embed the HTTP board's stylesheet");
+    assert.match(httpHtml, /<link[^>]+href="\/page\.css"/);
+    for (const selector of [".board.source-sections", "accent-priority-p1", "accent-status-completed"]) {
+      assert.ok(sharedCss.includes(selector), `Shared stylesheet missing feature: ${selector}`);
     }
 
     const nativeScript = extractScript(nativeHtml);
@@ -732,6 +745,24 @@ suite("shared board presentation", () => {
       assert.ok(toggle);
       toggle.listeners.get("click")?.();
       assert.deepStrictEqual(JSON.parse(JSON.stringify(state)), { settingsOpen: true });
+      const snapshot = provider.getSnapshot();
+      receive({
+        type: "snapshot",
+        snapshot: {
+          ...snapshot,
+          hiddenStatuses: ["completed"],
+          columns: snapshot.columns.filter((column) => column.status !== "completed"),
+        },
+      });
+      assert.strictEqual(elements.board.children.length, 5);
+      assert.ok(
+        !walk(elements.toolbar).some((element) => /^(Hidden:|Show )/.test(element.textContent)),
+        "Hidden-column controls belong in Settings, not the toolbar",
+      );
+      assert.ok(
+        walk(elements.toolbar).some((element) => element.textContent === "Settings"),
+        "Board must retain access to Settings to restore hidden columns",
+      );
       receive({ type: "snapshot", snapshot: scanning.getSnapshot() });
       assert.strictEqual(elements.board.children.length, 2);
       assert.ok(walk(elements.board).some((element) => element.textContent === "CodeQL"));

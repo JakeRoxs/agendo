@@ -84,10 +84,14 @@ defaults to any missing key — or to the whole configuration when the file is a
 | ----------------- | ------------ |
 | `root`            | `docs/todos` |
 | `gitignored`      | `true`       |
-| `backloggedFolder`   | `backlog`    |
+| `backloggedFolder`   | `backlogged` |
 | `cancelledFolder` | `cancelled`  |
 | `completedFolder`  | `completed`   |
 | `codeScanning`    | `false`      |
+
+The default parked-work folder is `backlogged/`, matching the lifecycle status. An existing
+`backlog/` folder is a custom layout: honor an explicit `backloggedFolder: "backlog"` setting.
+Do not silently rename, merge, or migrate folders; changing the configured folder does not move files.
 
 Example of a config with a single non-default setting:
 
@@ -225,13 +229,13 @@ Todo files follow this naming pattern:
 - Each terminal/parked state has its **own sibling subfolder** under the root:
   - `completed/` — finished successfully.
   - `cancelled/` — abandoned or superseded.
-  - `backlog/` — deprioritized but still open.
+  - `backlogged/` — deprioritized but still open.
 - Recursive-glob behavior varies by tool: some `**/*.md` implementations include root files and
   others do not. For deterministic discovery, list `{root}/*.md` for active items and each
   configured state subfolder separately. When `gitignored` is `true`, use a direct directory
   listing rather than a workspace search index.
 - Per-todo images live in `assets/{id}/` and **stay in place** even after the todo file moves to
-  `completed/`, `cancelled/`, or `backlog/`. Do not move the assets when the todo moves.
+  `completed/`, `cancelled/`, or `backlogged/`. Do not move the assets when the todo moves.
 
 ## File Structure
 

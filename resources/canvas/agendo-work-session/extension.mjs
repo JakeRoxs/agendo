@@ -325,7 +325,7 @@ const canvas = createCanvas({
       await listen(entry);
       servers.set(instanceId, entry);
     }
-    navigate(entry, todoId);
+    navigate(entry, todoId, null);
 
     return { ...summarize(todo), url: entry.url };
   }),

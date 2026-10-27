@@ -137,4 +137,17 @@ describe('Digest canvas server flow', () => {
     const nav = { recent: [], canBack: false, canForward: false, returnTo: undefined };
     assert.throws(() => renderDigestCanvas('invalid', nav, 'nonce', 'csp'), /Invalid digest scope/);
   });
+
+  for (const scope of ['todos', 'code-scanning']) {
+    it(`${scope} digest uses the shared toolbar without a status paragraph above it`, () => {
+      const nav = { recent: [], canBack: false, canForward: false, returnTo: undefined };
+      const html = renderDigestCanvas(scope, nav, 'nonce123', 'csp');
+      assert.match(html, /<body>\s*<div class="canvas-toolbar">/);
+      assert.ok(!html.includes('workspace-navigation'));
+      assert.ok(html.includes('document.body.append(status)'));
+      assert.ok(!html.includes('document.body.prepend(status)'));
+      assert.ok(html.includes("status.className = 'error'"));
+      assert.ok(html.includes("status.setAttribute('aria-live', 'polite')"));
+    });
+  }
 });

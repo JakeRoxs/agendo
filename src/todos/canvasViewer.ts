@@ -77,6 +77,17 @@ export class CanvasViewer implements vscode.Disposable {
     this.show(external.toString());
   }
 
+  async openSettings(workspaceRoot: string, returnView?: WorkspaceView): Promise<void> {
+    const server = await this.ensureServer(workspaceRoot);
+    if (returnView) {
+      this.module?.navigate(server, returnView, null);
+    }
+    const external = await vscode.env.asExternalUri(
+      vscode.Uri.parse(new URL("/settings", server.url).href),
+    );
+    this.show(external.toString());
+  }
+
   private async ensureServer(workspaceRoot: string): Promise<InstanceServer> {
     if (this.entry && this.root === workspaceRoot) {
       return this.entry;

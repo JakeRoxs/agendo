@@ -112,7 +112,7 @@ export function todoLocations(workspaceRoot) {
     const config = readJson(join(base, '.agendo-config.json')) ?? {};
     const name = (value, fallback) => (typeof value === 'string' && /^[\w.-]+$/.test(value) ? value : fallback);
     const folders = {
-      backlogged: name(config.backloggedFolder, 'backlog'),
+      backlogged: name(config.backloggedFolder, 'backlogged'),
       completed: name(config.completedFolder, 'completed'),
       cancelled: name(config.cancelledFolder, 'cancelled')
     };

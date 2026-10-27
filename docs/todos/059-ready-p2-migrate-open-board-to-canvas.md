@@ -15,28 +15,42 @@ The board opens in a separate VS Code webview panel, duplicating the board rende
 
 ## Acceptance Criteria
 
-- [ ] `agendo.openBoard` command opens the board in the canvas instead of a standalone webview panel
-- [ ] `agendo.codeScanning.openBoard` command opens the code scanning board in the canvas
+- [x] `agendo.openBoard` command opens the board in the canvas instead of a standalone webview panel
+- [x] `agendo.codeScanning.openBoard` command opens the code scanning board in the canvas
 - [ ] Board interactions (filtering, card actions) work correctly in the canvas
 - [ ] "Return to board" from canvas todo view works correctly
-- [ ] Extension compiles cleanly
-- [ ] All extension tests pass
-- [ ] Lint passes
-- [ ] Extension bundles successfully
+- [x] Extension compiles cleanly
+- [x] All extension tests pass
+- [x] Lint passes
+- [x] Extension bundles successfully
 
 ## Resume Context
 
-**Current state:** Board and task digest both migrated to canvas. Board commands route through `canvasViewer.open()` with `{ kind: "board", scope }`. Digest commands now open `{ kind: "digest", scope }` in the canvas with a dedicated `digest.mjs` renderer that polls `/digest-snapshot`. `getDigest` action added to `CanvasViewer` and `extension.ts`. Old temp-file markdown preview approach removed.
+**Current state:** Board and digest commands route through the canvas viewer. The partial 067 regression that removed board styling and blocked its replacement stylesheet is repaired. Native fallback and HTTP canvas share the same board template and CSS. Compile, lint, extension-host tests, canvas tests, and bundles pass; installed-extension verification remains outstanding.
 
-**Verification performed:**
-- `npm run compile` (tsc): clean
-- `npm run lint` (biome): 55 files, no issues
-- `npm run test:canvas`: 254 pass / 0 fail / 41 suites
-- `npm run bundle` (esbuild): extension + MCP server bundle successfully
-
-**Next step:** Test in live VS Code that both board and digest open in the canvas and verify interactions work correctly (cannot be performed in this environment; no VS Code test cache available).
+**Next step:** Rebuild/reload the extension used by VS Code and smoke test both board scopes and digest with real workspace data, especially scanning source sections and scoped filters/actions. Browser-fixture round trips pass but do not verify the user's installed extension.
 
 ## Work Log
+
+### 2026-10-27 - Repair board regression and verify migration boundary
+
+**By:** Kilo
+
+**Actions:**
+
+- Confirmed `registerBoardCommands` routes both scopes to `CanvasViewer.open` rather than the legacy board panel
+- Traced the unstyled screenshot to removed board CSS and an HTTP CSP blocking the replacement stylesheet
+- Repaired shared stylesheet loading for HTTP and native fallback without broadening native CSP permissions; added actual HTTP stylesheet/CSP regression tests for both scopes
+- `npm test`: compile and lint passed, 364 extension tests passed
+- All canvas `*.test.mjs` suites passed: 297 tests
+- `npm run bundle`: extension and MCP bundles succeeded
+- Browser-tested a read-only fixture at 1206px and 800px: grid/cards, card settings, work-session navigation to real todo 059, return to board, recent-menu open/Escape dismissal
+
+**Learnings:**
+
+- Shared HTML alone does not establish presentation parity; both hosts must receive shared CSS under their own CSP rules
+- VS Code test cache is now available and the extension-host suite ran successfully, superseding the earlier environment limitation
+- Browser-fixture validation does not replace checking the rebuilt extension's real command/filter wiring; retain ready rather than completed
 
 ### 2026-10-26 - Implementation
 

@@ -287,6 +287,7 @@ suite("todoModel", () => {
 
       const root = service.root;
       assert.strictEqual(root, "docs/todos");
+      assert.strictEqual(service.backloggedFolder, "backlogged");
       assert.deepStrictEqual(service.toTodosConfig(), {});
 
       const missingRoot = new ConfigService();
@@ -383,6 +384,58 @@ suite("todoModel", () => {
         value: originalGetConfiguration,
         configurable: true,
       });
+    }
+  });
+
+  test("config projection retains custom backlog folder while omitting the new default", async () => {
+    const service = new ConfigService();
+    const fixtureRoot = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-config-custom-backlog-"));
+    const rootUri = vscode.Uri.file(path.join(fixtureRoot, "docs", "todos"));
+    Object.defineProperty(service, "getRootUri", { value: () => rootUri });
+
+    let backloggedFolder = "backlog";
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: () => ({
+        get: (key: string) => {
+          if (key === Settings.GitignoreTodos) return true;
+          if (key === Settings.BackloggedFolder) return backloggedFolder;
+          return undefined;
+        },
+        update: async () => undefined,
+      }),
+      configurable: true,
+    });
+
+    try {
+      await vscode.workspace.fs.createDirectory(rootUri);
+      await service.writeConfigFile({ force: true });
+
+      const bytes = await vscode.workspace.fs.readFile(
+        vscode.Uri.joinPath(rootUri, ".agendo-config.json"),
+      );
+      const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
+      assert.deepStrictEqual(config, {
+        backloggedFolder: "backlog",
+      });
+      assert.deepStrictEqual(service.toTodosConfig(), {
+        backloggedFolder: "backlog",
+      });
+      assert.strictEqual(service.backloggedFolder, "backlog");
+
+      backloggedFolder = "backlogged";
+      assert.strictEqual(service.backloggedFolder, "backlogged");
+      assert.deepStrictEqual(service.toTodosConfig(), {});
+      await service.writeConfigFile({ force: true });
+      await assert.rejects(async () => {
+        await vscode.workspace.fs.stat(vscode.Uri.joinPath(rootUri, ".agendo-config.json"));
+      });
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: originalGetConfiguration,
+        configurable: true,
+      });
+      await fs.rm(fixtureRoot, { recursive: true, force: true });
     }
   });
 
@@ -782,7 +835,7 @@ suite("todoModel", () => {
       dependencies,
       children: [],
       epic: false,
-      folder: status === "backlogged" ? "backlog" : "",
+      folder: status === "backlogged" ? "backlogged" : "",
       fileName: `${id}-${status}-${priority}-todo-${id}.md`,
       uri: vscode.Uri.file(`/tmp/${id}-${status}-${priority}-todo-${id}.md`),
       updatedAt,
@@ -2223,6 +2276,7 @@ suite("todoModel", () => {
 
     try {
       const context = {
+        extension: { packageJSON: { version: "0.3.0" } },
         workspaceState: {
           get: <T>(key: string, fallback: T): T => {
             return workspaceState.has(key) ? (workspaceState.get(key) as T) : fallback;

@@ -1045,6 +1045,17 @@ function registerTodoCommands(
 function registerConfigCommands(register: Register, services: CommandServices): void {
   const { config } = services;
 
+  register(Command.OpenSettings, async (scope?: unknown) => {
+    const root = config.getWorkspaceFolder()?.uri.fsPath;
+    if (!root) {
+      return;
+    }
+    await services.canvasViewer.openSettings(
+      root,
+      scope === "todos" || scope === "code-scanning" ? { kind: "board", scope } : undefined,
+    );
+  });
+
   register(Command.ChooseRoot, async () => {
     const value = await vscode.window.showInputBox({
       prompt: "Workspace-relative path to the todos root folder",

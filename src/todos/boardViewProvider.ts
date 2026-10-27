@@ -23,7 +23,7 @@ const STATUS_LABEL: Record<TodoStatus, string> = {
   pending: "Pending",
   "in-progress": "In Progress",
   ready: "Ready",
-  backlogged: "Backlog",
+  backlogged: "Backlogged",
   completed: "Completed",
   cancelled: "Cancelled",
 };
@@ -618,7 +618,7 @@ export class BoardViewProvider implements vscode.Disposable {
     }
 
     if (message.type === "settings") {
-      await vscode.commands.executeCommand("workbench.action.openSettings", `@ext:agendo.agendo`);
+      await vscode.commands.executeCommand(Command.OpenSettings, this.scope);
       return;
     }
 
@@ -1120,9 +1120,18 @@ export class BoardViewProvider implements vscode.Disposable {
     return `${SCANNING_BOARD_PREFIX}${base}`;
   }
 
-  private getHiddenStatuses(): TodoStatus[] {
+  /** Persisted hidden statuses for this board's scope (read by settings info). */
+  getHiddenStatuses(): TodoStatus[] {
     const hiddenStatuses = this.state.get<unknown[]>(this.keyFor(BOARD_HIDDEN_STATUSES_KEY), []);
     return hiddenStatuses.filter(isTodoStatus);
+  }
+
+  /** Set whether a status column is visible for this board's scope. */
+  async setStatusVisibility(status: unknown, visible: unknown): Promise<boolean> {
+    if (!isTodoStatus(status) || typeof visible !== "boolean") {
+      return false;
+    }
+    return this.setStatusHidden(status, !visible);
   }
 
   private getStatusOrder(): TodoStatus[] {
@@ -1257,10 +1266,15 @@ export class BoardViewProvider implements vscode.Disposable {
     );
     const hostBootstrap =
       "((api) => { globalThis.agendoBoardHost = { postMessage: message => api.postMessage(message), onMessage: listener => window.addEventListener('message', event => listener(event.data)), getState: () => api.getState(), setState: state => api.setState(state) }; })(acquireVsCodeApi());";
+    const pageCss = readFileSync(
+      path.join(__dirname, "../../resources/canvas/agendo-work-session/assets/page.css"),
+      "utf8",
+    );
     return template
       .replace("__AGENDO_BOARD_CSP__", csp)
       .replace("__AGENDO_BOARD_NONCE__", nonce)
       .replace("__AGENDO_BOARD_HOST__", hostBootstrap)
+      .replace("__AGENDO_BOARD_STYLES__", `<style>${pageCss}</style>`)
       .replace("__AGENDO_BOARD_NAV__", "");
   }
 }
