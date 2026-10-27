@@ -9,7 +9,7 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/test/boardScopes.test.ts"
-scan_refreshed_at: "2026-10-26T22:05:58.644Z"
+scan_refreshed_at: "2026-10-27T15:42:39.648Z"
 scan_review_required: true
 ---
 
@@ -20,11 +20,11 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-26T22:05:58.644Z
+**Retrieved:** 2026-10-27T15:42:39.648Z
 
 **Branch:** Default branch
 
-1 reported; 1 not returned. This retrieves existing scanner results, not a new analysis.
+3 reported; 0 not returned. This retrieves existing scanner results, not a new analysis.
 
 ### Affected Locations
 
@@ -35,8 +35,6 @@ Review these scanner findings and verify any fix before completing this todo.
 **Problem:** This regular expression does not match upper case \<SCRIPT\> tags.
 
 **Severity:** high
-
-**Observation:** Not returned in the latest successful result; resolution is not verified.
 
 [View finding 3](<https://github.com/JakeRoxs/agendo/security/code-scanning/3>)
 
@@ -50,8 +48,18 @@ Review these scanner findings and verify any fix before completing this todo.
 
 [View finding 4](<https://github.com/JakeRoxs/agendo/security/code-scanning/4>)
 
+#### File: src/test/boardScopes.test.ts | Line: 38
+
+**Rule:** js/bad-tag-filter
+
+**Problem:** This regular expression does not match script end tags like \</script\\t\\n bar\>.
+
+**Severity:** high
+
+[View finding 8](<https://github.com/JakeRoxs/agendo/security/code-scanning/8>)
+
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/boardScopes.test.ts","version":1,"retrievedAt":"2026-10-26T22:05:58.644Z","findings":[{"id":"3","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/boardScopes.test.ts","line":364,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/3","returned":false},{"id":"4","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/4","returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/boardScopes.test.ts","version":1,"retrievedAt":"2026-10-27T15:42:39.648Z","findings":[{"id":"3","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/boardScopes.test.ts","line":364,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/3","resolved":true,"returned":true},{"id":"4","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/4","resolved":true,"returned":true},{"id":"8","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script\\t\\n bar>.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/8","resolved":false,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -61,9 +69,10 @@ Review these scanner findings and verify any fix before completing this todo.
 
 - [x] [3] `js/bad-tag-filter` — This regular expression does not match upper case \<SCRIPT\> tags. (src/test/boardScopes.test.ts:364)
 - [x] [4] `js/bad-tag-filter` — This regular expression does not match script end tags like \</script \>. (src/test/boardScopes.test.ts:38)
-- [x] [3] `js/bad-tag-filter` — This regular expression does not match upper case \<SCRIPT\> tags. (src/test/boardScopes.test.ts:364) (not returned)
+- [ ] [8] `js/bad-tag-filter` — This regular expression does not match script end tags like \</script\\t\\n bar\>. (src/test/boardScopes.test.ts:38)
 
 ### End Findings
+
 
 
 

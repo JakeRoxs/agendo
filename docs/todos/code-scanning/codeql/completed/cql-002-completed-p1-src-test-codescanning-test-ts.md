@@ -9,7 +9,7 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/test/codeScanning.test.ts"
-scan_refreshed_at: "2026-10-26T22:05:58.644Z"
+scan_refreshed_at: "2026-10-27T15:42:39.648Z"
 scan_review_required: true
 ---
 
@@ -20,11 +20,11 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-26T22:05:58.644Z
+**Retrieved:** 2026-10-27T15:42:39.648Z
 
 **Branch:** Default branch
 
-0 reported; 1 not returned. This retrieves existing scanner results, not a new analysis.
+1 reported; 0 not returned. This retrieves existing scanner results, not a new analysis.
 
 ### Affected Locations
 
@@ -36,12 +36,10 @@ Review these scanner findings and verify any fix before completing this todo.
 
 **Severity:** high
 
-**Observation:** Not returned in the latest successful result; resolution is not verified.
-
 [View finding 6](<https://github.com/JakeRoxs/agendo/security/code-scanning/6>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/codeScanning.test.ts","version":1,"retrievedAt":"2026-10-26T22:05:58.644Z","findings":[{"id":"6","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/codeScanning.test.ts","line":1319,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/6","returned":false}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/codeScanning.test.ts","version":1,"retrievedAt":"2026-10-27T15:42:39.648Z","findings":[{"id":"6","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/codeScanning.test.ts","line":1319,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/6","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -50,9 +48,9 @@ Review these scanner findings and verify any fix before completing this todo.
 ### Findings
 
 - [ ] [6] `js/bad-tag-filter` — This regular expression does not match upper case \<SCRIPT\> tags. (src/test/codeScanning.test.ts:1319)
-- [ ] [6] `js/bad-tag-filter` — This regular expression does not match upper case \<SCRIPT\> tags. (src/test/codeScanning.test.ts:1319) (not returned)
 
 ### End Findings
+
 
 
 

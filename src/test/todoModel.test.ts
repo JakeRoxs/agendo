@@ -78,6 +78,24 @@ suite("todoModel", () => {
     assert.ok(body.includes("# Title"));
   });
 
+  test("splitFrontmatter normalizes every carriage return in a CRLF document", () => {
+    const content = "---\r\nstatus: pending\r\npriority: p1\r\n---\r\n# Title\r\nBody\r\n";
+    assert.deepStrictEqual(splitFrontmatter(content), {
+      data: "status: pending\npriority: p1",
+      body: "# Title\nBody\n",
+    });
+  });
+
+  test("parseFrontmatter removes repeated carriage returns within each line", () => {
+    const data =
+      "sta\rt\rus: pending\r\ntags: [al\rph\ra, be\rt\ra]\r\ndependencies:\r\n  - c\rql-\r001\r";
+    assert.deepStrictEqual(parseFrontmatter(data), {
+      status: "pending",
+      tags: ["alpha", "beta"],
+      dependencies: ["cql-001"],
+    });
+  });
+
   test("parseFrontmatter handles scalars, flow arrays and block arrays", () => {
     const data = [
       "status: pending",

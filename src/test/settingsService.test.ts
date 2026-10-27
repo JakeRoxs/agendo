@@ -93,7 +93,7 @@ function treeProviderFake(): TreeProviderFake {
     get refreshCalls() {
       return refreshCalls;
     },
-    refresh: async () => {
+    refresh: () => {
       refreshCalls++;
     },
   };
@@ -107,7 +107,7 @@ function skillTreeProviderFake(): SkillTreeProviderFake {
     get refreshCalls() {
       return refreshCalls;
     },
-    refresh: async () => {
+    refresh: () => {
       refreshCalls++;
     },
   };
@@ -138,6 +138,7 @@ function makeService(
     scanningTreeProvider: TreeProviderFake;
     skillStatusTreeProvider: SkillTreeProviderFake;
     globalValues: Record<string, unknown>;
+    beforeSet: () => PromiseLike<void>;
   }> = {},
 ): ServiceHarness {
   const config = overrides.config ?? configFake();
@@ -165,6 +166,9 @@ function makeService(
   const service = new SettingsService({
     get: <T>(key: string) => values[key] as unknown as T,
     set: async (key: string, value: unknown) => {
+      if (overrides.beforeSet) {
+        await overrides.beforeSet();
+      }
       values[key] = value;
       setCalls.push({ key, value });
     },
@@ -253,6 +257,51 @@ suite("settings service", () => {
     const { service } = makeService();
     const result = await service.handleSettingsAction({ action: "set-view-mode", value: "canvas" });
     assert.deepStrictEqual(result, { success: true });
+  });
+
+  test("type mismatches raise TypeError without writing settings", async () => {
+    const { service, setCalls } = makeService();
+    for (const payload of [
+      { action: 123 },
+      { action: "open-board", scope: 123 },
+      { action: "set-sort-by-date", value: "true" },
+    ]) {
+      await assert.rejects(service.handleSettingsAction(payload), TypeError);
+    }
+    assert.deepStrictEqual(setCalls, []);
+  });
+
+  test("tree refreshes wait for the asynchronous settings write", async () => {
+    let release!: () => void;
+    const pendingWrite = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { service, treeProvider, scanningTreeProvider, setCalls } = makeService({
+      beforeSet: () => pendingWrite,
+    });
+    const result = service.handleSettingsAction({ action: "set-group-by", value: "priority" });
+    try {
+      assert.strictEqual(treeProvider.refreshCalls, 0);
+      assert.strictEqual(scanningTreeProvider.refreshCalls, 0);
+      assert.deepStrictEqual(setCalls, []);
+    } finally {
+      release();
+      await result;
+    }
+    assert.deepStrictEqual(setCalls, [{ key: "groupBy", value: "priority" }]);
+    assert.strictEqual(treeProvider.refreshCalls, 1);
+    assert.strictEqual(scanningTreeProvider.refreshCalls, 1);
+  });
+
+  test("relative paths preserve supplementary Unicode and reject embedded controls", async () => {
+    const { service, setCalls } = makeService();
+    for (const value of ["docs/\u{1F680}/\u0000todos", "docs/\u001ftodos", "docs/\ttodos"]) {
+      await assert.rejects(service.handleSettingsAction({ action: "set-root", value }));
+    }
+    assert.deepStrictEqual(setCalls, []);
+    const value = "docs/\u{1F680}/todos";
+    await service.handleSettingsAction({ action: "set-root", value });
+    assert.deepStrictEqual(setCalls, [{ key: "root", value }]);
   });
 
   test("rejects non-object payload", async () => {
