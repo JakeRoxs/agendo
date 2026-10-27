@@ -13,12 +13,13 @@ import {
   fetchCodeQLBranches,
   fetchSonarQube,
   fetchSonarQubeBranches,
-  fetchSonarQubeCliBranches,
   fetchSonarQubeCli,
+  fetchSonarQubeCliBranches,
   importScanningFindings,
   sonarQubeCliServer,
   sonarQubeDefaults,
   sonarQubeEnvironmentToken,
+  type ScanningFinding,
   validateSonarUrl,
 } from "./todos/codeScanningService";
 import { compareVersions, versionRelationship } from "./todos/componentVersions";
@@ -149,8 +150,9 @@ export function registerCommands(
     const todos = services.repository.getTodos();
     const packet = buildAccomplishmentsPacket(todos, {});
     await vscode.env.clipboard.writeText(packet.text);
+    const omittedSuffix = packet.omittedCount > 0 ? `, ${packet.omittedCount} omitted` : "";
     vscode.window.showInformationMessage(
-      `Copied accomplishments context: ${packet.matched} completed todo(s), ${packet.included.length} included${packet.omittedCount > 0 ? `, ${packet.omittedCount} omitted` : ""}.`,
+      `Copied accomplishments context: ${packet.matched} completed todo(s), ${packet.included.length} included${omittedSuffix}.`,
     );
   });
   if (services.scanning) {
@@ -339,27 +341,27 @@ async function runCodeScanningImport(
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
     async () => {
-      const scan =
-        source.source === "codeql"
-          ? await fetchCodeQL(workspace.uri.fsPath, undefined, branchChoice.branch)
-          : sonar?.cli
-            ? await fetchSonarQubeCli(
-                workspace.uri.fsPath,
-                sonar.server,
-                sonar.project,
-                undefined,
-                branchChoice.branch,
-              )
-            : sonar
-              ? await fetchSonarQube(
-                  sonar.server,
-                  sonar.project,
-                  sonar.token,
-                  undefined,
-                  undefined,
-                  branchChoice.branch,
-                )
-              : undefined;
+      let scan: { scope: string; branch?: string; findings: ScanningFinding[] } | undefined;
+      if (source.source === "codeql") {
+        scan = await fetchCodeQL(workspace.uri.fsPath, undefined, branchChoice.branch);
+      } else if (sonar?.cli) {
+        scan = await fetchSonarQubeCli(
+          workspace.uri.fsPath,
+          sonar.server,
+          sonar.project,
+          undefined,
+          branchChoice.branch,
+        );
+      } else if (sonar) {
+        scan = await fetchSonarQube(
+          sonar.server,
+          sonar.project,
+          sonar.token,
+          undefined,
+          undefined,
+          branchChoice.branch,
+        );
+      }
       if (!scan) return;
       const result = await importScanningFindings(
         config,
@@ -375,6 +377,81 @@ async function runCodeScanningImport(
       );
     },
   );
+}
+
+async function resolveSonarServerAndProject(
+  workspace: vscode.Uri,
+  auth: { cli: boolean },
+  defaults: { server: string; project: string },
+  fixed?: { server: string; project: string },
+): Promise<{ server: string; project: string } | undefined> {
+  if (fixed) {
+    const server = validateSonarUrl(fixed.server).toString();
+    const project = fixed.project;
+    if (auth.cli) {
+      const active = await sonarQubeCliServer(workspace.fsPath);
+      if (active !== server) {
+        throw new Error(
+          `SonarQube CLI is connected to a different server (${active}). Log in to ${server} and retry.`,
+        );
+      }
+    }
+    return { server, project };
+  }
+  const urlInput = auth.cli
+    ? await sonarQubeCliServer(workspace.fsPath)
+    : await vscode.window.showInputBox({
+        prompt: "SonarQube server URL",
+        value: get<string>(Settings.SonarQubeUrl) || defaults.server,
+        validateInput: (value) => {
+          try {
+            validateSonarUrl(value);
+            return undefined;
+          } catch {
+            return "Enter an HTTPS URL, or HTTP on loopback";
+          }
+        },
+      });
+  if (!urlInput) {
+    return undefined;
+  }
+  const server = validateSonarUrl(urlInput).toString();
+  const projectInput = await vscode.window.showInputBox({
+    prompt: `SonarQube project key (${server})`,
+    value: get<string>(Settings.SonarQubeProjectKey) || defaults.project,
+    validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
+  });
+  if (!projectInput) {
+    return undefined;
+  }
+  return { server, project: projectInput.trim() };
+}
+
+async function promptForSonarToken(
+  saved: string | undefined,
+  environmentToken: string | undefined,
+): Promise<string | undefined> {
+  let tokenPrompt: string;
+  if (saved) {
+    tokenPrompt = "SonarQube token (leave blank to reuse saved token)";
+  } else if (environmentToken) {
+    tokenPrompt = "SonarQube token (leave blank to import environment token into secure storage)";
+  } else {
+    tokenPrompt = "SonarQube user token (stored securely in VS Code)";
+  }
+  const tokenInput = await vscode.window.showInputBox({
+    prompt: tokenPrompt,
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (tokenInput === undefined) {
+    return undefined;
+  }
+  const token = tokenInput.trim() || saved || environmentToken;
+  if (!token) {
+    return undefined;
+  }
+  return token;
 }
 
 async function promptSonarQubeSettings(
@@ -397,69 +474,20 @@ async function promptSonarQubeSettings(
   if (!auth) {
     return;
   }
-  let server: string;
-  let project: string;
-  if (fixed) {
-    server = validateSonarUrl(fixed.server).toString();
-    project = fixed.project;
-    if (auth.cli) {
-      const active = await sonarQubeCliServer(workspace.fsPath);
-      if (active !== server) {
-        throw new Error(
-          `SonarQube CLI is connected to a different server (${active}). Log in to ${server} and retry.`,
-        );
-      }
-    }
-  } else {
-    const urlInput = auth.cli
-      ? await sonarQubeCliServer(workspace.fsPath)
-      : await vscode.window.showInputBox({
-          prompt: "SonarQube server URL",
-          value: get<string>(Settings.SonarQubeUrl) || defaults.server,
-          validateInput: (value) => {
-            try {
-              validateSonarUrl(value);
-              return undefined;
-            } catch {
-              return "Enter an HTTPS URL, or HTTP on loopback";
-            }
-          },
-        });
-    if (!urlInput) {
-      return;
-    }
-    server = validateSonarUrl(urlInput).toString();
-    const projectInput = await vscode.window.showInputBox({
-      prompt: `SonarQube project key (${server})`,
-      value: get<string>(Settings.SonarQubeProjectKey) || defaults.project,
-      validateInput: (value) => (value.trim() ? undefined : "Enter the project key"),
-    });
-    if (!projectInput) {
-      return;
-    }
-    project = projectInput.trim();
+  const resolved = await resolveSonarServerAndProject(workspace, auth, defaults, fixed);
+  if (!resolved) {
+    return undefined;
   }
+  const { server, project } = resolved;
   if (auth.cli) {
     return { server, project, token: "", cli: true };
   }
   const secretKey = `agendo.sonarqube:${server}`;
   const saved = await context.secrets.get(secretKey);
   const environmentToken = sonarQubeEnvironmentToken(server, defaults);
-  const tokenInput = await vscode.window.showInputBox({
-    prompt: saved
-      ? "SonarQube token (leave blank to reuse saved token)"
-      : environmentToken
-        ? "SonarQube token (leave blank to import environment token into secure storage)"
-        : "SonarQube user token (stored securely in VS Code)",
-    password: true,
-    ignoreFocusOut: true,
-  });
-  if (tokenInput === undefined) {
-    return;
-  }
-  const token = tokenInput.trim() || saved || environmentToken;
+  const token = await promptForSonarToken(saved, environmentToken);
   if (!token) {
-    return;
+    return undefined;
   }
   await context.secrets.store(secretKey, token);
   await set(Settings.SonarQubeUrl, server);
@@ -550,29 +578,40 @@ async function refreshCodeQLTodo(
           `Workspace scanner target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
         );
       }
-      const targetFindings = scan.findings.filter((f) => {
-        if (provenance.grouping === "finding") return f.id === provenance.target;
-        if (provenance.grouping === "file") return f.path === provenance.target;
-        return f.rule === provenance.target;
-      });
-      if (!targetFindings.length) {
-        vscode.window.showInformationMessage(
-          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
-        );
-        return;
-      }
-      const result = await importScanningFindings(
-        services.config,
-        services.repository,
-        "codeql",
-        scan.scope,
-        scan.findings,
-        provenance.grouping,
-        { target: provenance.target, branch: provenance.branch },
-      );
-      showScanningImportResult("CodeQL", todo.id, result);
+      await importAndReportScanningFindings(services, todo, scan, provenance, "codeql", "CodeQL");
     },
   );
+}
+
+async function importAndReportScanningFindings(
+  services: CommandServices,
+  todo: Todo,
+  scan: { scope: string; branch?: string; findings: ScanningFinding[] },
+  provenance: ScanningProvenance,
+  source: ScanningSource,
+  displayLabel: string,
+): Promise<void> {
+  const targetFindings = scan.findings.filter((f) => {
+    if (provenance.grouping === "finding") return f.id === provenance.target;
+    if (provenance.grouping === "file") return f.path === provenance.target;
+    return f.rule === provenance.target;
+  });
+  if (!targetFindings.length) {
+    vscode.window.showInformationMessage(
+      `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
+    );
+    return;
+  }
+  const result = await importScanningFindings(
+    services.config,
+    services.repository,
+    source,
+    scan.scope,
+    scan.findings,
+    provenance.grouping,
+    { target: provenance.target, branch: provenance.branch },
+  );
+  showScanningImportResult(displayLabel, todo.id, result);
 }
 
 async function refreshSonarTodo(
@@ -617,27 +656,7 @@ async function refreshSonarTodo(
           `SonarQube target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
         );
       }
-      const targetFindings = scan.findings.filter((f) => {
-        if (provenance.grouping === "finding") return f.id === provenance.target;
-        if (provenance.grouping === "file") return f.path === provenance.target;
-        return f.rule === provenance.target;
-      });
-      if (!targetFindings.length) {
-        vscode.window.showInformationMessage(
-          `Finding ${provenance.target} is no longer returned by the scanner; it may have been resolved.`,
-        );
-        return;
-      }
-      const result = await importScanningFindings(
-        services.config,
-        services.repository,
-        "sonarqube",
-        scan.scope,
-        scan.findings,
-        provenance.grouping,
-        { target: provenance.target, branch: provenance.branch },
-      );
-      showScanningImportResult("SonarQube", todo.id, result);
+      await importAndReportScanningFindings(services, todo, scan, provenance, "sonarqube", "SonarQube");
     },
   );
 }
@@ -1161,10 +1180,17 @@ function registerSkillCommands(
             if (available) updates++;
             if (status.sourceError || !status.installedVersion || !status.bundledVersion)
               uncertain = true;
-            return `${name}: installed v${status.installedVersion ?? "unknown"}; bundled v${status.bundledVersion ?? "unknown"} (${versionRelationship(status.installedVersion, status.bundledVersion)}); source ${status.sourceVersion ? `v${status.sourceVersion} (${versionRelationship(status.installedVersion, status.sourceVersion)})` : "unavailable"}`;
+            const sourceDetail = status.sourceVersion
+              ? `v${status.sourceVersion} (${versionRelationship(status.installedVersion, status.sourceVersion)})`
+              : "unavailable";
+            return `${name}: installed v${status.installedVersion ?? "unknown"}; bundled v${status.bundledVersion ?? "unknown"} (${versionRelationship(status.installedVersion, status.bundledVersion)}); source ${sourceDetail}`;
           });
           refreshSkillStatus();
-          const summary = `${updates ? `${updates} component(s) have newer versions available.` : "No newer versions found among checked versions."} ${uncertain ? "Some versions could not be checked. " : ""}${details.join(". ")}. No files were installed.`;
+          const updateMessage = updates
+            ? `${updates} component(s) have newer versions available.`
+            : "No newer versions found among checked versions.";
+          const uncertainMessage = uncertain ? "Some versions could not be checked. " : "";
+          const summary = `${updateMessage} ${uncertainMessage}${details.join(". ")}. No files were installed.`;
           if (uncertain) await vscode.window.showWarningMessage(summary);
           else await vscode.window.showInformationMessage(summary);
         },
@@ -1208,15 +1234,13 @@ function registerSkillCommands(
           },
         );
       if (!picked) return;
-      await vscode.commands.executeCommand(
-        component === "skill"
-          ? picked.action === "bundle"
-            ? Command.EnableSkill
-            : Command.UpdateSkill
-          : picked.action === "bundle"
-            ? Command.InstallCanvas
-            : Command.UpdateCanvas,
-      );
+      let command: string;
+      if (component === "skill") {
+        command = picked.action === "bundle" ? Command.EnableSkill : Command.UpdateSkill;
+      } else {
+        command = picked.action === "bundle" ? Command.InstallCanvas : Command.UpdateCanvas;
+      }
+      await vscode.commands.executeCommand(command);
     });
   }
 

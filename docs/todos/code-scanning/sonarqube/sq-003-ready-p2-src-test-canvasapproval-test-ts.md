@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-003"
 tags: [code-scanning, sonarqube]
@@ -211,12 +211,25 @@ The rule applies only to assertions in test code.
 
 ### Findings
 
-- [ ] [66981514-4860-4ada-aa6b-d73466305ed8] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/canvasApproval.test.ts:109)
+- [x] [66981514-4860-4ada-aa6b-d73466305ed8] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/canvasApproval.test.ts:109)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Actionable approval test assertions
+
+- Splitting the independent entry/panel existence checks so a failed approval-lifetime setup identifies which object is missing
+- Fresh SonarQube `analyze_code_snippet` on the complete updated test file (`ts`, `TEST`, project key from `sonar-project.properties`) reports zero issues
+- `npm test`: compilation and lint pass, 342 tests pass including both canvas approval-lifetime tests; only the unchanged user-owned scanner-title fixture/assertion mismatch fails
+- `git diff --check` passes; full-project scan clearance is not claimed
+
+## Resume Context
+
+**Current state:** Review-session and panel existence checks are separate with actionable messages; real extension-host tests and fresh full-file snippet analysis pass.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion.

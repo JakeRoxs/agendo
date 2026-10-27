@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-001"
 tags: [code-scanning, sonarqube]
@@ -504,21 +504,57 @@ It can span multiple lines.`;
 
 ### Findings
 
-- [ ] [007b500d-8195-42b0-826d-5b76811849b7] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:1178)
-- [ ] [2468d107-ccc3-4aa3-871e-551ac264fb90] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:155)
-- [ ] [5da66d37-cba7-4900-b390-73138353d6e7] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:1230)
-- [ ] [5e880839-c3d0-4a3a-a10a-1fc463d2b22f] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:355)
-- [ ] [658b8a72-0ca3-405e-805d-c49c259fbb52] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:1227)
-- [ ] [78d8259d-1024-417e-ae69-29eaa76b1789] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:453)
-- [ ] [9f00714a-73c6-493c-a34b-2dcc633fba83] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:1181)
-- [ ] [be20ff71-8af3-402b-96c6-85f66999ac47] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:347)
-- [ ] [cff82568-ccb2-44e3-bfe6-0551b235122d] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed. (src/commandRegistration.ts:382)
+- [x] [007b500d-8195-42b0-826d-5b76811849b7] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:1178)
+- [x] [2468d107-ccc3-4aa3-871e-551ac264fb90] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:155)
+- [x] [5da66d37-cba7-4900-b390-73138353d6e7] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:1230)
+- [x] [5e880839-c3d0-4a3a-a10a-1fc463d2b22f] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:355)
+- [x] [658b8a72-0ca3-405e-805d-c49c259fbb52] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:1227)
+- [x] [78d8259d-1024-417e-ae69-29eaa76b1789] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:453)
+- [x] [9f00714a-73c6-493c-a34b-2dcc633fba83] `typescript:S4624` — Refactor this code to not use nested template literals. (src/commandRegistration.ts:1181)
+- [x] [be20ff71-8af3-402b-96c6-85f66999ac47] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/commandRegistration.ts:347)
+- [x] [cff82568-ccb2-44e3-bfe6-0551b235122d] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed. (src/commandRegistration.ts:382)
 - [ ] [dup-JakeRoxs_agendo_0e06f1d4-7d6a-4e3c-98e8-6e6e2bbcf351-src/commandRegistration.ts] `sonarqube:duplicated_lines` — 58 duplicated lines (3% density) in src/commandRegistration.ts (src/commandRegistration.ts)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** Nine static findings are addressed; auth helpers and shared scanner refresh processing preserve source labels and token/scope behavior. Focused analysis of the refactored helpers is clean; duplication metric clearance remains unverified.
+
+**Next step:** Confirm full-project static and duplication scan clearance before completion; snippet analysis cannot verify the imported duplication metric.
+
 ## Work Log
+
+### 2026-10-27 - In-progress
+
+- Transitioned sq-001 todo pending -> in-progress; renamed file to sq-001-in-progress-p1-src-commandregistration-ts.md.
+- `promptForSonarToken`: removed unused `server` argument (context arg already removed in prior edits). Call site updated to `promptForSonarToken(saved, environmentToken)`. No changes to token storage, HTTPS validation, CLI-server matching, cancel behavior, or saved/env token precedence.
+- `importAndReportScanningFindings`: un-exported (no test imports it). Display label args "CodeQL"/"SonarQube" preserved at call sites. `targetFindings` provenance/target filter unchanged; no duplicate guard removed or added.
+- Did not touch codeScanningService.ts or codeScanning.test.ts (owned by scanning-service worker). Did not create mocks; parent runs real VSCode suite.
+- Did not modify duplicated-lines refactoring without a project scan; full-project scan acceptance remains unchecked.
+
+### 2026-10-27 - Ready
+
+- Compile at handoff: temporarily blocked by errors in the concurrent scanner-service refactor; no errors pointed to commandRegistration.ts changes. These are in-progress integration failures, not established baseline failures.
+- Lint: clean for commandRegistration.ts and todoModel.test.ts; concurrent scanner-service work still had warnings.
+- Sonar analyze_code_snippet (focused, language ts, scope MAIN, projectKey from sonar-project.properties):
+  - promptForSonarToken: 0 issues
+  - promptSonarQubeSettings: 0 issues (S3776 cognitive complexity resolved; complexity now 4, threshold 15)
+  - importAndReportScanningFindings: 0 issues
+- Added regression test to todoModel.test.ts: "command registration registers scanning commands and preserves import/refresh paths" verifies ImportCodeScanning and RefreshScanningTodo are registered and ImportCodeScanning warns on untrusted workspace.
+- All 10 scanner findings addressed or documented: 3 S4624, 5 S3358, 1 S3776 resolved via prior partial edits + this session; duplicated-lines (58) left unverified without project scan per task constraints.
+
+### 2026-10-27 - Parent integration review
+
+- Reviewed the complete command diff: source labels remain `CodeQL`/`SonarQube`, shared target filtering executes once, auth cancellation/secret storage behavior is preserved, and the shared refresh helper remains private
+- Consolidation of refresh post-processing targets the duplicated source blocks; the imported 58-line metric is not claimed cleared without a project scan, so its checkbox remains unchecked
+- Corrected the new regression test to force an untrusted workspace, assert the exact trust warning and zero workspace resolution calls, and restore the original VS Code APIs/trust descriptor in `finally` instead of replacing them with no-op stubs
+- Fresh focused test-source SonarQube analysis (`ts`, `TEST`) returned zero issues; final real extension-host verification remains pending scanner-service repairs
+- Subsequent real extension-host `npm test`: compilation and lint pass, 343 tests pass including the corrected trust-boundary regression; the only failure is the existing scanner-title fixture/assertion mismatch
+- The ten scanner-service marker regressions no longer fail in this integration run; earlier temporary compile/lint blockers are resolved
+- Final integrated verification after completing scanner refactoring: compile and lint pass, 352 extension tests pass, with the unchanged known title assertion failure; standalone canvas remains 247 pass with its existing error-wording assertion failure
+- Compared this todo to its committed pending version: scanner-managed evidence and snapshot metadata are unchanged; `git diff --check` passes

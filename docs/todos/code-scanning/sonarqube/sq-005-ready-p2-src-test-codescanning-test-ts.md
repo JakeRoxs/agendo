@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-005"
 tags: [code-scanning, sonarqube]
@@ -211,12 +211,26 @@ The rule applies only to assertions in test code.
 
 ### Findings
 
-- [ ] [2b17c14d-e018-4a12-b305-5401dd8623d9] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/codeScanning.test.ts:427)
+- [x] [2b17c14d-e018-4a12-b305-5401dd8623d9] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/codeScanning.test.ts:427)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Actionable scanner navigation assertions
+
+- Splitting five independent navigation outcomes into assertions with specific failure messages
+- Preserving pre-existing user fixture changes and the unrelated scanner-title assertion failure
+- Fresh focused SonarQube `analyze_code_snippet` of the complete affected navigation test with its imports (`ts`, `TEST`, project key from `sonar-project.properties`) reports zero issues; this was not a whole-file or project scan
+- `npm test`: compilation and lint pass, 342 tests pass, including navigation expansion/focus/scroll/default-prevention checks; the only failure remains the pre-existing scanner-title fixture/assertion mismatch
+- Reviewed the diff to confirm the user-owned recent-item title fixtures remain unchanged; `git diff --check` passes
+
+## Resume Context
+
+**Current state:** Five navigation outcomes now have independent assertions and actionable messages; the navigation test passes in the real extension host and its focused snippet analysis is clean. User fixture changes are preserved.
+
+**Next step:** Confirm whole-file/project scan clearance before completion; retain the known unrelated title-test failure as a separate baseline issue.

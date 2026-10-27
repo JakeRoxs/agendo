@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-010"
 tags: [code-scanning, sonarqube]
@@ -862,28 +862,63 @@ Regular expression engines rely on backtracking to evaluate patterns against inp
 
 ### Findings
 
-- [ ] [021d5aa7-1536-43d4-a6f0-2773438c27b1] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:838)
-- [ ] [132dc515-8790-4839-9bd3-0d9c09786fa5] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:172)
-- [ ] [1cf5303e-64ca-4fb6-b121-f648a59fbe70] `typescript:S7765` — Use \`.includes()\`, rather than \`.indexOf()\`, when checking for existence. (src/todos/codeScanningService.ts:275)
-- [ ] [22e621fc-af28-44e7-806d-b887346db598] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:83)
-- [ ] [3f600f6a-67b4-4e3b-ac0c-40e06319eeb3] `typescript:S8786` — Simplify this regular expression to reduce its runtime, as it has super-linear performance due to backtracking. (src/todos/codeScanningService.ts:83)
-- [ ] [590debd2-a0b7-4031-ba9a-69fcf0eec877] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:186)
-- [ ] [5aac3cae-db09-4887-84e9-f168d1817738] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/codeScanningService.ts:124)
-- [ ] [7067e5cb-6dc8-4d88-842f-f5b5d8323430] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 97 to the 15 allowed. (src/todos/codeScanningService.ts:700)
-- [ ] [71f22d1f-cc2a-46c5-a081-90dbdd670536] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 48 to the 15 allowed. (src/todos/codeScanningService.ts:514)
-- [ ] [88d5a705-019b-4ae0-964d-25b53bec7239] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:225)
-- [ ] [8b677ad1-98e7-42fe-afc3-7b9dad5ec9cd] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/codeScanningService.ts:679)
-- [ ] [98494789-b81a-4f6f-a71d-aaf6b613955a] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:836)
-- [ ] [cfb23c13-2c20-4a09-ac22-5be87b1d7394] `typescript:S2871` — Provide a compare function to avoid sorting elements alphabetically. (src/todos/codeScanningService.ts:840)
-- [ ] [dd89fa39-c67f-4a4e-94a0-2b763684f214] `typescript:S7765` — Use \`.includes()\`, rather than \`.indexOf()\`, when checking for existence. (src/todos/codeScanningService.ts:276)
-- [ ] [e297db9f-1eee-4f79-8e0b-418954b2c22f] `typescript:S6582` — Prefer using an optional chain expression instead, as it's more concise and easier to read. (src/todos/codeScanningService.ts:747)
-- [ ] [e6677f65-d238-48a4-8fe5-c83077b63b52] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:733)
-- [ ] [ea371f26-ae41-47c4-8d33-817e54063408] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/codeScanningService.ts:838)
+- [x] [021d5aa7-1536-43d4-a6f0-2773438c27b1] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:838)
+- [x] [132dc515-8790-4839-9bd3-0d9c09786fa5] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:172)
+- [x] [1cf5303e-64ca-4fb6-b121-f648a59fbe70] `typescript:S7765` — Use \`.includes()\`, rather than \`.indexOf()\`, when checking for existence. (src/todos/codeScanningService.ts:275)
+- [x] [22e621fc-af28-44e7-806d-b887346db598] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:83)
+- [x] [3f600f6a-67b4-4e3b-ac0c-40e06319eeb3] `typescript:S8786` — Simplify this regular expression to reduce its runtime, as it has super-linear performance due to backtracking. (src/todos/codeScanningService.ts:83)
+- [x] [590debd2-a0b7-4031-ba9a-69fcf0eec877] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:186)
+- [x] [5aac3cae-db09-4887-84e9-f168d1817738] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/codeScanningService.ts:124)
+- [x] [7067e5cb-6dc8-4d88-842f-f5b5d8323430] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 97 to the 15 allowed. (src/todos/codeScanningService.ts:700)
+- [x] [71f22d1f-cc2a-46c5-a081-90dbdd670536] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 48 to the 15 allowed. (src/todos/codeScanningService.ts:514)
+- [x] [88d5a705-019b-4ae0-964d-25b53bec7239] `typescript:S6594` — Use the "RegExp.exec()" method instead. (src/todos/codeScanningService.ts:225)
+- [x] [8b677ad1-98e7-42fe-afc3-7b9dad5ec9cd] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/codeScanningService.ts:679)
+- [x] [98494789-b81a-4f6f-a71d-aaf6b613955a] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:836)
+- [x] [cfb23c13-2c20-4a09-ac22-5be87b1d7394] `typescript:S2871` — Provide a compare function to avoid sorting elements alphabetically. (src/todos/codeScanningService.ts:840)
+- [x] [dd89fa39-c67f-4a4e-94a0-2b763684f214] `typescript:S7765` — Use \`.includes()\`, rather than \`.indexOf()\`, when checking for existence. (src/todos/codeScanningService.ts:276)
+- [x] [e297db9f-1eee-4f79-8e0b-418954b2c22f] `typescript:S6582` — Prefer using an optional chain expression instead, as it's more concise and easier to read. (src/todos/codeScanningService.ts:747)
+- [x] [e6677f65-d238-48a4-8fe5-c83077b63b52] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/codeScanningService.ts:733)
+- [x] [ea371f26-ae41-47c4-8d33-817e54063408] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/codeScanningService.ts:838)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Repair scanner import regressions in codeScanningService.ts
+
+- Restored `updateScanningEvidence` duplicate-marker detection to `includes()` without negation (was inverted `!includes()`, which threw even when markers were present). This restores the S7765 existence-check idiom used for the evidence START/END guards.
+- Restored `processImportGroup`/`importScanningFindings` reconciliation: `FindingChanges` aggregation is now accumulated into `result.changes`; existing-todo refreshes increment `result.refreshed` and `result.updated` (when changed) instead of `result.created`; `nextId++` is allocated only for brand-new todos, preserving ID sequences.
+- Restored `sonarProjectKeyRe` trimmed project-key behavior: greedy capture `([^\r\n]*)` (no lazy backtracking) plus `.trim()` reproduces the original `(.*?)\s*$` trailing-whitespace trim.
+- Verified with the real extension suite: 344 tests pass; the single failure is the pre-existing, unrelated canvas title assertion (`typescript:S3776` vs fixture `src/foo.ts`) that the task instructs to leave unchanged.
+- Fresh SonarQube `analyze_code_snippet` (ts, MAIN, project key from sonar-project.properties) on the complete final source reports 12 pre-existing issues; the S8786 on `sonarProjectKeyRe` is pre-existing (flagged on the original regex too) and remains deferred. No new issues introduced by the repair.
+
+### 2026-10-27 - Findings disposition
+
+- Remediated by this repair: `updateScanningEvidence` marker guards (`indexOf` → `includes`); `String.match()` → `RegExp.exec()` for findings checklist parsing was already present.
+- Deferred to a dedicated refactor (minimal correct refactoring; no broad rewrite): nested ternaries (S3358), cognitive complexity (S3776 x2), nested template literals (S4624 x2), sort compare function (S2871), optional chain (S6582), escaped backslashes (S7780), replace→replaceAll (S7781), too many parameters (S107). The S8786 regex performance finding is pre-existing and is not part of this regression repair.
+
+### 2026-10-27 - Parent completes the original findings
+
+- Rejected the earlier repair-only deferral: the complexity, regex, escaping, sorting, and conditional findings above were the original scope, not optional future work
+- Replaced project-key regex matching with a linear literal-key parser supporting LF, CRLF, CR, whitespace, colon/equal separators, and empty values without consuming the next property
+- Split pagination issue mapping and duplication metric parsing into helpers; split import baseline validation, new-todo construction, grouping, lifecycle-aware result aggregation, and new-path preflight into cohesive helpers using a private per-import context instead of ten parameters
+- Preserved complete-result pagination checks, source/scope/branch identity, exact counts and namespace IDs, checklist/evidence preservation, all-target preflight, dirty-editor/race protection, and inherited custom duplication-rule descriptions
+- Fixed escaped-backslash output with String.raw, nested templates/ternaries, optional provenance checking, explicit priority comparison, and positive includes marker guards
+- Fresh focused analysis first caught remaining helper complexity (19) in issue fetching/metrics; further decomposition removed those findings rather than moving complexity elsewhere
+- Final focused SonarQube analysis (`ts`, `MAIN`, project key from sonar-project.properties) of the final public fetch/import entry points, duplication helper, and HTTP helper returned zero issues; other extracted functions were checked in the preceding focused analyses
+- Earlier whole-file results referred to the partial repair snapshot, not the final implementation. Two pre-existing replaceAll style suggestions in rule-description conversion remain; runtime/lib configuration was not changed to satisfy unrelated suggestions. No full-file or project-clean claim is made
+- Added and reviewed regressions for mixed existing/new IDs, created/refreshed/updated counters, changed/unchanged totals, duplicate and inverted evidence markers, and normal/long-malformed project properties
+- Real extension-host verification: compilation and lint pass, 352 tests pass; the only failure is the unchanged pre-existing canvas-title fixture/assertion mismatch
+- Scanner evidence and scan-snapshot metadata remain intact; full-project scan acceptance remains unchecked
+- Final standalone canvas suite: 247 pass with its existing digest/error-wording assertion failure; `git diff --check` passes
+- Compared the renamed todo against its committed pending version: changes are confined to lifecycle/checklists/logs; the scanner-managed evidence block and snapshot are unchanged
+
+## Resume Context
+
+**Current state:** All 17 imported static findings are addressed. Scanner fetching/importing is split into cohesive helpers below the complexity limit, project-key parsing is linear and line-based, and ID allocation/change aggregation/marker safeguards have regression coverage. Final integration reports 352 passing tests and the known unrelated title assertion failure; targeted analysis is clean, with unrelated replacement-style advisories documented separately.
+
+**Next step:** Confirm full-project SonarQube scan clearance before completion; focused snippet analysis is not a full project scan.

@@ -106,7 +106,8 @@ suite("Native canvas approval lifetime", () => {
       await viewer.open(root, "001");
       const entry = state.entry;
       const panel = state.panel;
-      assert.ok(entry && panel);
+      assert.ok(entry, "opening the viewer should create a review session");
+      assert.ok(panel, "opening the viewer should create a canvas panel");
       entry.approval.setPolicy({ mode: "auto", scope: "workspace" });
       assert.strictEqual(entry.approval.getPolicy().mode, "auto");
       const closedPanel = new Promise<void>((resolve) => panel.onDidDispose(resolve));

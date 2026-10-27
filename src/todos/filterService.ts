@@ -108,6 +108,7 @@ export class FilterService {
   matches(todo: Todo, dependencyGraph?: DependencyGraph): boolean {
     const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group, sources } =
       this.filter;
+    const source = getTodoSource(todo);
 
     const checks = [
       () => matchesStatuses(todo, statuses),
@@ -118,11 +119,11 @@ export class FilterService {
       () => matchesDependsOn(todo, dependsOn),
       () => !blocking?.length || matchesBlocking(todo, blocking, dependencyGraph),
       () => matchesGroup(todo, group),
-      () => !sources?.length || sources.some((source) => source === getTodoSource(todo)),
+      () => !sources?.length || (source !== undefined && sources.includes(source)),
       () =>
         !this.filter.collision ||
         (todo.id === this.filter.collision.id &&
-          (getTodoSource(todo) ?? "todo") === this.filter.collision.source),
+          (source ?? "todo") === this.filter.collision.source),
     ];
     return checks.every((check) => check());
   }

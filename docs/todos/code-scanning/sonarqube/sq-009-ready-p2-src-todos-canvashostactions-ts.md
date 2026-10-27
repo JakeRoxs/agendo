@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-009"
 tags: [code-scanning, sonarqube]
@@ -229,18 +229,36 @@ if (Array.isArray(foo) === false) {
 
 ### Findings
 
-- [ ] [2ecb38fe-1ed3-4dd9-9d65-9fa894c5bd87] `typescript:S7721` — Move function 'validateStatus' to the outer scope. (src/todos/canvasHostActions.ts:56)
-- [ ] [320142f3-66fd-4a95-8ddf-828ce1252608] `typescript:S7721` — Move function 'validatePriority' to the outer scope. (src/todos/canvasHostActions.ts:63)
-- [ ] [77df78ff-f2c0-4b02-a414-d9ca9b6880c6] `typescript:S7721` — Move function 'assertIdValid' to the outer scope. (src/todos/canvasHostActions.ts:49)
-- [ ] [8abf0ece-fa58-4d7a-bd6b-1d0a7f940d1a] `typescript:S7721` — Move function 'assertWritable' to the outer scope. (src/todos/canvasHostActions.ts:84)
-- [ ] [dc255985-c1fd-45a5-83cb-7b75a629d397] `typescript:S7721` — Move function 'assertTrusted' to the outer scope. (src/todos/canvasHostActions.ts:31)
-- [ ] [df71231c-dd63-4111-bab5-41d80783b76b] `typescript:S7721` — Move function 'validateGroup' to the outer scope. (src/todos/canvasHostActions.ts:70)
-- [ ] [f215f967-bb30-44e6-baa1-d332eded1587] `typescript:S7786` — \`new Error()\` is too unspecific for a type check. Use \`new TypeError()\` instead. (src/todos/canvasHostActions.ts:72)
+- [x] [2ecb38fe-1ed3-4dd9-9d65-9fa894c5bd87] `typescript:S7721` — Move function 'validateStatus' to the outer scope. (src/todos/canvasHostActions.ts:56)
+- [x] [320142f3-66fd-4a95-8ddf-828ce1252608] `typescript:S7721` — Move function 'validatePriority' to the outer scope. (src/todos/canvasHostActions.ts:63)
+- [x] [77df78ff-f2c0-4b02-a414-d9ca9b6880c6] `typescript:S7721` — Move function 'assertIdValid' to the outer scope. (src/todos/canvasHostActions.ts:49)
+- [x] [8abf0ece-fa58-4d7a-bd6b-1d0a7f940d1a] `typescript:S7721` — Move function 'assertWritable' to the outer scope. (src/todos/canvasHostActions.ts:84)
+- [x] [dc255985-c1fd-45a5-83cb-7b75a629d397] `typescript:S7721` — Move function 'assertTrusted' to the outer scope. (src/todos/canvasHostActions.ts:31)
+- [x] [df71231c-dd63-4111-bab5-41d80783b76b] `typescript:S7721` — Move function 'validateGroup' to the outer scope. (src/todos/canvasHostActions.ts:70)
+- [x] [f215f967-bb30-44e6-baa1-d332eded1587] `typescript:S7786` — \`new Error()\` is too unspecific for a type check. Use \`new TypeError()\` instead. (src/todos/canvasHostActions.ts:72)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Canvas helper scoping
+
+- Moving six helpers that do not capture factory state to module scope while retaining repository-dependent closures
+- Changing non-string group validation to `TypeError` without changing its message or write guards
+- Fresh full-file analysis also identified two S6551 diagnostics for stringifying unknown status/priority inputs; split type checks to return explicit type-error messages while keeping invalid-string messages unchanged
+- Extended related tests in `src/test/canvasHostActions.test.ts` for numeric, null, undefined, object, and array inputs; no status/priority/group writes may occur for invalid types
+- Final SonarQube `analyze_code_snippet` on the complete updated production file (`ts`, `MAIN`, project key from `sonar-project.properties`) returned zero issues
+- The existing independent scanner todo for `canvasHostActions.test.ts` is not being closed or otherwise reconciled by this related test edit
+- Recovered source edits were reviewed after the user-reported unrelated VS Code crash; post-crash integration verification is pending
+- Final post-crash `npm test`: compilation and lint pass, 342 tests pass, including all canvas guard/type-validation tests; the only failure is the unchanged user-owned scanner-title fixture/assertion mismatch
+- `git diff --check` passes; no full-project SonarQube scan or remote clearance is claimed
+
+## Resume Context
+
+**Current state:** Six independent helpers are at module scope, invalid group types throw TypeError, and status/priority type diagnostics avoid default object stringification. Fresh full-file snippet analysis reports zero issues.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion.

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-006"
 tags: [code-scanning, sonarqube]
@@ -282,12 +282,35 @@ test("returns an administrator", () => {
 
 ### Findings
 
-- [ ] [a85b796a-2e86-4821-ab2e-1dc1e8a6db40] `typescript:S2699` — Add at least one assertion to this test case. (src/test/sharedBoardPresentation.test.ts:312)
+- [x] [a85b796a-2e86-4821-ab2e-1dc1e8a6db40] `typescript:S2699` — Add at least one assertion to this test case. (src/test/sharedBoardPresentation.test.ts:312)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** The ready-message test asserts the resulting board scope, six status columns, and the exact snapshot message posted to the webview. It passes in the real extension host. Focused analysis of the final affected test is clean; earlier full-file analysis still reported unrelated existing diagnostics.
+
+**Next step:** Confirm project scan clearance before completion; assess the unrelated existing snippet diagnostics separately rather than claiming they were resolved by this assertion change.
+
 ## Work Log
+
+- Added assertions to the "ready message" test to resolve S2699 finding.
+- Verified compilation passes with `npm run compile`.
+
+### 2026-10-27 - Verification scope
+
+- Added meaningful board-snapshot assertions after handling the ready message, without changing production behavior
+- Fresh full-file SonarQube snippet analysis (`ts`, `TEST`, project key from `sonar-project.properties`) reported ten unrelated diagnostics in existing code (S1523 dynamic code execution, S7784 JSON deep cloning, and S7755 preference for `.at()`); the selected S2699 finding was not reported
+- These existing diagnostics are not claimed resolved by adding assertions; a full project scan remains required, so its acceptance criterion is unchecked
+- Parent real extension-host `npm test`: compilation and lint pass, 342 tests pass, including the updated ready-message test; the only failure remains the existing scanner-title fixture/assertion mismatch
+- Standalone canvas suite remains 247 passing with its existing error-message assertion failure; no production canvas files were changed in this assertion cleanup
+
+### 2026-10-27 - Observe ready-message transport behavior
+
+- Added a minimal webview transport stub and asserted that handling `ready` posts exactly one snapshot matching `getSnapshot()`, rather than only asserting independently queried board state
+- Fresh focused SonarQube analysis of the complete updated test body and imports (`ts`, `TEST`) returned zero issues; the previously recorded whole-file diagnostics are not claimed cleared
+- The updated ready-message test passes in the real extension host; compile and lint pass. Integration also caught an unrelated in-progress scanner-service marker-parsing regression, forwarded to its owner before final verification

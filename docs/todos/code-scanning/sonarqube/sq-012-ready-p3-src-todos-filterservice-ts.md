@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p3
 issue_id: "sq-012"
 tags: [code-scanning, sonarqube]
@@ -104,12 +104,27 @@ if (string.includes('bar')) {
 
 ### Findings
 
-- [ ] [f13a4353-a1f3-452d-b33e-664b81e13a32] `typescript:S7765` — Use \`.includes()\` instead of \`.some()\` when checking value existence. (src/todos/filterService.ts:121)
+- [x] [f13a4353-a1f3-452d-b33e-664b81e13a32] `typescript:S7765` — Use \`.includes()\` instead of \`.some()\` when checking value existence. (src/todos/filterService.ts:121)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Source membership check
+
+- Replacing equality-only `some()` with `includes()`, retaining the undefined-source guard for regular todos
+- Added source-only regression coverage in `src/test/scopedViews.test.ts` for regular todos, one scanner source, multiple scanner sources, and an empty selection
+- `npm run compile` and `npm run lint` pass; `npm test` reports 328 passing (including the new regression), with the unrelated pre-existing `src/test/codeScanning.test.ts` fixture/assertion mismatch left untouched
+- Fresh SonarQube `analyze_code_snippet` on the complete updated `filterService.ts` (`ts`, `MAIN`, project key from `sonar-project.properties`) reports zero issues
+- Snippet analysis does not replace a full project scan; final scan criterion remains unchecked
+- Final integrated `npm test`: compile and lint pass, 335 passing tests, same unrelated pre-existing scanner canvas title assertion failure
+
+## Resume Context
+
+**Current state:** Source membership uses `includes()` with unchanged regular-todo exclusion; regression coverage and full-file snippet analysis pass.
+
+**Next step:** Confirm finding clearance in a full project SonarQube scan before completion.

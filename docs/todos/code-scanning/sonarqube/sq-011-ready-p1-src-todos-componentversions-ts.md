@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-011"
 tags: [code-scanning, sonarqube]
@@ -366,13 +366,53 @@ Regular expression engines rely on backtracking to evaluate patterns against inp
 
 ### Findings
 
-- [ ] [3578f4b9-d3e8-484e-925d-dcd30dcd3b65] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed. (src/todos/componentVersions.ts:2)
-- [ ] [a77a1c99-935a-41b0-b4f6-7ba4a7ad6f6f] `typescript:S8786` — Simplify this regular expression to reduce its runtime, as it has super-linear performance due to backtracking. (src/todos/componentVersions.ts:54)
+- [x] [3578f4b9-d3e8-484e-925d-dcd30dcd3b65] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 27 to the 15 allowed. (src/todos/componentVersions.ts:2)
+- [x] [a77a1c99-935a-41b0-b4f6-7ba4a7ad6f6f] `typescript:S8786` — Simplify this regular expression to reduce its runtime, as it has super-linear performance due to backtracking. (src/todos/componentVersions.ts:54)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** Version comparison is split into core, prerelease, and identifier comparisons; trailing URL slashes are trimmed with a linear scan. Existing permissive version validation is unchanged. Final full-file snippet analysis reports zero issues, and relevant regression tests pass.
+
+**Next step:** Confirm finding clearance in a full project SonarQube scan before completion.
+
 ## Work Log
+
+### 2026-10-27 - Implementation started
+
+**By:** Kilo (agent)
+
+**Actions:**
+- Transitioned todo `pending` → `in-progress`; synchronized filename and frontmatter.
+- Reviewed scanner evidence: `typescript:S3776` (complexity 27 → 15) on `compareVersions`; `typescript:S8786` (non-linear regex backtracking) on the version validation regex.
+- Began refactoring `compareVersions` by extracting `splitVersion`, `compareCore`, and `comparePrerelease` helpers.
+
+**Learnings:** None yet.
+
+### 2026-10-27 - Implementation complete
+
+**By:** Kilo (agent)
+
+**Actions:**
+- Refactored `compareVersions` in `src/todos/componentVersions.ts` into `splitVersion`, `compareCore`, and `comparePrerelease` helpers; cognitive complexity reduced from 27 to under 15 (method calls are free), preserving comparison behavior.
+- Restructured the version-validation regex in `checkSourceVersion` to dot-separated identifiers (`[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*`), eliminating the ambiguous `[0-9A-Za-z.-]+` backtracking (`typescript:S8786`) while preserving accepted version behavior.
+- Added regression tests in `src/test/componentVersions.test.ts`: prerelease comparison edge cases, and long malformed/valid version inputs for `checkSourceVersion`.
+- Compiled with `tsc`, ran focused mocha tests (18 passing), and linted clean with biome.
+- Transitioned todo `in-progress` → `ready`; filename and frontmatter synchronized. Scanner evidence block and metadata preserved.
+
+**Learnings:** Extracting comparison logic into small helpers keeps method calls free and drives cognitive complexity well under the 15 limit. The regex fix trades a permissive flat character class for dot-separated identifiers; versions such as `1.2.3-rc..1` (empty identifier) are now rejected, which is more correct.
+
+### 2026-10-27 - Integration correction and fresh analysis
+
+- Corrected the earlier diagnosis: S8786 at original line 54 concerns trailing-slash removal (`sourceUrl.replace`), not version validation
+- Restored the original permissive version regex rather than introducing an unrelated validation behavior change
+- Replaced trailing-slash regex trimming with a backward character scan; added tests for 20,000 trailing slashes and all-slash invalid input without fetching
+- Extracted prerelease identifier comparison so complexity is not merely moved into another over-limit function
+- Final SonarQube `analyze_code_snippet` on the complete updated production file (`ts`, `MAIN`, project key from `sonar-project.properties`) returned zero issues
+- Final `npm test`: compilation and lint pass, 335 tests pass, with one unrelated failure in the pre-existing `src/test/codeScanning.test.ts` edit, left untouched
+- Retained ready status and unchecked full-scan criterion; snippet analysis does not establish remote project finding clearance

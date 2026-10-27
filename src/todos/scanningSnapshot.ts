@@ -27,17 +27,16 @@ export interface ScanningSnapshot extends ScanningProvenance {
 }
 
 const SNAPSHOT = /<!-- agendo:scan-snapshot\n([\s\S]*?)\n-->/;
+const ESCAPE_LT = String.raw`\u003c`;
 
 export function scanningIdentity(provenance: ScanningProvenance): string {
   const { source, scope, grouping, target, branch } = provenance;
-  const identity =
-    branch === undefined
-      ? grouping === "rule"
-        ? [source, scope, target]
-        : [source, scope, grouping, target]
-      : grouping === "rule"
-        ? [source, scope, branch, target]
-        : [source, scope, branch, grouping, target];
+  let identity: string[];
+  if (branch === undefined) {
+    identity = grouping === "rule" ? [source, scope, target] : [source, scope, grouping, target];
+  } else {
+    identity = grouping === "rule" ? [source, scope, branch, target] : [source, scope, branch, grouping, target];
+  }
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 
@@ -65,7 +64,7 @@ export function readScanningProvenance(content: string): ScanningProvenance | un
   const header = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(content)?.[1];
   if (!header) return;
   const field = (name: string): string | undefined => {
-    const value = new RegExp(`^${name}:\\s*([^\\r\\n]*)$`, "m").exec(header)?.[1].trim();
+    const value = new RegExp(String.raw`^${name}:\s*([^\r\n]*)$`, "m").exec(header)?.[1].trim();
     if (value === undefined) return;
     if (value.startsWith('"')) {
       const decoded: unknown = JSON.parse(value);
@@ -160,7 +159,7 @@ export function readScanningSnapshot(
 }
 
 export function serializeScanningSnapshot(snapshot: ScanningSnapshot): string {
-  return `<!-- agendo:scan-snapshot\n${JSON.stringify(snapshot).replace(/</g, "\\u003c")}\n-->`;
+  return `<!-- agendo:scan-snapshot\n${JSON.stringify(snapshot).split("<").join(ESCAPE_LT)}\n-->`;
 }
 
 export function reconcileScanningSnapshot(
@@ -201,12 +200,13 @@ export function reconcileScanningSnapshot(
     }
   }
   const usedRules = new Set(current.map((finding) => finding.rule));
+  current.sort((a, b) => a.id.localeCompare(b.id));
   return {
     snapshot: {
       ...provenance,
       version: 1,
       retrievedAt,
-      findings: current.sort((a, b) => a.id.localeCompare(b.id)),
+      findings: current,
       rules: [...rules.values()]
         .filter((rule) => usedRules.has(rule.id))
         .sort((a, b) => a.id.localeCompare(b.id)),

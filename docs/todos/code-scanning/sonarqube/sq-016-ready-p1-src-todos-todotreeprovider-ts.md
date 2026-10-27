@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-016"
 tags: [code-scanning, sonarqube]
@@ -305,13 +305,49 @@ This rule raises an issue when the code cognitive complexity of a function is ab
 
 ### Findings
 
-- [ ] [be034eba-0f3c-46dc-8666-4e139d5b3449] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed. (src/todos/todoTreeProvider.ts:386)
-- [ ] [e9ac77b4-3aba-4df4-94ea-cdbd9d169b7b] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed. (src/todos/todoTreeProvider.ts:341)
+- [x] [be034eba-0f3c-46dc-8666-4e139d5b3449] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed. (src/todos/todoTreeProvider.ts:386)
+- [x] [e9ac77b4-3aba-4df4-94ea-cdbd9d169b7b] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed. (src/todos/todoTreeProvider.ts:341)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** Both complexity findings are addressed; fresh full-file snippet analysis reports zero issues. The real extension-host suite passes all scoped-view and dependency tests, including the corrected dependency-group regression.
+
+**Next step:** Await full-project SonarQube scan to confirm the two findings no longer fire; no clearance claimed until the project scan verifies.
+
 ## Work Log
+
+### 2026-10-27 - Implementation started
+
+**By:** Kilo (agent)
+
+**Actions:**
+- Transitioned todo `pending` → `in-progress`; synchronized filename and frontmatter.
+- Reviewed scanner evidence: `typescript:S3776` on `getChildren` and `dependencyNodes`, both complexity 17 → 15.
+
+**Learnings:** None yet.
+
+### 2026-10-27 - Implementation complete
+
+**By:** Kilo (agent)
+
+**Actions:**
+- Refactored `getChildren` in `src/todos/todoTreeProvider.ts` into a flat dispatcher (`getRootChildren`, `getSourceChildren`, `getStatusChildren`, `getPriorityChildren`) and `dependencyNodes` into `buildDependencyGroups` + `addDependencyNode`. Cognitive complexity reduced from 17 to under 15 in both functions, preserving tree grouping/order/collision/dependency behavior exactly.
+- Verified with a fresh full-file SonarQube snippet analysis (0 issues), `tsc` compile (clean), `biome lint` (clean), and focused mocha tests on `scopedViews.test.ts` (6 passing; 4 pre-existing failures unrelated to this change).
+- Transitioned todo `in-progress` → `ready`; filename and frontmatter synchronized. Scanner evidence block and metadata preserved.
+
+**Learnings:** Extracting the tree-building logic into small, single-purpose helpers keeps method calls free and drives each function's cognitive complexity under the 15 limit without altering the rendered tree structure.
+
+### 2026-10-27 - Real extension-host integration verification
+
+- The earlier mock-harness results are not the final verification baseline; real VS Code execution caught the new regression skipping the scanner-source tree level
+- Corrected test navigation to source -> status -> priority -> dependency; no production behavior change was needed
+- Final `npm test`: compilation and lint pass, 342 tests pass, including every scoped-view and dependency regression; one unrelated failure remains in the unchanged user-owned scanner-title fixture/assertion mismatch
+- The earlier repository timeout and cascading activation mock failure did not recur in the final run
+- Removed temporary root-level mock/hook test artifacts; `git diff --check` passes
+- Retained ready and unchecked full-project scan criterion; no remote clearance claimed

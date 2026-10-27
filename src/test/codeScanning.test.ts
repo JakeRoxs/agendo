@@ -94,6 +94,38 @@ suite("native code scanning", () => {
     });
   });
 
+  test("SonarQube project key trims surrounding whitespace from the properties file", async () => {
+    await fs.writeFile(
+      path.join(root.fsPath, "sonar-project.properties"),
+      "  sonar.projectKey =   example-project   \n",
+    );
+    assert.deepStrictEqual(await sonarQubeDefaults(root, {}), {
+      server: "",
+      project: "example-project",
+      token: "",
+    });
+  });
+
+  test("SonarQube properties parsing respects line boundaries and literal keys", async () => {
+    for (const [properties, project] of [
+      ["\r\n# Comment\r\n\tsonar.projectKey\t:\t example-project \r\n", "example-project"],
+      ["# Comment\rsonar.projectKey = cr-project\r", "cr-project"],
+      ["sonar.projectKeySuffix=wrong\nsonar.projectKey=wanted", "wanted"],
+      ["sonar.projectKey=\nother.property=not-a-project", ""],
+    ]) {
+      await fs.writeFile(path.join(root.fsPath, "sonar-project.properties"), properties);
+      assert.strictEqual((await sonarQubeDefaults(root, {})).project, project);
+    }
+  });
+
+  test("SonarQube properties parsing handles long malformed assignments", async () => {
+    await fs.writeFile(
+      path.join(root.fsPath, "sonar-project.properties"),
+      `sonar.projectKey${" ".repeat(20_000)}not an assignment\nsonar.projectKey=valid-project`,
+    );
+    assert.strictEqual((await sonarQubeDefaults(root, {})).project, "valid-project");
+  });
+
   test("SonarQube environment defaults support MCP and scanner variable names", async () => {
     assert.deepStrictEqual(
       await sonarQubeDefaults(root, {
@@ -424,7 +456,11 @@ suite("native code scanning", () => {
         prevented = true;
       },
     });
-    assert.ok(target.open && parent.open && focused && scrolled && prevented);
+    assert.ok(target.open, "the target section should expand");
+    assert.ok(parent.open, "the target's parent section should expand");
+    assert.ok(focused, "the target heading should receive focus");
+    assert.ok(scrolled, "the target section should scroll into view");
+    assert.ok(prevented, "the section link should prevent default navigation");
     onToggle();
     assert.strictEqual(storage.get("agendo-section-sq-001-pending-scanner-context-0"), "1");
     assert.strictEqual(
@@ -1727,9 +1763,9 @@ suite("native code scanning", () => {
         .href,
     );
     const recent = [
-      { id: "sq-002", title: "typescript:S3776", status: "pending", current: true },
-      { id: "sq-001", title: "typescript:S2871", status: "pending" },
-      { id: "cql-001", title: "js/example", status: "ready" },
+      { id: "sq-002", title: "src/foo.ts", status: "pending", current: true },
+      { id: "sq-001", title: "src/bar.ts", status: "pending" },
+      { id: "cql-001", title: "src/baz.ts", status: "ready" },
       { id: "001", title: "a regular task", status: "ready" },
     ];
     const todo = { ...recent[0], priority: "p1", criteria: [], triage: [], workLog: [] };
@@ -1883,5 +1919,117 @@ suite("native code scanning", () => {
     const refreshed = updateFindingsChecklist(checkedContent, [finding1], snapshot);
     assert.ok(refreshed.includes("- [x] [cql-100]"));
     assert.ok(refreshed.includes("(not returned)"));
+  });
+
+  test("mixed existing and new imports allocate one ID per new import and aggregate changes", async () => {
+    const seeded = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [finding],
+      "finding",
+    );
+    assertImportCounts(seeded, { created: 1, updated: 0 });
+    assert.strictEqual(seeded.refreshed, 0);
+    assert.strictEqual(repository.getMaxId("codeql"), 1);
+
+    const result = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [finding, { ...finding, id: "43", rule: "js/second" }],
+      "finding",
+    );
+    assertImportCounts(result, { created: 1, updated: 0 });
+    assert.strictEqual(result.refreshed, 1);
+    assert.strictEqual(result.created, 1);
+    assert.strictEqual(result.updated, 0);
+
+    assert.strictEqual(repository.getMaxId("codeql"), 2);
+    const newTodo = repository.getTodos().find((todo) => todo.id === "cql-002");
+    assert.ok(newTodo);
+    assert.strictEqual(newTodo.frontmatter.scan_target, "43");
+    assert.strictEqual(newTodo.frontmatter.scan_source, "codeql");
+    assert.strictEqual(newTodo.frontmatter.scan_scope, "owner/repo");
+    assert.strictEqual(newTodo.frontmatter.scan_grouping, "finding");
+
+    assert.deepStrictEqual(result.changes, {
+      added: 1,
+      changed: 0,
+      unchanged: 1,
+      notReturned: 0,
+      uncompared: 0,
+    });
+
+    const content = await readText(newTodo.uri);
+    assert.match(content, /scan_refreshed_at:/);
+    assert.match(content, /js\/second/);
+    const existingTodo = repository.getTodos().find((todo) => todo.id === "cql-001");
+    assert.ok(existingTodo);
+    assert.match(await readText(existingTodo.uri), /js\/example/);
+
+    const changed = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [{ ...finding, message: "Updated evidence" }, { ...finding, id: "43", rule: "js/second" }],
+      "finding",
+    );
+    assert.strictEqual(changed.created, 0);
+    assert.strictEqual(changed.refreshed, 2);
+    assert.strictEqual(changed.updated, 1);
+    assert.strictEqual(repository.getMaxId("codeql"), 2);
+    assert.deepStrictEqual(changed.changes, {
+      added: 0,
+      changed: 1,
+      unchanged: 1,
+      notReturned: 0,
+      uncompared: 0,
+    });
+  });
+
+  test("updateScanningEvidence accepts exactly one START/END marker pair", () => {
+    const content =
+      "<!-- agendo:scan-evidence:start -->\nOld evidence\n<!-- agendo:scan-evidence:end -->\nPersonal notes\n";
+    const updated = updateScanningEvidence(content, [finding]);
+    assert.match(updated, /### Affected Locations/);
+    assert.match(updated, /#### File: src\/example.ts \| Line: 10/);
+    assert.ok(updated.endsWith("Personal notes\n"));
+  });
+
+  test("updateScanningEvidence rejects duplicate START markers", () => {
+    const content =
+      "<!-- agendo:scan-evidence:start -->\n<!-- agendo:scan-evidence:start -->\nOld evidence\n<!-- agendo:scan-evidence:end -->\n";
+    assert.throws(() => updateScanningEvidence(content, [finding]), /markers are missing/);
+  });
+
+  test("updateScanningEvidence rejects duplicate END markers", () => {
+    const content =
+      "<!-- agendo:scan-evidence:start -->\nOld evidence\n<!-- agendo:scan-evidence:end -->\n<!-- agendo:scan-evidence:end -->\n";
+    assert.throws(() => updateScanningEvidence(content, [finding]), /markers are missing/);
+  });
+
+  test("updateScanningEvidence rejects inverted markers (END before START)", () => {
+    const content =
+      "<!-- agendo:scan-evidence:end -->\nOld evidence\n<!-- agendo:scan-evidence:start -->\n";
+    assert.throws(() => updateScanningEvidence(content, [finding]), /markers are missing/);
+  });
+
+  test("updateScanningEvidence rejects reimport with duplicate START markers", async () => {
+    await importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "finding");
+    const todo = repository.getTodos()[0];
+    const content = await readText(todo.uri);
+    const dirty = content.replace(
+      "<!-- agendo:scan-evidence:start -->",
+      "<!-- agendo:scan-evidence:start -->\n<!-- agendo:scan-evidence:start -->",
+    );
+    await vscode.workspace.fs.writeFile(todo.uri, Buffer.from(dirty, "utf8"));
+    await assert.rejects(
+      importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "finding"),
+      /markers are missing/,
+    );
   });
 });

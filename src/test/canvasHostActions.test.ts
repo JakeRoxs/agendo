@@ -176,10 +176,25 @@ suite("canvasHostActions", () => {
     assert.strictEqual(status.setPriorityCalls.length, 0);
   });
 
+  test("non-string status and priority values are rejected without writing", async () => {
+    const { actions, status } = createActions([makeTodo("001")]);
+    for (const value of [123, null, undefined, {}, []]) {
+      await assert.rejects(() => actions.setStatus("001", value), TypeError);
+      await assert.rejects(() => actions.setPriority("001", value), TypeError);
+    }
+    assert.strictEqual(status.setStatusCalls.length, 0);
+    assert.strictEqual(status.setPriorityCalls.length, 0);
+  });
+
   test("invalid group types are rejected", async () => {
     const todo = makeTodo("007");
     const { actions, status } = createActions([todo]);
-    await assert.rejects(() => actions.setGroup("007", 123), /must be a string/i);
+    for (const value of [123, null, undefined, {}, []]) {
+      await assert.rejects(() => actions.setGroup("007", value), {
+        name: "TypeError",
+        message: "Group must be a string",
+      });
+    }
     assert.strictEqual(status.setGroupCalls.length, 0);
   });
 
@@ -298,9 +313,10 @@ suite("canvasHostActions", () => {
 
   test("assertWritable succeeds for clean todos", async () => {
     const todo = makeTodo("018");
-    const { actions } = createActions([todo]);
+    const { actions, repo } = createActions([todo]);
 
-    await actions.assertWritable("018");
+    assert.strictEqual(await actions.assertWritable("018"), undefined);
+    assert.strictEqual(repo.refreshCalls.length, 1);
   });
 
   test("assertWritable rejects for dirty todos", async () => {

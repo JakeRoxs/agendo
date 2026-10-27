@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-004"
 tags: [code-scanning, sonarqube]
@@ -282,12 +282,26 @@ test("returns an administrator", () => {
 
 ### Findings
 
-- [ ] [4ee95d0f-f8f6-4a12-b8a7-4767f076e778] `typescript:S2699` — Add at least one assertion to this test case. (src/test/canvasHostActions.test.ts:299)
+- [x] [4ee95d0f-f8f6-4a12-b8a7-4767f076e778] `typescript:S2699` — Add at least one assertion to this test case. (src/test/canvasHostActions.test.ts:299)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Verify clean-todo authorization
+
+- Adding explicit assertions for the clean-todo authorization result and required repository refresh
+- Preserving all prior malformed-input and guard regressions in this test file
+- Fresh SonarQube `analyze_code_snippet` on the complete updated test source (`ts`, `TEST`, project key from `sonar-project.properties`) reports zero issues
+- `npm test`: compilation and lint pass, 342 tests pass including the clean-todo authorization assertions; only the unchanged user-owned scanner-title fixture/assertion mismatch fails
+- `git diff --check` passes; full-project scan clearance is not claimed
+
+## Resume Context
+
+**Current state:** Clean-todo authorization asserts the void result and exactly one repository refresh; real extension-host tests and fresh full-file snippet analysis pass.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion.

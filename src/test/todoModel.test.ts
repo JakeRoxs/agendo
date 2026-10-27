@@ -1985,10 +1985,10 @@ suite("todoModel", () => {
     for (const file of files) {
       const dependencies = file.startsWith("020") ? '\ndependencies: ["001"]' : "";
       const group = file.startsWith("001")
-        ? "\ngroup: zeta"
+        ? "\ngroup: Zeta"
         : file.startsWith("020")
           ? "\ngroup: alpha"
-          : "\ngroup: zeta";
+          : "\ngroup: Zeta";
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(rootUri, "backlog", file),
         Buffer.from(
@@ -2014,8 +2014,10 @@ suite("todoModel", () => {
     assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("001"), ["020"]);
     assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("099"), []);
     const groups = repository.getGroups();
-    assert.deepStrictEqual(groups, ["alpha", "zeta"]);
+    assert.deepStrictEqual(groups, ["alpha", "Zeta"]);
     assert.strictEqual(repository.getGroups(), groups);
+    assert.deepStrictEqual(repository.getGroups("todos"), groups);
+    assert.deepStrictEqual(repository.getGroups("code-scanning"), []);
 
     const created: string[] = [];
     const listeners: Array<() => void> = [];
@@ -2271,6 +2273,22 @@ suite("todoModel", () => {
         "agendo.codeScanning",
         "agendo.skillStatus",
       ]);
+
+      const canvasViewer = context.subscriptions[0] as unknown as {
+        actions: { handleSettingsAction(payload: unknown): Promise<unknown> };
+      };
+      for (const action of ["check-source", "install"]) {
+        for (const component of ["skill", "canvas"]) {
+          const commandCount = executedCommands.length;
+          assert.deepStrictEqual(
+            await canvasViewer.actions.handleSettingsAction({ action, component }),
+            { success: true },
+          );
+          assert.deepStrictEqual(executedCommands.slice(commandCount), [
+            component === "skill" ? Command.ManageSkill : Command.ManageCanvas,
+          ]);
+        }
+      }
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({
@@ -3445,5 +3463,64 @@ suite("todoModel", () => {
       value: originalGetConfiguration,
       configurable: true,
     });
+  });
+
+  test("untrusted scanner imports stop before resolving workspace or fetching findings", async () => {
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const subscriptions: vscode.Disposable[] = [];
+    const originalRegister = vscode.commands.registerCommand;
+    const originalWarning = vscode.window.showWarningMessage;
+    const trustDescriptor = Object.getOwnPropertyDescriptor(vscode.workspace, "isTrusted");
+    const warnings: string[] = [];
+    let workspaceReads = 0;
+    const services = {
+      config: {
+        getWorkspaceFolder: () => {
+          workspaceReads++;
+          return undefined;
+        },
+      },
+    } as never;
+    try {
+      Object.defineProperty(vscode.workspace, "isTrusted", { configurable: true, value: false });
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        configurable: true,
+        value: (command: string, callback: (...args: any[]) => any) => {
+          registrations.set(command, callback);
+          return new vscode.Disposable(() => {});
+        },
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: async (message: string) => {
+          warnings.push(message);
+          return undefined;
+        },
+        configurable: true,
+      });
+      registerCommands({ subscriptions } as never, services);
+      const importCommand = registrations.get(Command.ImportCodeScanning);
+      assert.ok(importCommand);
+      assert.ok(registrations.has(Command.RefreshScanningTodo));
+      await importCommand();
+      assert.deepStrictEqual(warnings, [
+        "Trust this workspace before importing code-scanning findings.",
+      ]);
+      assert.strictEqual(workspaceReads, 0);
+    } finally {
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegister,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalWarning,
+        configurable: true,
+      });
+      if (trustDescriptor) {
+        Object.defineProperty(vscode.workspace, "isTrusted", trustDescriptor);
+      } else {
+        Reflect.deleteProperty(vscode.workspace, "isTrusted");
+      }
+      for (const subscription of subscriptions) subscription.dispose();
+    }
   });
 });

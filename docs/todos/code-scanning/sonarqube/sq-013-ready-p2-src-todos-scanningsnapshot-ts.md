@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-013"
 tags: [code-scanning, sonarqube]
@@ -257,16 +257,49 @@ const filePath = String.raw`C:\Users\Documents\file.txt`;
 
 ### Findings
 
-- [ ] [0a17673f-50d3-4195-aa55-eecb4ba361c4] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/scanningSnapshot.ts:68)
-- [ ] [0f39c783-4bd2-4837-b345-9838932a828d] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/scanningSnapshot.ts:163)
-- [ ] [88b14c12-d87d-4d59-9645-9fd01fb7088a] `typescript:S4043` — Move this array "sort" operation to a separate statement or replace it with "toSorted". (src/todos/scanningSnapshot.ts:209)
-- [ ] [ab6ce604-bca3-4e66-95d3-a2f227dee3a5] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/scanningSnapshot.ts:38)
-- [ ] [f24885ec-af19-426d-b3ca-4e51ff7deb8f] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/scanningSnapshot.ts:35)
+- [x] [0a17673f-50d3-4195-aa55-eecb4ba361c4] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/scanningSnapshot.ts:68)
+- [x] [0f39c783-4bd2-4837-b345-9838932a828d] `typescript:S7780` — \`String.raw\` should be used to avoid escaping \`\\\`. (src/todos/scanningSnapshot.ts:163)
+- [x] [88b14c12-d87d-4d59-9645-9fd01fb7088a] `typescript:S4043` — Move this array "sort" operation to a separate statement or replace it with "toSorted". (src/todos/scanningSnapshot.ts:209)
+- [x] [ab6ce604-bca3-4e66-95d3-a2f227dee3a5] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/scanningSnapshot.ts:38)
+- [x] [f24885ec-af19-426d-b3ca-4e51ff7deb8f] `typescript:S3358` — Extract this nested ternary operation into an independent statement. (src/todos/scanningSnapshot.ts:35)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** All five SonarQube findings in src/todos/scanningSnapshot.ts are addressed. Two typescript:S7780 findings (escaped backslashes in string literals) are fixed by using `String.raw` for the RegExp pattern in `readScanningProvenance` and extracting `ESCAPE_LT = String.raw\`\u003c\`` as a module-level constant used by `serializeScanningSnapshot` via `.split("<").join()`. One typescript:S4043 finding (sort in object literal) is fixed by moving `current.sort(...)` to a separate statement before the return object. Two typescript:S3358 findings (nested ternaries) are fixed by extracting the outer `branch === undefined` ternary into an if/else in `scanningIdentity`. A fresh full-file SonarQube analysis of the final production file reports 0 issues.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion; keep the full-scan criterion unchecked until then.
+
 ## Work Log
+
+### 2026-10-27 - Address SonarQube findings sq-013
+
+**By:** Kilo
+
+**Actions:**
+- Replaced escaped backslashes in `readScanningProvenance` RegExp with `String.raw` template literal (fixes S7780 at line 68).
+- Extracted `ESCAPE_LT = String.raw\`\u003c\`` module-level constant and used it in `serializeScanningSnapshot` via `.split("<").join()` instead of nested template literal with `.replace()` (fixes S7780 at line 163 and S4624 nested template literal).
+- Moved `current.sort((a, b) => a.id.localeCompare(b.id))` to a separate statement before the return object in `reconcileScanningSnapshot` (fixes S4043 at line 209).
+- Extracted outer `branch === undefined` ternary in `scanningIdentity` into if/else, removing nested ternary (fixes S3358 at lines 35 and 38).
+- Added regression tests in src/test/scanningSnapshot.test.ts: String.raw form for escaped backslash, scanningIdentity branch distinction, findings sort order.
+- Verified TypeScript compilation passes (`npm run compile`).
+- Verified serialize/read round-trip preserves messages with `<` and backslashes.
+- Ran fresh SonarQube analyze_code_snippet on the complete final production file: 0 issues reported.
+
+**Learnings:**
+- `String.raw` template literals preserve backslashes literally without double-escaping.
+- Extracting nested ternaries into if/else preserves the same identity hash output.
+- Moving sort to a separate statement preserves array mutation semantics while satisfying S4043.
+- `.split("<").join()` avoids both the S7781 `replace` vs `replaceAll` suggestion and the S4624 nested template literal issue.
+
+### 2026-10-27 - Integration verification
+
+- Reviewed the completed production/test changes after recovery from the user-reported unrelated editor crash
+- Final `npm test`: compilation and lint pass, 342 tests pass, including scanner identity, serialization, and ordering regressions; one unrelated failure remains in the unchanged user-owned `src/test/codeScanning.test.ts` edit
+- `npm run test:canvas`: 247 pass, one unrelated existing error-message assertion failure
+- `git diff --check` passes; retained ready pending full-project scan confirmation

@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-007"
 tags: [code-scanning, sonarqube]
@@ -231,14 +231,28 @@ The rule applies only to assertions in test code.
 
 ### Findings
 
-- [ ] [094d91e0-f9a3-49a3-a066-f14231a1de5e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:275)
-- [ ] [1846e930-13c1-4523-baf6-3deeacdecf7e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:189)
-- [ ] [fd04cd67-ed6b-4b3a-b4fc-d57c895a910e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:269)
+- [x] [094d91e0-f9a3-49a3-a066-f14231a1de5e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:275)
+- [x] [1846e930-13c1-4523-baf6-3deeacdecf7e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:189)
+- [x] [fd04cd67-ed6b-4b3a-b4fc-d57c895a910e] `typescript:S9073` — This composite assertion hides which condition failed; split it to make failures actionable. (src/test/todoCollisions.test.ts:269)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** Three independent compound assertions are split without removing coverage. Fresh snippet analysis of the complete updated test source reports zero issues; compilation passes.
+
+**Next step:** Confirm project scan clearance before completion.
+
 ## Work Log
+
+### 2026-10-27 - Independent collision assertions
+
+- Split clipboard-content and regular/scanner collision-filter assertions into independently actionable checks
+- Preserved the earlier exact-output collision-message regression and all existing test setup/cleanup
+- Parent fresh SonarQube `analyze_code_snippet` of the complete updated test source (`ts`, `TEST`, project key from `sonar-project.properties`) returned zero issues; the reported size limitation did not prevent this parent analysis
+- Real extension-host verification reports 342 passing tests with only the known scanner-title fixture/assertion failure; collision tests pass
+- Full-project scan criterion remains unchecked; no remote clearance claimed

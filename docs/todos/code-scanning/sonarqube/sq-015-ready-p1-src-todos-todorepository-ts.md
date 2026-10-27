@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-015"
 tags: [code-scanning, sonarqube]
@@ -108,12 +108,28 @@ function differ(left, right) {
 
 ### Findings
 
-- [ ] [84cb07e6-b402-4e4a-871b-1899c46c29e1] `typescript:S2871` — Provide a compare function that depends on "String.localeCompare", to reliably sort elements alphabetically. (src/todos/todoRepository.ts:65)
+- [x] [84cb07e6-b402-4e4a-871b-1899c46c29e1] `typescript:S2871` — Provide a compare function that depends on "String.localeCompare", to reliably sort elements alphabetically. (src/todos/todoRepository.ts:65)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Scoped group sorting
+
+- Confirmed scoped groups use default UTF-16 sorting while cached groups use `localeCompare`
+- Implementing the same locale-aware comparator for scoped groups with mixed-case regression coverage in `src/test/todoModel.test.ts`
+- `npm run compile` and `npm run lint` pass
+- `npm test`: 322 passing, including the repository regression; one unrelated failure in the pre-existing `src/test/codeScanning.test.ts` edit (file-name fixture versus rule-name assertion), left untouched
+- Fresh SonarQube `analyze_code_snippet` on the complete updated production file (`ts`, `MAIN`, project key resolved from `sonar-project.properties`) returned zero issues
+- Remains ready pending a full project scan; snippet analysis does not establish remote finding clearance
+- Final integrated `npm test`: compile and lint pass, 335 passing tests, same unrelated pre-existing scanner canvas title assertion failure
+
+## Resume Context
+
+**Current state:** Scoped and cached groups now share locale-aware ordering; regression tests and fresh full-file snippet analysis pass.
+
+**Next step:** Confirm finding clearance in a full project SonarQube scan before completion.

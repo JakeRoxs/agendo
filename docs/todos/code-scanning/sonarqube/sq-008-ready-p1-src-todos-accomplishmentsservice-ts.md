@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p1
 issue_id: "sq-008"
 tags: [code-scanning, sonarqube]
@@ -445,20 +445,54 @@ importScripts(
 
 ### Findings
 
-- [ ] [10463588-2eae-4c4d-96d5-aa15e32ec8dc] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:128)
-- [ ] [324758fc-0623-4cbf-a360-41ba3e48a043] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:84)
-- [ ] [3a18a529-6421-4c73-bd1a-bbcc57a6b4b5] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:129)
-- [ ] [4e53bffa-8c94-4ecb-ab05-d2da3764fad6] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed. (src/todos/accomplishmentsService.ts:43)
-- [ ] [7eb74d76-ac44-439a-8099-dafc513dbbd3] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed. (src/todos/accomplishmentsService.ts:89)
-- [ ] [94415a74-19bd-4218-bb03-dd767895d051] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:132)
-- [ ] [a1fc7ceb-440c-42c2-a61a-0afcea82cdf5] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:133)
-- [ ] [cc189b25-4ca4-4d92-aa2a-4250cf7472cc] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:134)
-- [ ] [f051d49b-3743-41da-84d9-7698e04bbbda] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:69)
+- [x] [10463588-2eae-4c4d-96d5-aa15e32ec8dc] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:128)
+- [x] [324758fc-0623-4cbf-a360-41ba3e48a043] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:84)
+- [x] [3a18a529-6421-4c73-bd1a-bbcc57a6b4b5] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:129)
+- [x] [4e53bffa-8c94-4ecb-ab05-d2da3764fad6] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed. (src/todos/accomplishmentsService.ts:43)
+- [x] [7eb74d76-ac44-439a-8099-dafc513dbbd3] `typescript:S3776` — Refactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed. (src/todos/accomplishmentsService.ts:89)
+- [x] [94415a74-19bd-4218-bb03-dd767895d051] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:132)
+- [x] [a1fc7ceb-440c-42c2-a61a-0afcea82cdf5] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:133)
+- [x] [cc189b25-4ca4-4d92-aa2a-4250cf7472cc] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:134)
+- [x] [f051d49b-3743-41da-84d9-7698e04bbbda] `typescript:S7778` — Do not call \`Array\#push()\` multiple times. (src/todos/accomplishmentsService.ts:69)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
+## Resume Context
+
+**Current state:** All nine findings are addressed; final full-file snippet analysis reports zero issues. Filtering and packet header formatting are separated from bounded outcome selection, with regression coverage for ordering, date boundaries, filters, and size limits.
+
+**Next step:** Confirm finding clearance in a full project SonarQube scan before completion.
+
 ## Work Log
+
+### 2026-10-27 - Address SonarQube findings sq-008
+
+**By:** Kilo
+
+**Actions:**
+- Combined consecutive `lines.push()` calls in `formatTodoOutcome` into single multi-argument calls (fixes S7778 at lines 69 and 84).
+- Combined consecutive `parts.push()` calls in `buildAccomplishmentsPacket` intro block into a single multi-argument call (fixes S7778 at lines 128, 129, 132, 133, 134).
+- Extracted filter helpers from `matchesFilter` (matchesSinceFilter, matchesUntilFilter, matchesGroupFilter, matchesTagsFilter, matchesSourceFilter) and rewrote the main function as flat early-return checks (fixes S3776 at line 43, complexity 23 → reduced).
+- Extracted `compareAccomplishments` named comparator from the inline sort in `buildAccomplishmentsPacket` (fixes S3776 at line 89, complexity 20 → reduced).
+- Added regression tests in src/test/accomplishments.test.ts: empty tags array, multiple-tag all-match, sonarqube source filter, deterministic sort order, max-count omission.
+- Verified TypeScript compilation passes (`npm run compile`).
+- Verified pure-logic behavior with standalone script: all 32 checks pass, output behavior preserved.
+
+**Learnings:**
+- Cognitive complexity is reduced by extracting nested conditions into separate functions; method calls are "free" under the S3776 rule.
+- Combining consecutive push calls preserves array contents exactly; order and content are unchanged.
+- Filter behavior is preserved for empty tags arrays (every() on empty returns true) and for undefined dates.
+
+### 2026-10-27 - Integration and fresh analysis
+
+- Fresh analysis of the initial refactor still reported S3776 (complexity 20) in the packet builder; extracting the sort comparator alone did not resolve that finding
+- Extracted `formatPacketHeader` to separate header formatting from bounded outcome selection; removed unnecessary single-expression group/tag helpers and preserved the original date-comparison semantics
+- Added regression coverage for inclusive date boundaries, header ordering, and oversized outcomes followed by smaller todos
+- Final SonarQube `analyze_code_snippet` on the complete updated production file (`ts`, `MAIN`, project key from `sonar-project.properties`) returned zero issues
+- Final `npm test`: compilation and lint pass, 335 tests pass, with one unrelated failure in the pre-existing `src/test/codeScanning.test.ts` edit (file-name fixture versus rule-name assertion), left untouched
+- `npm run test:canvas`: 247 pass, one unrelated existing assertion expects an error message without the supported digest selection
+- Retained ready status and unchecked full-scan criterion; snippet analysis does not establish remote project finding clearance

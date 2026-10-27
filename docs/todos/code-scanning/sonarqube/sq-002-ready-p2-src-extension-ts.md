@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-002"
 tags: [code-scanning, sonarqube]
@@ -203,13 +203,30 @@ It can span multiple lines.`;
 
 ### Findings
 
-- [ ] [517131c4-82cd-4ab9-beb5-fe92d9738fe1] `typescript:S4624` — Refactor this code to not use nested template literals. (src/extension.ts:202)
-- [ ] [c2a22096-7325-42b2-880d-232d28240756] `typescript:S1871` — This case's code block is the same as the block for the case on line 107. (src/extension.ts:114)
+- [x] [517131c4-82cd-4ab9-beb5-fe92d9738fe1] `typescript:S4624` — Refactor this code to not use nested template literals. (src/extension.ts:202)
+- [x] [c2a22096-7325-42b2-880d-232d28240756] `typescript:S1871` — This case's code block is the same as the block for the case on line 107. (src/extension.ts:114)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Activation readability cleanup
+
+- Combining identical check-source/install switch branches and separating collision descriptions from the tooltip template
+- Preserving command routing, result objects, and collision badge text
+- Added settings action-routing assertions in the existing activation regression in `src/test/todoModel.test.ts`; both actions must invoke exactly one matching skill/canvas command and retain their result object
+- Fresh SonarQube `analyze_code_snippet` on the complete final production file (`ts`, `MAIN`, project key from `sonar-project.properties`) returned zero issues
+- Pre-crash test run compiled and linted successfully; unrelated repository timeout cascaded into activation mock failure, so verification is being repeated after recovery
+- Recovered source edits were reviewed after the user-reported unrelated VS Code crash
+- Final post-crash `npm test`: compilation and lint pass, 342 tests pass, including activation action routing; the only failure is the unchanged user-owned scanner-title fixture/assertion mismatch in `src/test/codeScanning.test.ts`
+- `npm run test:canvas`: 247 pass and one unrelated existing error-message assertion failure; `git diff --check` passes
+
+## Resume Context
+
+**Current state:** Both activation findings are addressed and fresh full-file snippet analysis reports zero issues; settings routing regression assertions are added.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion.

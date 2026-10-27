@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "sq-014"
 tags: [code-scanning, sonarqube]
@@ -92,12 +92,27 @@ It can span multiple lines.`;
 
 ### Findings
 
-- [ ] [ce416410-1afa-4069-ba48-634b6ba5c97e] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/todoCollisions.ts:26)
+- [x] [ce416410-1afa-4069-ba48-634b6ba5c97e] `typescript:S4624` — Refactor this code to not use nested template literals. (src/todos/todoCollisions.ts:26)
 
 ### End Findings
 
 
-- [ ] Review each finding and address or document its disposition
+- [x] Review each finding and address or document its disposition
 - [ ] Verify changes with tests and a new scan
 
 ## Work Log
+
+### 2026-10-27 - Collision detail formatting
+
+- Separating per-file collision descriptions from the surrounding message template
+- Adding an exact-output regression for active-root and lifecycle-folder paths in `src/test/todoCollisions.test.ts`
+- Fresh SonarQube `analyze_code_snippet` on the complete updated production file (`ts`, `MAIN`, project key from `sonar-project.properties`) returned zero issues
+- This related regression test does not complete or reconcile independent findings in the existing scanner todo for `todoCollisions.test.ts`
+- Final `npm test`: compilation and lint pass, 342 tests pass, including the exact collision-message regression; one unrelated failure remains in the unchanged user-owned scanner-title fixture/assertion mismatch
+- `git diff --check` passes; retained ready pending full-project scan confirmation
+
+## Resume Context
+
+**Current state:** Collision descriptions are formatted separately without nested templates; fresh full-file snippet analysis reports zero issues and an exact-output regression is added.
+
+**Next step:** Confirm clearance in a full project SonarQube scan before completion.
