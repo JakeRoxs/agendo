@@ -26,7 +26,9 @@
     "tasks",
     "agendo"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -909,7 +911,7 @@
         "agendo.skillUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "Notify on activation when the skill or canvas bundled with this extension is newer than the installed copy. Does not install automatically or contact GitHub; source checks are explicit in Versions and Update Actions."
+          "description": "Notify on activation when the bundled skill is newer or a bundled canvas update could not be installed automatically. The canvas is installed locally on activation when missing, the same version, or older; newer installed versions are preserved. GitHub/source checks remain explicit in Versions and Update Actions."
         },
         "agendo.sortByDate": {
           "type": "boolean",

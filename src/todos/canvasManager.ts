@@ -9,6 +9,13 @@ import { compareVersions, fetchText } from "./skillManager";
 const CANVAS_NAME = "agendo-work-session";
 const META_FILE = ".canvas-meta.json";
 
+/** Valid semver-like version string carried in `.canvas-meta.json`. */
+const VERSION_REGEX = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+function isValidVersion(value: string): boolean {
+  return VERSION_REGEX.test(value);
+}
+
 /** Relative files that make up the bundled canvas. */
 const CANVAS_FILES = [
   "agent-requests.mjs",
@@ -17,6 +24,7 @@ const CANVAS_FILES = [
   "board.html",
   "board.mjs",
   "copilot-extension.json",
+  "digest.mjs",
   "errors.mjs",
   META_FILE,
   "extension.mjs",
@@ -77,6 +85,59 @@ export class CanvasManager {
     } catch {
       return undefined;
     }
+  }
+
+  /** Include metadata-only partial installs so automatic repair cannot downgrade them. */
+  private async hasCanvasCopy(dir: vscode.Uri): Promise<boolean> {
+    for (const file of [META_FILE, "extension.mjs"]) {
+      try {
+        await vscode.workspace.fs.stat(vscode.Uri.joinPath(dir, file));
+        return true;
+      } catch (error) {
+        if (!(error instanceof vscode.FileSystemError) || error.code !== "FileNotFound") {
+          throw error;
+        }
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Provision the bundled canvas at the user level on first activation and when
+   * the installed copy is the same version or older. Never contacts the
+   * configured source, never overwrites a newer or unknown installed copy, and
+   * never downgrades a newer legacy workspace copy. Returns whether a copy was
+   * made.
+   */
+  async ensureBundledInstalled(): Promise<boolean> {
+    const bundledVersion = await this.readVersion(this.bundledDir);
+    if (!bundledVersion || !isValidVersion(bundledVersion)) {
+      // Cannot validate the bundled copy; nothing safe to provision.
+      return false;
+    }
+    const installedVersion = await this.readVersion(this.installDir);
+    if (
+      (await this.hasCanvasCopy(this.installDir)) &&
+      (!installedVersion ||
+        !isValidVersion(installedVersion) ||
+        compareVersions(bundledVersion, installedVersion) < 0)
+    ) {
+      // Unknown or newer installed versions need explicit review, even if incomplete.
+      return false;
+    }
+    const legacy = this.legacyDir;
+    if (legacy && (await this.hasCanvasCopy(legacy))) {
+      const legacyVersion = await this.readVersion(legacy);
+      if (
+        !legacyVersion ||
+        !isValidVersion(legacyVersion) ||
+        compareVersions(bundledVersion, legacyVersion) < 0
+      ) {
+        return false;
+      }
+    }
+    await this.install();
+    return true;
   }
 
   /** Compare bundled vs installed versions. */
@@ -162,14 +223,27 @@ export class CanvasManager {
     await this.removeLegacyCopy();
   }
 
-  /** Remove the workspace copy if it is one of ours (it carries `.canvas-meta.json`). */
+  /**
+   * Remove the workspace copy if it is one of ours and not newer than the
+   * installed copy. Retiring a newer or unknown legacy copy would downgrade an
+   * independently-versioned canvas, so it is preserved.
+   */
   private async removeLegacyCopy(): Promise<void> {
     const legacy = this.legacyDir;
-    if (!legacy || (await this.readVersion(legacy)) === undefined) {
+    if (!legacy) return;
+    const legacyVersion = await this.readVersion(legacy);
+    if (!legacyVersion || !isValidVersion(legacyVersion)) {
+      // Unknown/malformed legacy copy: preserve, do not guess it is older.
       return;
     }
-    await vscode.workspace.fs.delete(legacy, { recursive: true, useTrash: false });
-    out`Removed project-level ${CANVAS_NAME} canvas at ${legacy.fsPath}; the user-level copy replaces it`;
+    const installedVersion = await this.readVersion(this.installDir);
+    if (!installedVersion || !isValidVersion(installedVersion)) return;
+    // Only retire the legacy copy when it is not newer than the installed copy,
+    // so migration never downgrades an independently-versioned newer canvas.
+    if (compareVersions(installedVersion, legacyVersion) >= 0) {
+      await vscode.workspace.fs.delete(legacy, { recursive: true, useTrash: false });
+      out`Removed project-level ${CANVAS_NAME} canvas at ${legacy.fsPath}; the user-level copy replaces it`;
+    }
   }
 
   /**

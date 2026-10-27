@@ -4,7 +4,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Extension Version](https://img.shields.io/badge/extension-0.3.0-blue.svg)
 ![Skill Version](https://img.shields.io/badge/skill-1.6.2-orange.svg)
-![Canvas Version](https://img.shields.io/badge/canvas-0.1.10-purple.svg)
+![Canvas Version](https://img.shields.io/badge/canvas-0.1.11-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed engineering work. Todos stay as ordinary
 files in your workspace, while the Activity Bar tree, board, work-session canvas, and optional
@@ -52,7 +52,7 @@ Examples:
 
 The naming convention includes:
 - `issue_id` — zero-padded, sequential, and unique
-- `status` — `pending`, `in-progress`, `ready`, `backlogged`, `complete`, or `cancelled`
+- `status` — `pending`, `in-progress`, `ready`, `backlogged`, `completed`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
@@ -61,7 +61,7 @@ Lifecycle semantics:
 - `in-progress` is actively being worked on
 - `ready` is likely done but still needs confirmation that it works
 - `backlogged` remains open but is excluded from active-work queries
-- `complete` is fully finished and verified
+- `completed` is fully finished and verified
 - `cancelled` is abandoned or superseded
 
 ```mermaid
@@ -81,7 +81,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Active todos live directly in the configured root. Backlogged, complete, and cancelled todos move
+Active todos live directly in the configured root. Backlogged, completed, and cancelled todos move
 to their configured state folders. The filename status and priority tokens are authoritative;
 frontmatter mirrors them for readability.
 
@@ -111,7 +111,7 @@ tracking keys are displayed and searchable when present.
 | `agendo.sortByDate`                        | `false`      | Sort regular todos by modification date                                               |
 | `agendo.showDependencyNodes`               | `false`      | Nest blocked todos under their blockers                                               |
 | `agendo.gitignoreTodos`                    | `true`       | Ignore todo files except Agendo configuration                                         |
-| `agendo.skillUpdateCheck`                  | `true`       | Notify when bundled skill or canvas versions differ                                   |
+| `agendo.skillUpdateCheck`                  | `true`       | Notify about bundled skill updates or canvas updates that could not install automatically |
 | `agendo.codeScanning.enabled`              | `false`      | Enable manual CodeQL and SonarQube imports                                            |
 | `agendo.codeScanning.sortByDate`           | `false`      | Sort scanning todos by modification date                                              |
 | `agendo.codeScanning.sonarqube.url`        | empty        | SonarQube server URL                                                                  |
@@ -138,6 +138,17 @@ invoke it with requests such as `/agendo triage` or `/agendo what's next`.
 See [docs/skill.md](docs/skill.md) for Resume Context and the advisory reconciliation workflow.
 
 ### Work-session canvas
+
+On extension activation, Agendo automatically installs the bundled canvas into
+`<COPILOT_HOME or ~/.copilot>/extensions/agendo-work-session` when missing, or refreshes
+an equal or older version. Newer independently installed versions are preserved; copies
+with unknown versions require manual review. This local installation does not contact GitHub
+and is independent of the update-notification setting.
+
+The canvas remains independently versioned. **Install Work Session Canvas from Configured
+Source** can install GitHub fixes without a new VSIX release. Agendo's embedded canvas is
+available immediately from the extension bundle; an already-running Copilot session may
+need to reload its extensions to discover the user-level copy.
 
 Open the interactive canvas from a todo's context menu or set `agendo.viewMode` to `canvas`. It edits
 the same Markdown file and displays acceptance criteria, dependencies, resume context, work logs, and

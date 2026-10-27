@@ -188,6 +188,19 @@ suite("Shared workspace host boundary", () => {
     assert.strictEqual(config.viewMode, previous);
   });
 
+  test("canvas wrapper prevents outer scrolling and removes the iframe baseline gap", () => {
+    const viewer = new CanvasViewer(vscode.Uri.file(root));
+    const internals = viewer as unknown as { html: (url: string) => string };
+    try {
+      const html = internals.html("http://127.0.0.1:12345/");
+      assert.match(html, /html,body\{[^}]*height:100%;[^}]*overflow:hidden;/);
+      assert.match(html, /iframe\{[^}]*display:block;[^}]*width:100%;height:100%;/);
+      assert.doesNotMatch(html, /<iframe[^>]*scrolling="no"/);
+    } finally {
+      viewer.dispose();
+    }
+  });
+
   test("opening Settings reuses the canvas server and preserves or seeds the return view", async () => {
     const viewer = new CanvasViewer(vscode.Uri.file(root));
     const server = { url: "http://127.0.0.1:12345/" };

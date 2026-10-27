@@ -4,63 +4,73 @@ All notable changes to the Agendo extension are documented here.
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-10-25
-
-### Added
-
-- Explicit board-card work-session actions and scoped Return to Board navigation preserve the originating regular or code-scanning board without changing todo-opening preferences
-- Group overview entry points and typed todo/group history fix back/forward navigation without fabricating todo IDs
-- Skill panel refresh button explicitly checks skill and canvas source versions, shows a loading spinner and results, and retains the last checked source version in the panel without installing files
-- Skill and canvas version/action pickers distinguish the installed copy, extension-bundled files, and configured source (GitHub/main by default), with explicit metadata-only source checks
-- Canvas source installation and bundled-update notifications alongside the skill update workflow
-- Canvas group overview view with member counts by lifecycle state, progress indicators, blocker context, and navigation into individual member todos
-- Accomplishments Context command (`agendo.copyAccomplishmentsContext`) that compiles a bounded, deterministic evidence packet from completed todos for agent-side report synthesis, with period, group, tag, and source filters
-- Related-file work scope guidance in the bundled Agendo skill: explicit permission for necessary changes outside the scanner's main reported file, with recording conventions, criteria guidance, and overlap reference rules
-- Scanner canvas import badges: Group pill for todos with a group field, and import-grouping pill (File/Rule/Issue import) showing how a scanner todo was imported
-- On-demand lifecycle help associated with the status control, showing meaning and generic next step for all six lifecycle states (pending, in-progress, ready, complete, backlogged, cancelled)
-- Targeted scanner refresh for individual imported todos via **Refresh Scanning Todo** context menu and command, using stored provenance to re-fetch only the relevant scope
-- Finding-level change accounting on refresh: reports new, changed, unchanged, and no-longer-returned findings per todo, with stable finding IDs across location moves
-- Scanner provenance and snapshot metadata persisted per todo, enabling precise refresh and change detection without full re-import
-- Per-finding acceptance checklists in imported scanner todos: each finding becomes a trackable work item with its rule, location, and source link, while users can add their own refactor and verification criteria
-- Refresh preserves locally checked findings and marks not-returned findings without clearing progress or silently deleting work items
-- SonarQube CLI authentication for code-scanning imports through `sonar api`, reusing the active CLI connection without extracting its stored credentials
-- SonarQube import defaults from environment URL/token variables and the workspace root's `sonar-project.properties` project key, with blank-token reuse and secure storage
-- SonarQube rule titles, explanations, code examples, and references in scanner-owned evidence, fetched once per rule for CLI and direct-token imports
-- Import grouping choice for CodeQL and SonarQube: by file (default), by rule/type, or by individual scanner issue, with grouping-aware identities and metadata
+Includes work-session canvas **0.1.11**.
 
 ### Changed
 
-- Bundled Agendo skill version 1.6.1 removes the move-before-edit rule, which only worked around an old Copilot editing behavior, and instead requires the filename, frontmatter status/priority, and folder to always stay in sync
-- Native boards and in-canvas boards use a single host-neutral document, preserving existing card/layout controls and scope-specific snapshots without requiring Copilot
-- Canvas history includes scoped board views; returning from a work session can render the originating board inside the same workspace
-- Board mutations share native task guards, and deletion confirmation is handled by the host rather than browser dialogs inside the canvas iframe
-- Standalone canvas writes reject ambiguous IDs, unresolved ready dependencies, malformed frontmatter, and unsafe group values while preserving cancellation tags and filename/frontmatter mirrors
-- VS Code canvas status, priority, and group changes use guarded native task operations; dirty editors, untrusted workspaces, and ambiguous IDs cannot be overwritten through the canvas
-- Skill/canvas status rows open version review rather than immediately overwriting files; installing over an existing copy requires confirmation, including reinstalls and downgrades
-- Newer installed component versions are shown as newer than bundled rather than requiring an update; a version mismatch no longer claims that a copy came from source
-- Canvas activation no longer automatically overwrites an installed copy; bundled updates are offered for review, and source checks remain opt-in
-- Scanner canvas replaces the persistent "Needs triage" banner and empty-triage instructional content with default-hidden on-demand lifecycle help for all statuses
-- Canvas metadata row now shows source, status, priority, optional group pill, and optional import-grouping pill in that order
-- Refresh of ready or completed scanner todos surfaces a review-required warning without automatically reopening or changing lifecycle
-- Refresh validates scope and provenance before fetching, aborting on mismatch to prevent cross-repo or cross-project data corruption
-- Work-session canvas version 0.1.6 shows scanner problem context and evidence, prioritizes triage for pending todos, and remembers section expansion separately for each todo and status
-- Scanner evidence leads with explicit file/line locations, problem messages, severities, and source links before the general rule explanation; canvas headings use a consistent hierarchy instead of shrinking below body text
-- Scanner canvas includes a rule/count overview, a contents index grouped into affected files and rule context, collapsible per-file findings, and independently collapsed explanations, examples, and references
-- Canvas titles, dependencies, history options, and recent pills show short scanner IDs beside source indicators instead of repeating source prefixes in IDs and titles; navigation retains full IDs
-- Multi-rule scanner todos retain each rule's explanation, associate findings with rule IDs, and group canvas references and context by rule type
-- Bundled Agendo skill version 1.6.0 adds related-file work scope guidance for scanner todos, documenting how to handle necessary changes outside the main reported file while preserving independent todo ownership
-- Bundled Agendo skill version 1.5.1 documents file-default imports and the optional grouping choices
+- Automatically install the bundled work-session canvas on extension activation when missing, or refresh equal and older versions, while preserving newer independently installed versions and leaving GitHub/source updates explicit
 
 ### Fixed
 
-- Clipboard import waits for repository refresh and reports a refresh failure separately from a file creation failure; corrected incomplete test mocks that caused a spurious creation-error notification during tests
-- Keep environment URL/token variable families paired and require a matching server before reusing an environment token
-- Verify the active SonarQube CLI server before and after every page request, aborting imports when a connection change is detected
-- Scanner evidence is no longer hidden in the canvas or mistaken for user-owned sections and editable acceptance criteria; scanner issue links open correctly
+- Include the digest runtime module in bundled and source canvas installations so the Copilot harness can load and register the canvas instead of exiting with a missing-module error
+- Prevent duplicate scrollbars in the embedded canvas by disabling outer webview scrolling and removing the iframe baseline gap, while preserving scrolling within the canvas
+
+## [0.3.0] - 2026-10-27
+
+Includes Agendo skill **1.6.2** and work-session canvas **0.1.10**.
+
+### Added
+
+- Shared canvas workspace for todos, scoped boards, group overviews, task digests, and settings, with back/forward history and explicit Return to Board actions that preserve the originating board without changing todo-opening preferences
+- Group overviews with member counts by lifecycle state, progress indicators, blocker context, and navigation into individual todos
+- Canvas task digests with rendered Markdown, Resume Context grouped by status, clickable todo references, and independent regular/code-scanning scopes
+- **Open Settings and About** surface with workspace settings, user defaults, per-board visibility controls, component versions, and skill/canvas update actions
+- Contextual Ask Agent and copy-context actions, view-context and validation information, and host-aware navigation and filter actions with copy fallback when agent integration is unavailable
+- Acceptance-criteria change proposals with explicit review, selected-change application or rejection, and opt-in automatic approval scoped to the current todo or workspace session on supported hosts, with visible outcomes and native write guards
+- Accomplishments reporting with bounded evidence packets, date/group/tag/source filters, preview and supported-host report requests, plus **Copy Accomplishments Context** for agent-side synthesis
+- Bundled MCP server and **Show MCP Configuration** command for exposing todo context, group queries, and guarded todo/checklist operations to MCP clients
+- Configurable tree grouping by status, priority, group, or a flat list through `agendo.groupBy` and **Set Group By**
+- CodeQL and SonarQube import grouping by file (default), rule/type, or individual issue, with branch selection, grouping-aware identities, and targeted **Refresh Imported Todo** actions using stored provenance
+- Finding-level refresh summaries and acceptance checklists with stable finding IDs, persisted snapshots, locally checked progress, and explicit tracking of findings no longer returned by a scan
+- SonarQube CLI authentication through `sonar api` without extracting stored credentials, environment-based connection defaults, workspace `sonar-project.properties` project-key discovery, and per-rule explanations, examples, and references
+- **Check Skill and Canvas Updates** and version/action pickers that distinguish installed, extension-bundled, and configured-source versions, retain the last source-check result, and support installing the canvas from its configured source
+
+### Changed
+
+- Native and in-canvas boards share one host-neutral document and a consistent top bar; board settings live in the shared settings surface while card/layout preferences remain scope-specific
+- Canvas status, priority, and group changes use native task guards for dirty editors, untrusted workspaces, and ambiguous IDs; standalone writes also reject unresolved ready dependencies, malformed frontmatter, and unsafe group values
+- The terminal status token changes from `complete` to `completed`; `agendo.completeFolder` / `completeFolder` become `agendo.completedFolder` / `completedFolder`, with `completed/` as the default
+- `agendo.backlogFolder` / `backlogFolder` become `agendo.backloggedFolder` / `backloggedFolder`, with `backlogged/` as the default; existing custom folder layouts must be configured explicitly rather than silently renamed or migrated
+- The bundled skill documents the updated lifecycle/configuration names, file-default scanner imports, necessary related-file work, and independent todo ownership; filename, frontmatter, and folder must stay synchronized without requiring a particular edit/rename order
+- Skill/canvas status rows open version review rather than immediately overwriting files; activation offers newer bundled versions without installing automatically or contacting the configured source, and replacement installs require confirmation
+- Newer installed component versions are distinguished from older bundled versions, and version mismatches no longer imply that a copy came from source
+- Scanner canvas views lead with file/line locations, messages, severities, and source links, followed by a file/rule contents index and independently collapsible findings, explanations, examples, and references
+- Canvas metadata includes group and import-grouping badges; titles, dependencies, and history use short scanner IDs beside source indicators while navigation retains full IDs
+- On-demand lifecycle help replaces the persistent "Needs triage" banner, with status-aware section ordering and per-todo/status expansion preferences
+- Scanner imports can complete a todo when all findings are explicitly resolved; missing findings alone do not prove resolution, and refreshes continue to preserve user notes and locally checked progress
+- New or changed findings on ready/completed scanner todos surface a review-required warning without automatically reopening the todo
+- Extension and MCP runtime dependencies are bundled for VSIX distribution, and CI caches SonarScanner downloads
+
+### Fixed
+
+- Reopening a disposed canvas creates a new panel; closing it revokes automatic approval without discarding the todo or review session
+- Digest navigation recognizes digest views instead of treating them as todos, avoiding crashes and preserving scoped navigation
+- Board and canvas actions preserve typed todo/group/board return context, reject cross-scope or ambiguous mutations, and use host-owned deletion confirmation
+- Clipboard import waits for repository refresh and distinguishes refresh failure from file-creation failure
+- Scanner refresh validates source, branch, scope, and provenance before importing, preserves user edits and dirty documents, and maintains correct ID allocation and create/update/change accounting
+- SonarQube imports keep environment URL/token families paired, reuse tokens only for a matching server, and verify the active CLI connection before and after paginated requests
+- Scanner evidence remains visible without becoming editable user criteria, scanner links route through the appropriate host, and multi-rule imports retain each rule's context
+- Settings validation preserves asynchronous write-before-refresh ordering, rejects unsafe paths and source URLs, and retains valid supplementary Unicode paths
+- CodeQL and SonarQube remediation improves test script extraction, import/settings complexity, and validation coverage without treating local fixes as confirmed project-scan clearance
 
 ### Removed
 
 - Legacy `jira:` frontmatter alias — use the generic `key:` field for all external tracking keys (Jira, GitHub, etc.)
+
+### Upgrade notes
+
+- Existing `*-complete-*.md` todos need the `completed` filename token and matching frontmatter status; keep filename, frontmatter, and folder synchronized
+- Replace the old `completeFolder` and `backlogFolder` setting/config keys with `completedFolder` and `backloggedFolder`; to retain existing `complete/` or `backlog/` folders, explicitly set the new keys to those folder names instead of relying on the new defaults
 
 ## [0.2.0] - 2026-10-25
 
