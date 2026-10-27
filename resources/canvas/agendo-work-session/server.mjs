@@ -124,6 +124,15 @@ function buildNav(entry, workspaceRoot) {
     if (view.kind === 'group') {
       return { kind: 'group', groupName: view.groupName, title: `Group: ${view.groupName}`, status: 'group', current };
     }
+    if (view.kind === 'digest') {
+      return {
+        kind: 'digest',
+        scope: view.scope,
+        title: view.scope === 'code-scanning' ? 'Code Scanning Digest' : 'Task Digest',
+        status: 'digest',
+        current,
+      };
+    }
     const id = view.todoId;
     return {
       id,

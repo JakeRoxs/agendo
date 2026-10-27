@@ -51,6 +51,9 @@ export function renderDigestCanvas(scope, nav, nonce, csp) {
       for (const button of document.querySelectorAll('[data-open-board]')) {
         button.addEventListener('click', () => open('/open', { view: { kind: 'board', scope: button.dataset.openBoard } }));
       }
+      for (const button of document.querySelectorAll('[data-open-digest]')) {
+        button.addEventListener('click', () => open('/open', { view: { kind: 'digest', scope: button.dataset.openDigest } }));
+      }
     })();
   `;
   const navigation = `<div class="workspace-navigation">${renderNavigation(nav)}</div>`;
