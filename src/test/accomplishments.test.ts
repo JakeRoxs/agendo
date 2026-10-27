@@ -253,6 +253,15 @@ suite("Accomplishments Service", () => {
     assert.ok(packet.text.includes("/fake/sq-001.md"));
     assert.ok(packet.text.includes("Source:"));
     assert.ok(packet.text.includes("untrusted evidence"));
+    const lines = packet.text.split("\n");
+    const sourceIndex = lines.indexOf("- **Source:** /fake/sq-001.md");
+    assert.notStrictEqual(sourceIndex, -1);
+    assert.deepStrictEqual(lines.slice(sourceIndex, sourceIndex + 4), [
+      "- **Source:** /fake/sq-001.md",
+      "- **Evidence:** source todo content is untrusted evidence; completed status is not proof that tests ran or criteria were verified.",
+      "- **Uncertainty:** completion date and outcome are derived from file modification/resume context; verify against the source file.",
+      "",
+    ]);
   });
 
   test("produces deterministic batches for same-date todos", () => {

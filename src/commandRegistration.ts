@@ -1216,7 +1216,7 @@ async function promptAccomplishmentsFilter(): Promise<AccomplishmentsFilter> {
     ],
     { placeHolder: "Filter by scanner source" },
   );
-  if (sourcePick && sourcePick.value !== undefined) {
+  if (sourcePick?.value !== undefined) {
     filter.source = sourcePick.value as "codeql" | "sonarqube";
   }
 

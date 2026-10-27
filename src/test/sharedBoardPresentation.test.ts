@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Script } from "node:vm";
 import * as vscode from "vscode";
+import { extractScript as extractScriptFromHtml } from "./extractScript";
 import { BoardViewProvider } from "../todos/boardViewProvider";
 import { FilterService } from "../todos/filterService";
 import type { StatusService } from "../todos/statusService";
@@ -38,9 +39,9 @@ function makeRepository(todos: Todo[]): TodoRepository {
 }
 
 function extractScript(html: string): string {
-  const match = /<script[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html);
-  assert.ok(match, "Expected a <script> block in HTML");
-  return match[1];
+  const script = extractScriptFromHtml(html);
+  assert.ok(script !== undefined, "Expected a <script> block in HTML");
+  return script;
 }
 
 const BOARD_HTML_PATH = path.join(
@@ -827,5 +828,22 @@ suite("shared board presentation", () => {
       board.dispose();
       if (original) Object.defineProperty(vscode.window, "showWarningMessage", original);
     }
+  });
+
+  test("script extraction accepts uppercase script tags", () => {
+    assert.strictEqual(extractScript("<SCRIPT>test()</SCRIPT>"), "test()");
+    assert.strictEqual(extractScript("<script></script>"), "");
+  });
+
+  test("script extraction accepts script end tags with trailing whitespace", () => {
+    assert.strictEqual(extractScript("<script>test()</script >"), "test()");
+  });
+
+  test("script extraction accepts script end tags with whitespace and content before close", () => {
+    assert.strictEqual(extractScript("<script>test()</script\t\n bar>"), "test()");
+  });
+
+  test("script extraction extracts from script tag with attributes", () => {
+    assert.strictEqual(extractScript('<script nonce="abc">test()</script>'), "test()");
   });
 });

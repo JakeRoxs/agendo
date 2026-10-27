@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "cql-005"
 tags: [code-scanning, codeql]
@@ -9,7 +9,7 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/todos/todoModel.ts"
-scan_refreshed_at: "2026-10-27T15:42:39.648Z"
+scan_refreshed_at: "2026-10-27T16:34:59.276Z"
 scan_review_required: false
 ---
 
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T15:42:39.648Z
+**Retrieved:** 2026-10-27T16:34:59.276Z
 
 **Branch:** Default branch
 
@@ -49,7 +49,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 2](<https://github.com/JakeRoxs/agendo/security/code-scanning/2>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/todos/todoModel.ts","version":1,"retrievedAt":"2026-10-27T15:42:39.648Z","findings":[{"id":"1","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":122,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/1","resolved":true,"returned":true},{"id":"2","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":180,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/2","resolved":true,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/todos/todoModel.ts","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"1","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":122,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/1","resolved":true,"returned":true},{"id":"2","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":180,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/2","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -57,10 +57,11 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ### Findings
 
-- [x] [1] `js/incomplete-sanitization` — Existing global replacement in `splitFrontmatter()` verified with a multi-line CRLF regression test; imported finding explicitly resolved
-- [x] [2] `js/incomplete-sanitization` — Existing global replacement in `parseFrontmatter()` verified with repeated carriage returns per line; imported finding explicitly resolved
+- [x] [1] `js/incomplete-sanitization` — This replaces only the first occurrence of "\\r". (src/todos/todoModel.ts:122)
+- [x] [2] `js/incomplete-sanitization` — This replaces only the first occurrence of "\\r". (src/todos/todoModel.ts:180)
 
 ### End Findings
+
 
 
 - [x] Review each finding and address or document its disposition
@@ -85,6 +86,13 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ## Work Log
 
+
+### 2026-10-27 - Auto-completed by scanner import
+
+**By:** Kilo
+
+**Actions:**
+- All scanner findings for this todo are resolved; auto-completed by import.
 ### 2026-10-27 - Verify existing fix and add regression coverage
 
 - Preserved the existing production implementation and imported scanner evidence
