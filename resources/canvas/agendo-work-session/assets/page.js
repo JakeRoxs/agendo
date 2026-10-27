@@ -690,6 +690,7 @@
     };
     const info = statusMap[state.status] ?? statusMap['unknown'];
     activityText.textContent = !state.supported ? 'Agent unavailable on this host' : info.text;
+    activityDot.title = !state.supported ? 'Agent unavailable on this host' : info.text;
     activityDot.className = 'agent-activity-dot' + (info.class ? ' ' + info.class : '');
   }
 

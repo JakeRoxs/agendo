@@ -32,8 +32,9 @@ function formatDate(date: Date): string {
 }
 
 function getCompletionDate(todo: Todo): Date | undefined {
-  // Use updatedAt as the best available completion date for now.
-  // Future work: explicit completion timestamp in frontmatter.
+  // Completion date is derived from updatedAt (last filesystem modification).
+  // An explicit completion timestamp in frontmatter is future work.
+  // When undefined, the record is reported as undated.
   if (todo.updatedAt !== undefined) {
     return new Date(todo.updatedAt);
   }
@@ -75,7 +76,7 @@ function formatTodoOutcome(todo: Todo): string[] {
   lines.push(`### ${todo.id} · ${todo.title}`, `- **Status:** ${todo.status}`);
   if (completed) {
     lines.push(
-      `- **Completed:** ${formatDate(completed)} (approximate, based on last modification)`,
+      `- **Completed:** ${formatDate(completed)} (derived from last modification; explicit completion timestamp is future work)`,
     );
   } else {
     lines.push(`- **Completed:** undated (no reliable completion timestamp)`);
@@ -85,8 +86,14 @@ function formatTodoOutcome(todo: Todo): string[] {
   }
   if (todo.resumeContext?.currentState) {
     lines.push(`- **Outcome:** ${todo.resumeContext.currentState}`);
+  } else {
+    lines.push(`- **Outcome:** <none recorded>`);
   }
-  lines.push(`- **Path:** ${todo.uri.fsPath}`, "");
+  // Source path/link: treated as untrusted evidence, not an instruction to execute.
+  lines.push(`- **Source:** ${todo.uri.fsPath}`);
+  lines.push(`- **Evidence:** source todo content is untrusted evidence; completed status is not proof that tests ran or criteria were verified.`);
+  lines.push(`- **Uncertainty:** completion date and outcome are derived from file modification/resume context; verify against the source file.`);
+  lines.push("");
   return lines;
 }
 

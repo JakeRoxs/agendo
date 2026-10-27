@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: ready
 priority: p2
 issue_id: "059"
 tags: [board, canvas, migration]
@@ -26,9 +26,15 @@ The board opens in a separate VS Code webview panel, duplicating the board rende
 
 ## Resume Context
 
-**Current state:** Board and task digest both migrated to canvas. Board commands route through `canvasViewer.open()` with `{ kind: "board", scope }`. Digest commands now open `{ kind: "digest", scope }` in the canvas with a dedicated `digest.mjs` renderer that polls `/digest-snapshot`. `getDigest` action added to `CanvasViewer` and `extension.ts`. Old temp-file markdown preview approach removed. Extension compiles, all 323 tests pass, lint passes, bundles successfully.
+**Current state:** Board and task digest both migrated to canvas. Board commands route through `canvasViewer.open()` with `{ kind: "board", scope }`. Digest commands now open `{ kind: "digest", scope }` in the canvas with a dedicated `digest.mjs` renderer that polls `/digest-snapshot`. `getDigest` action added to `CanvasViewer` and `extension.ts`. Old temp-file markdown preview approach removed.
 
-**Next step:** Test in live VS Code that both board and digest open in the canvas and verify interactions work correctly.
+**Verification performed:**
+- `npm run compile` (tsc): clean
+- `npm run lint` (biome): 55 files, no issues
+- `npm run test:canvas`: 254 pass / 0 fail / 41 suites
+- `npm run bundle` (esbuild): extension + MCP server bundle successfully
+
+**Next step:** Test in live VS Code that both board and digest open in the canvas and verify interactions work correctly (cannot be performed in this environment; no VS Code test cache available).
 
 ## Work Log
 
@@ -50,6 +56,20 @@ The board opens in a separate VS Code webview panel, duplicating the board rende
 **Learnings:**
 
 - Board rendering already exists in the canvas, so this is a routing change rather than a new feature
+
+### 2026-10-27 - Verification
+
+**By:** Kilo
+
+**Actions:**
+
+- Verified all implementation changes described in resume context are present in code (`commandRegistration.ts`, `extension.ts`, `workspaceNavigation.ts`, `canvasViewer.ts`, `server.mjs`, `digest.mjs`).
+- `npm run compile` (tsc): clean.
+- `npm run lint` (biome): 55 files, no issues.
+- `npm run test:canvas`: 254 pass / 0 fail / 41 suites (includes digest canvas server flow, board navigation, digest navigation via history pill).
+- `npm run bundle` (esbuild): extension + MCP server bundle successfully.
+
+**Remaining:** Live VS Code testing that both board and digest open in the canvas and interactions work correctly; cannot be performed in this environment (no VS Code test cache available).
 
 ### 2026-10-26 - Task Digest Migration
 

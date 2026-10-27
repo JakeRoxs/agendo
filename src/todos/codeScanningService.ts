@@ -20,12 +20,14 @@ import {
 } from "./scanningSnapshot";
 import {
   buildFileName,
+  codeScanningBase,
   getTodoSource,
   parseFrontmatter,
   SCANNING_ID_PREFIX,
   splitFrontmatter,
   type Todo,
   type TodoPriority,
+  type TodoStatus,
 } from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
 
@@ -41,6 +43,8 @@ export interface ScanningFinding {
   url: string;
   ruleTitle?: string;
   ruleDescription?: string;
+  /** True when the scanner reports this finding as resolved/fixed/closed. */
+  resolved?: boolean;
 }
 
 const START = "<!-- agendo:scan-evidence:start -->";
@@ -179,6 +183,36 @@ function updateImportedGroup(
   const priorGroup = priorFinding?.path || "Project-level findings";
   if (!priorFinding || current !== priorGroup) return content;
   return replaceGroup(content, findings[0].path || "Project-level findings");
+}
+
+/** Rewrite the frontmatter `status` field to the given value. */
+function updateFrontmatterStatus(content: string, status: TodoStatus): string {
+  const { data, body } = splitFrontmatter(content);
+  if (!data) return content;
+  const lines = data.split("\n");
+  const statusIndex = lines.findIndex((line) => /^status\s*:/.test(line));
+  if (statusIndex >= 0) {
+    lines[statusIndex] = `status: ${status}`;
+  } else {
+    lines.push(`status: ${status}`);
+  }
+  const newData = lines.join("\n");
+  return `---\n${newData}\n---\n${body}`;
+}
+
+/** Append an auto-completion work log entry to the todo's Work Log section. */
+function addWorkLogEntry(content: string, action: string): string {
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = `\n### ${date} - Auto-completed by scanner import\n\n**By:** Kilo\n\n**Actions:**\n- ${action}\n`;
+  const workLogMatch = /^## Work Log\r?\n(?:\r?\n)?/m.exec(content);
+  if (workLogMatch) {
+    return (
+      content.slice(0, workLogMatch.index + workLogMatch[0].length) +
+      entry +
+      content.slice(workLogMatch.index + workLogMatch[0].length)
+    );
+  }
+  return `${content}\n\n## Work Log\n${entry}`;
 }
 
 function findingCriterionLine(finding: ScanningFinding, met: boolean, returned: boolean): string {
@@ -382,39 +416,61 @@ export async function fetchCodeQL(
   if (!/^[\w.-]+\/[\w.-]+$/.test(scope)) {
     throw new Error("Unable to determine the GitHub repository from gh.");
   }
-  const query = new URLSearchParams({ state: "open", per_page: "100", tool_name: "CodeQL" });
-  if (branch) query.set("ref", `refs/heads/${branch}`);
-  const { stdout } = await run(
-    ["api", `repos/${scope}/code-scanning/alerts?${query}`, "--paginate", "--slurp"],
-    { cwd, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 },
-  );
-  const pages = JSON.parse(stdout) as Array<
-    Array<{
-      number: number;
-      rule: { id: string; severity?: string; security_severity_level?: string };
-      most_recent_instance: {
-        location: { path: string; start_line?: number };
-        message: { text: string };
+
+  const fetchAlerts = async (state: string): Promise<ScanningFinding[]> => {
+    const query = new URLSearchParams({ state, per_page: "100", tool_name: "CodeQL" });
+    if (branch) query.set("ref", `refs/heads/${branch}`);
+    const { stdout } = await run(
+      ["api", `repos/${scope}/code-scanning/alerts?${query}`, "--paginate", "--slurp"],
+      { cwd, timeout: 120_000, maxBuffer: 32 * 1024 * 1024 },
+    );
+    const pages = JSON.parse(stdout) as Array<
+      Array<{
+        number: number;
+        state?: string;
+        rule: { id: string; severity?: string; security_severity_level?: string };
+        most_recent_instance: {
+          location: { path: string; start_line?: number };
+          message: { text: string };
+        };
+      }>
+    >;
+    if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
+      throw new Error("Unexpected GitHub code-scanning response.");
+    }
+    return pages.flat().map((alert) => {
+      const url = new URL(`https://github.com/${scope}/security/code-scanning/${alert.number}`);
+      if (branch) url.searchParams.set("ref", `refs/heads/${branch}`);
+      return {
+        id: String(alert.number),
+        rule: alert.rule.id,
+        severity: alert.rule.security_severity_level || alert.rule.severity || "warning",
+        message: alert.most_recent_instance.message.text,
+        path: alert.most_recent_instance.location.path,
+        line: alert.most_recent_instance.location.start_line,
+        url: url.toString(),
+        /** A finding is resolved when the scanner reports it as closed or fixed. */
+        resolved: alert.state === "closed" || alert.state === "fixed",
       };
-    }>
-  >;
-  if (!Array.isArray(pages) || !pages.every(Array.isArray)) {
-    throw new Error("Unexpected GitHub code-scanning response.");
+    });
+  };
+
+  const [openFindings, closedFindings] = await Promise.all([
+    fetchAlerts("open"),
+    fetchAlerts("closed"),
+  ]);
+
+  // Merge and deduplicate by alert number; closed/fixed alerts override open ones.
+  const findingsById = new Map<string, ScanningFinding>();
+  for (const finding of [...openFindings, ...closedFindings]) {
+    findingsById.set(finding.id, finding);
   }
-  const findings = pages.flat().map((alert) => {
-    const url = new URL(`https://github.com/${scope}/security/code-scanning/${alert.number}`);
-    if (branch) url.searchParams.set("ref", `refs/heads/${branch}`);
-    return {
-      id: String(alert.number),
-      rule: alert.rule.id,
-      severity: alert.rule.security_severity_level || alert.rule.severity || "warning",
-      message: alert.most_recent_instance.message.text,
-      path: alert.most_recent_instance.location.path,
-      line: alert.most_recent_instance.location.start_line,
-      url: url.toString(),
-    };
-  });
-  return { scope, ...(branch ? { branch } : {}), findings };
+
+  return {
+    scope,
+    ...(branch ? { branch } : {}),
+    findings: [...findingsById.values()],
+  };
 }
 
 type SonarCliRunner = (args: string[], cwd: string) => Promise<string>;
@@ -535,6 +591,8 @@ interface SonarIssue {
   message: string;
   component: string;
   line?: number;
+  /** Date the issue was resolved, or undefined when still open. */
+  resolved?: string;
 }
 
 function sonarIssueFinding(
@@ -557,6 +615,8 @@ function sonarIssueFinding(
       : issue.component,
     line: issue.line,
     url: link.toString(),
+    /** A SonarQube issue is resolved when it has a resolved date. */
+    resolved: Boolean(issue.resolved),
   };
 }
 
@@ -572,7 +632,6 @@ async function fetchPaginatedIssues(
     const url = new URL("api/issues/search", base);
     const params = new URLSearchParams({
       componentKeys: project,
-      resolved: "false",
       ps: "500",
       p: String(page),
     });
@@ -772,6 +831,7 @@ export interface ScanningImportResult {
   created: number;
   updated: number;
   refreshed: number;
+  autoCompleted: number;
   changes: FindingChanges;
   reviewRequired: string[];
 }
@@ -779,10 +839,14 @@ export interface ScanningImportResult {
 /** Outcome of processing one scanner import group. */
 interface ImportGroupWrite {
   uri: vscode.Uri;
+  /** Source URI for existing todos (used when the target differs, e.g. auto-complete move). */
+  sourceUri?: vscode.Uri;
   before?: string;
   after: string;
   changed: boolean;
   reviewRequired: string[];
+  /** True when this write auto-completed the todo to completed status. */
+  autoCompleted?: boolean;
 }
 
 interface ImportContext {
@@ -791,6 +855,8 @@ interface ImportContext {
   existing: Todo[];
   root: vscode.Uri;
   retrievedAt: string;
+  /** Completed folder name (e.g. "completed") for moving auto-completed todos. */
+  completedFolder: string;
 }
 
 async function readImportBaseline(context: ImportContext, provenance: ScanningProvenance) {
@@ -844,9 +910,39 @@ async function processImportGroup(
     ruleTitle: rules.get(finding.rule)?.title,
     ruleDescription: rules.get(finding.rule)?.description,
   }));
+
+  /** All findings for this todo are resolved by the scanner. */
+  const allResolved = snapshot.findings.length > 0 && snapshot.findings.every((f) => f.resolved === true);
+  const autoComplete = todo && todo.status !== "completed" && allResolved;
+
   if (todo && before !== undefined) {
+    let content = before;
+    let targetUri = todo.uri;
+    let sourceUri = todo.uri;
+    let effectiveReview = review;
+
+    if (autoComplete) {
+      // Transition the todo to completed: update status, add work log, move to completed folder.
+      content = updateFrontmatterStatus(content, "completed");
+      content = addWorkLogEntry(
+        content,
+        "All scanner findings for this todo are resolved; auto-completed by import.",
+      );
+      const sourceFolder = codeScanningBase(todo.folder);
+      const completedFolderPath = sourceFolder
+        ? `${sourceFolder}/${context.completedFolder}`
+        : context.completedFolder;
+      targetUri = vscode.Uri.joinPath(
+        context.root,
+        completedFolderPath,
+        buildFileName(todo.id, "completed", todo.priority, todo.description),
+      );
+      sourceUri = todo.uri;
+      effectiveReview = false;
+    }
+
     const updatedContent = updateImportedGroup(
-      before,
+      content,
       provenance.source,
       provenance.grouping,
       key,
@@ -860,10 +956,18 @@ async function processImportGroup(
         snapshot,
       ),
       snapshot,
-      review,
+      effectiveReview,
     );
     return {
-      write: { uri: todo.uri, before, after, changed, reviewRequired },
+      write: {
+        uri: targetUri,
+        sourceUri,
+        before,
+        after,
+        changed,
+        reviewRequired,
+        ...(autoComplete ? { autoCompleted: true } : {}),
+      },
       changes,
       nextId,
     };
@@ -944,7 +1048,8 @@ async function preflightWrites(writes: ImportGroupWrite[]): Promise<void> {
       )
     )
       throw new Error("Save todo changes before refreshing scanner evidence.");
-    if (write.before !== undefined && (await readText(write.uri)) !== write.before)
+    const sourceUri = write.sourceUri ?? write.uri;
+    if (write.before !== undefined && (await readText(sourceUri)) !== write.before)
       throw new Error("A scanner todo changed while preparing the refresh; retry.");
     if (write.before === undefined) {
       await assertNewImportPath(write.uri);
@@ -974,9 +1079,16 @@ async function writeImportResults(
     )
       throw new Error("Save todo changes before refreshing scanner evidence.");
     if (write.before !== undefined) {
-      if ((await readText(write.uri)) !== write.before)
+      const sourceUri = write.sourceUri ?? write.uri;
+      if ((await readText(sourceUri)) !== write.before)
         throw new Error("A scanner todo changed during refresh; retry.");
-      await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
+      if (write.sourceUri && write.sourceUri.toString() !== write.uri.toString()) {
+        // Move the file to a new location (e.g. completed folder) and write the updated content.
+        await vscode.workspace.fs.rename(sourceUri, write.uri, { overwrite: false });
+        await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
+      } else {
+        await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
+      }
     } else {
       await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, "code-scanning", source));
       const edit = new vscode.WorkspaceEdit();
@@ -1051,6 +1163,7 @@ function accumulateImportResult(
     result.changes[field] += changes[field];
   }
   result.reviewRequired.push(...write.reviewRequired);
+  if (write.autoCompleted) result.autoCompleted++;
 }
 
 export async function importScanningFindings(
@@ -1096,6 +1209,7 @@ export async function importScanningFindings(
     created: 0,
     updated: 0,
     refreshed: 0,
+    autoCompleted: 0,
     changes: { added: 0, changed: 0, unchanged: 0, notReturned: 0, uncompared: 0 },
     reviewRequired: [],
   };
@@ -1106,6 +1220,7 @@ export async function importScanningFindings(
     existing,
     root,
     retrievedAt: new Date().toISOString(),
+    completedFolder: config.completedFolder,
   };
   for (const [key, alerts] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
     const { write, changes, nextId: nextIdAfter } = await processImportGroup(

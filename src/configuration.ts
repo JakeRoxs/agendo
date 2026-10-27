@@ -26,6 +26,7 @@ export enum Settings {
   CodeScanningSortByDate = "codeScanning.sortByDate",
   SonarQubeUrl = "codeScanning.sonarqube.url",
   SonarQubeProjectKey = "codeScanning.sonarqube.projectKey",
+  CriteriaChangesEnabled = "criteriaChanges.enabled",
 }
 
 /**

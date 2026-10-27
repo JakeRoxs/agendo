@@ -128,6 +128,11 @@ export async function activate(context: vscode.ExtensionContext) {
           await set(Settings.GroupBy, mode);
           return { success: true, reload: false };
         }
+        case "toggle-criteria-changes": {
+          const enabled = get<boolean>(Settings.CriteriaChangesEnabled);
+          await set(Settings.CriteriaChangesEnabled, !enabled);
+          return { success: true, reload: false };
+        }
         default:
           throw new Error(`Unknown settings action: ${action}`);
       }

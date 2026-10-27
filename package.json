@@ -920,6 +920,11 @@
           ],
           "default": "status",
           "description": "How todos are grouped in the tree view: by status (default), priority, group, or flat (none)."
+        },
+        "agendo.criteriaChanges.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "When enabled, criteria change settings are exposed in a dedicated settings panel instead of the per-todo page view."
         }
       }
     }

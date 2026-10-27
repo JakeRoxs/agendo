@@ -1406,7 +1406,6 @@ suite("native code scanning", () => {
       }
       assert.strictEqual(url.pathname, "/api/issues/search");
       assert.strictEqual(url.searchParams.get("componentKeys"), "org:project & test");
-      assert.strictEqual(url.searchParams.get("resolved"), "false");
       assert.strictEqual(url.searchParams.get("ps"), "500");
       return JSON.stringify({
         issues: [
@@ -2031,5 +2030,121 @@ suite("native code scanning", () => {
       importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "finding"),
       /markers are missing/,
     );
+  });
+
+  test("auto-completes scanner todo when all findings are resolved", async () => {
+    await importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "finding");
+    assert.strictEqual(repository.getTodos().length, 1);
+    const todo = repository.getTodos()[0];
+    assert.strictEqual(todo.status, "pending");
+    assert.ok(todo.folder === "code-scanning/codeql");
+
+    const result = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [{ ...finding, resolved: true }],
+      "finding",
+    );
+    assert.strictEqual(result.autoCompleted, 1);
+    assert.strictEqual(result.refreshed, 1);
+    assert.strictEqual(result.updated, 1);
+
+    const completed = repository.getTodos().find((t) => t.id === todo.id);
+    assert.ok(completed);
+    assert.strictEqual(completed.status, "completed");
+    assert.ok(completed.folder.includes("done"));
+    assert.ok(completed.fileName.includes("-completed-"));
+
+    const content = await readText(completed.uri);
+    assert.match(content, /^status: completed$/m);
+    assert.match(content, /Auto-completed by scanner import/);
+    assert.match(content, /scan_identity:/);
+    assert.match(content, /scan_source: codeql/);
+    assert.match(content, /scan_scope: "owner\/repo"/);
+    assert.match(content, /scan_grouping: finding/);
+    assert.match(content, /scan_target: "42"/);
+    assert.match(content, /<!-- agendo:scan-evidence:start -->/);
+    assert.match(content, /<!-- agendo:scan-evidence:end -->/);
+    assert.match(content, /scan_refreshed_at:/);
+    // The pending file should have been moved; no pending version remains.
+    assert.ok(
+      !repository
+        .getTodos()
+        .some((t) => t.id === todo.id && t.status !== "completed"),
+    );
+  });
+
+  test("keeps scanner todo status when some findings are resolved and some remain open", async () => {
+    const findings = [
+      finding,
+      { ...finding, id: "43", rule: "js/second", path: "src/example.ts" },
+    ];
+    await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      findings,
+      "file",
+    );
+    assert.strictEqual(repository.getTodos().length, 1);
+    const todo = repository.getTodos()[0];
+    assert.strictEqual(todo.status, "pending");
+
+    // Re-import with only the first finding resolved; the second remains open.
+    const result = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [{ ...finding, resolved: true }, { ...finding, id: "43", rule: "js/second" }],
+      "file",
+    );
+    assert.strictEqual(result.autoCompleted, 0);
+    assert.strictEqual(result.refreshed, 1);
+
+    await repository.refresh();
+    const unchanged = repository.getTodos().find((t) => t.id === todo.id);
+    assert.ok(unchanged);
+    assert.strictEqual(unchanged.status, "pending");
+    assert.strictEqual(unchanged.folder, "code-scanning/codeql");
+
+    const content = await readText(unchanged.uri);
+    assert.match(content, /^status: pending$/m);
+    assert.match(content, /scan_identity:/);
+    assert.match(content, /<!-- agendo:scan-evidence:start -->/);
+    assert.match(content, /<!-- agendo:scan-evidence:end -->/);
+  });
+
+  test("does not auto-complete when findings are unchanged (no fixed findings)", async () => {
+    await importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "finding");
+    assert.strictEqual(repository.getTodos().length, 1);
+    const todo = repository.getTodos()[0];
+    assert.strictEqual(todo.status, "pending");
+
+    const result = await importScanningFindings(
+      config,
+      repository,
+      "codeql",
+      "owner/repo",
+      [finding],
+      "finding",
+    );
+    assert.strictEqual(result.autoCompleted, 0);
+    assert.strictEqual(result.refreshed, 1);
+
+    await repository.refresh();
+    const unchanged = repository.getTodos().find((t) => t.id === todo.id);
+    assert.ok(unchanged);
+    assert.strictEqual(unchanged.status, "pending");
+    assert.strictEqual(unchanged.folder, "code-scanning/codeql");
+
+    const content = await readText(unchanged.uri);
+    assert.match(content, /^status: pending$/m);
+    assert.match(content, /scan_identity:/);
+    assert.match(content, /<!-- agendo:scan-evidence:start -->/);
+    assert.match(content, /<!-- agendo:scan-evidence:end -->/);
   });
 });
