@@ -52,7 +52,7 @@ Examples:
 
 The naming convention includes:
 - `issue_id` — zero-padded, sequential, and unique
-- `status` — `pending`, `in-progress`, `ready`, `backlogged`, `complete`, or `cancelled`
+- `status` — `pending`, `in-progress`, `ready`, `backlogged`, `completed`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
@@ -61,7 +61,7 @@ Lifecycle semantics:
 - `in-progress` is actively being worked on
 - `ready` is likely done but still needs confirmation that it works
 - `backlogged` remains open but is excluded from active-work queries
-- `complete` is fully finished and verified
+- `completed` is fully finished and verified
 - `cancelled` is abandoned or superseded
 
 ```mermaid
@@ -81,7 +81,7 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-Active todos live directly in the configured root. Backlogged, complete, and cancelled todos move
+Active todos live directly in the configured root. Backlogged, completed, and cancelled todos move
 to their configured state folders. The filename status and priority tokens are authoritative;
 frontmatter mirrors them for readability.
 
