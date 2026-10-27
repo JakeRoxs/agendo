@@ -179,6 +179,16 @@ suite("separate todo and code-scanning views", () => {
     assert.deepStrictEqual(normalFilter.current, { statuses: ["completed"] });
   });
 
+  test("source filters handle regular todos, multiple sources, and empty selection", async () => {
+    const filter = new FilterService(memoryState());
+    await filter.set({ sources: ["sonarqube"] });
+    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [false, false, true]);
+    await filter.set({ sources: ["codeql", "sonarqube"] });
+    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [false, true, true]);
+    await filter.set({ sources: [] });
+    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [true, true, true]);
+  });
+
   test("cross-source blockers do not hide scanner todos in dependency mode", () => {
     const finding = { ...todos[1], dependencies: ["001"] };
     const state = memoryState();
@@ -266,6 +276,57 @@ suite("separate todo and code-scanning views", () => {
         ids.sort(),
         chain.map((todo) => todo.id),
       );
+    } finally {
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        configurable: true,
+        value: original,
+      });
+    }
+  });
+
+  test("dependency nodes group dependents under their blocker and leave unblocked todos as leaves", () => {
+    const blocker = fixture("sq-101", "code-scanning/sonarqube");
+    const depA = fixture("sq-102", "code-scanning/sonarqube");
+    const depB = fixture("sq-103", "code-scanning/sonarqube");
+    const independent = fixture("sq-104", "code-scanning/sonarqube");
+    const scoped = {
+      ...repository,
+      getTodos: () => [blocker, depA, depB, independent],
+      getDependencyGraph: () => ({
+        blockedBy: new Map([
+          [depA.id, [blocker.id]],
+          [depB.id, [blocker.id]],
+        ]),
+        blocking: new Map([[blocker.id, [depA.id, depB.id]]]),
+      }),
+    } as unknown as TodoRepository;
+    const state = memoryState();
+    const scanning = new TodoTreeProvider(
+      scoped,
+      new FilterService(state),
+      new TreeStateService(state),
+      undefined,
+      "code-scanning",
+    );
+    const original = vscode.workspace.getConfiguration;
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      configurable: true,
+      value: (section: string) => ({
+        get: (key: string) => (key === "showDependencyNodes" ? true : original(section).get(key)),
+      }),
+    });
+    try {
+      const source = scanning.getChildren()[0];
+      const status = scanning.getChildren(source)[0];
+      const priority = scanning.getChildren(status)[0];
+      const children = scanning.getChildren(priority);
+      const dependency = children.find((n) => n.kind === "dependency");
+      assert.ok(dependency, "expected a dependency node");
+      assert.strictEqual(dependency.todo.id, blocker.id);
+      assert.strictEqual(dependency.dependents.length, 2);
+      const leaves = children.filter((n) => n.kind === "todo");
+      assert.strictEqual(leaves.length, 1);
+      assert.strictEqual(leaves[0].todo.id, independent.id);
     } finally {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
         configurable: true,

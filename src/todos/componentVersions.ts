@@ -2,14 +2,28 @@
 export function compareVersions(a?: string, b?: string): number {
   if (!a) return b ? -1 : 0;
   if (!b) return 1;
-  const [leftCore, leftPre] = a.split("+")[0].split(/-(.*)/s);
-  const [rightCore, rightPre] = b.split("+")[0].split(/-(.*)/s);
-  const left = leftCore.split(".").map((n) => Number.parseInt(n, 10) || 0);
-  const right = rightCore.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const left = splitVersion(a);
+  const right = splitVersion(b);
+  const coreComparison = compareCore(left.core, right.core);
+  if (coreComparison !== 0) return coreComparison;
+  return comparePrerelease(left.pre, right.pre);
+}
+
+function splitVersion(version: string): { core: string[]; pre: string | undefined } {
+  const [coreSegment, pre] = version.split("+")[0].split(/-(.*)/s);
+  return { core: coreSegment.split("."), pre };
+}
+
+function compareCore(left: string[], right: string[]): number {
   for (let i = 0; i < Math.max(left.length, right.length); i++) {
-    const difference = (left[i] ?? 0) - (right[i] ?? 0);
+    const difference =
+      (Number.parseInt(left[i] ?? "0", 10) || 0) - (Number.parseInt(right[i] ?? "0", 10) || 0);
     if (difference) return difference;
   }
+  return 0;
+}
+
+function comparePrerelease(leftPre: string | undefined, rightPre: string | undefined): number {
   if (leftPre === rightPre) return 0;
   if (leftPre === undefined) return 1;
   if (rightPre === undefined) return -1;
@@ -21,13 +35,17 @@ export function compareVersions(a?: string, b?: string): number {
     const l = leftParts[i];
     const r = rightParts[i];
     if (l === r) continue;
-    const ln = /^\d+$/.test(l);
-    const rn = /^\d+$/.test(r);
-    if (ln && rn) return Number(l) - Number(r);
-    if (ln !== rn) return ln ? -1 : 1;
-    return l < r ? -1 : 1;
+    return comparePrereleaseIdentifier(l, r);
   }
   return 0;
+}
+
+function comparePrereleaseIdentifier(left: string, right: string): number {
+  const leftNumeric = /^\d+$/.test(left);
+  const rightNumeric = /^\d+$/.test(right);
+  if (leftNumeric && rightNumeric) return Number(left) - Number(right);
+  if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+  return left < right ? -1 : 1;
 }
 
 export interface SourceVersion {
@@ -51,7 +69,9 @@ export async function checkSourceVersion(
   fetch: (url: string) => Promise<string>,
 ): Promise<SourceVersion> {
   try {
-    const base = sourceUrl.replace(/\/+$/, "");
+    let end = sourceUrl.length;
+    while (end > 0 && sourceUrl[end - 1] === "/") end--;
+    const base = sourceUrl.slice(0, end);
     if (!base) throw new Error("No source URL configured");
     const url = new URL(`${base}/${metadata}`);
     if (url.protocol !== "https:") throw new Error("Source URL must use HTTPS");

@@ -274,6 +274,55 @@ ${JSON.stringify(tampered)}
     assert.strictEqual(result.findings[0].path, "src\\windows\\file.ts");
   });
 
+  test("serializeScanningSnapshot uses String.raw form for escaped backslash", () => {
+    const finding: ScanningFinding = {
+      ...BASE_FINDING,
+      message: "path with <tag>",
+    };
+    const snapshot = makeSnapshot([finding]);
+    const serialized = serializeScanningSnapshot(snapshot);
+    // String.raw produces \u003c (single backslash in JSON), not \\u003c (escaped backslash)
+    assert.ok(serialized.includes("\\u003ctag"), "expected \\u003c escape in serialized output");
+    assert.ok(!serialized.includes("\\\\u003c"), "should not contain double-escaped backslash");
+    const result = readScanningSnapshot(serialized, PROVENANCE);
+    assert.ok(result);
+    assert.strictEqual(result.findings[0].message, "path with <tag>");
+  });
+
+  test("scanningIdentity stable for same provenance components", () => {
+    const id1 = scanningIdentity(PROVENANCE);
+    const id2 = scanningIdentity({
+      source: "codeql",
+      scope: "owner/repo",
+      grouping: "file",
+      target: "src/example.ts",
+    });
+    assert.strictEqual(id1, id2);
+    assert.strictEqual(id1.length, 64);
+  });
+
+  test("scanningIdentity distinguishes branch presence", () => {
+    const withoutBranch = scanningIdentity(PROVENANCE);
+    const withBranch = scanningIdentity({ ...PROVENANCE, branch: "dev" });
+    assert.notStrictEqual(withoutBranch, withBranch);
+  });
+
+  test("reconcileScanningSnapshot sort is a separate statement (findings sorted by ID)", () => {
+    const f2: ScanningFinding = {
+      ...BASE_FINDING,
+      id: "cql-10",
+      url: "https://github.com/owner/repo/security/code-scanning/10",
+    };
+    const f1: ScanningFinding = {
+      ...BASE_FINDING,
+      id: "cql-2",
+      url: "https://github.com/owner/repo/security/code-scanning/2",
+    };
+    const result = reconcileScanningSnapshot(PROVENANCE, undefined, [f2, f1], false, NOW);
+    assert.strictEqual(result.snapshot.findings[0].id, "cql-10");
+    assert.strictEqual(result.snapshot.findings[1].id, "cql-2");
+  });
+
   test("reconcileScanningSnapshot detects added findings", () => {
     const previous = makeSnapshot([BASE_FINDING]);
     const newFinding: ScanningFinding = {

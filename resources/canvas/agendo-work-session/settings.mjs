@@ -27,9 +27,9 @@ export function renderSettingsPage(info) {
         <dl>
           <dt>Root folder</dt><dd><code>${escapeHtml(ws.root || 'docs/todos')}</code></dd>
           <dt>Gitignored</dt><dd>${ws.gitignored ? 'Yes' : 'No'}</dd>
-          <dt>Backlog folder</dt><dd><code>${escapeHtml(ws.backlogFolder || 'backlog')}</code></dd>
+          <dt>Backlog folder</dt><dd><code>${escapeHtml(ws.backloggedFolder || 'backlog')}</code></dd>
           <dt>Cancelled folder</dt><dd><code>${escapeHtml(ws.cancelledFolder || 'cancelled')}</code></dd>
-          <dt>Complete folder</dt><dd><code>${escapeHtml(ws.completeFolder || 'completed')}</code></dd>
+          <dt>Complete folder</dt><dd><code>${escapeHtml(ws.completedFolder || 'completed')}</code></dd>
           <dt>Code scanning</dt><dd>${ws.codeScanningEnabled ? 'Enabled' : 'Disabled'}</dd>
         </dl>
       </section>`;

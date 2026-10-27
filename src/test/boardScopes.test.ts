@@ -35,7 +35,7 @@ function makeRepository(todos: Todo[]): TodoRepository {
 }
 
 function extractScript(html: string): string | undefined {
-  return /<script[^>]*>([\s\S]*?)<\/script>/i.exec(html)?.[1];
+  return /<script[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html)?.[1];
 }
 
 suite("board view scope", () => {

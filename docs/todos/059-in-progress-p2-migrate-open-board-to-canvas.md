@@ -26,9 +26,9 @@ The board opens in a separate VS Code webview panel, duplicating the board rende
 
 ## Resume Context
 
-**Current state:** Implementation complete. `canvasViewer` passed to `CommandServices`, board commands updated to use `canvasViewer.open()`. Extension compiles, tests pass, lint passes, bundles successfully, and is reinstalled via VSIX.
+**Current state:** Board and task digest both migrated to canvas. Board commands route through `canvasViewer.open()` with `{ kind: "board", scope }`. Digest commands now open `{ kind: "digest", scope }` in the canvas with a dedicated `digest.mjs` renderer that polls `/digest-snapshot`. `getDigest` action added to `CanvasViewer` and `extension.ts`. Old temp-file markdown preview approach removed. Extension compiles, all 323 tests pass, lint passes, bundles successfully.
 
-**Next step:** Test in live VS Code that the board opens in the canvas and verify board interactions work correctly.
+**Next step:** Test in live VS Code that both board and digest open in the canvas and verify interactions work correctly.
 
 ## Work Log
 
@@ -50,3 +50,23 @@ The board opens in a separate VS Code webview panel, duplicating the board rende
 **Learnings:**
 
 - Board rendering already exists in the canvas, so this is a routing change rather than a new feature
+
+### 2026-10-26 - Task Digest Migration
+
+**By:** Copilot
+
+**Actions:**
+
+- Added `digest` view kind to `WorkspaceView` type in `workspaceNavigation.ts`
+- Created `digest.mjs` renderer with polling for `/digest-snapshot` endpoint
+- Added `digest` view kind support in `server.mjs` (normalizeView, assertViewSupported, route handling)
+- Added `getDigest` action to `CanvasViewer` interface and `extension.ts` implementation
+- Updated `ShowDigest` command in `commandRegistration.ts` to open canvas with `{ kind: "digest", scope }`
+- Removed old temp-file markdown preview approach and unused imports (`buildTodoDigest`, `os`)
+- Updated tests: digest concurrent-runs test now verifies canvas open, extension activation test adjusted for new digest flow
+- All 323 tests pass, lint passes, bundles successfully
+
+**Learnings:**
+
+- Digest migration followed the same pattern as board: add view kind, create renderer, wire action, update command
+- The digest renderer polls for updates every 5 seconds, similar to the board's refresh pattern

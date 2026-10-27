@@ -71,6 +71,58 @@ suite("Component version comparison", () => {
     assert.ok(result.sourceError);
   });
 
+  test("compareVersions prerelease comparison edge cases", () => {
+    assert.strictEqual(compareVersions("1.0.0-rc.1", "1.0.0-rc.1"), 0);
+    assert.ok(compareVersions("1.0.0-rc.1", "1.0.0-rc.2") < 0);
+    assert.ok(compareVersions("1.0.0-rc.2", "1.0.0-rc.1") > 0);
+    assert.ok(compareVersions("1.0.0-rc.1", "1.0.0") < 0);
+    assert.ok(compareVersions("1.0.0", "1.0.0-rc.1") > 0);
+    assert.ok(compareVersions("1.0.0-rc.1", "1.0.0-rc.10") < 0);
+    assert.ok(compareVersions("1.0.0-rc.10", "1.0.0-rc.1") > 0);
+    assert.ok(compareVersions("1.0.0-1.0", "1.0.0-rc.1") < 0);
+    assert.ok(compareVersions("1.0.0-rc.1", "1.0.0-1.0") > 0);
+    assert.strictEqual(compareVersions("1.0.0+build.1", "1.0.0+build.2"), 0);
+    assert.strictEqual(compareVersions("1.0.0+local", "1.0.0+source"), 0);
+  });
+
+  test("checkSourceVersion rejects long malformed version strings", async () => {
+    const longInvalid = `1.2.3-${"a".repeat(10000)}!`;
+    const fetch = async () => JSON.stringify({ version: longInvalid });
+    const result = await checkSourceVersion("https://example.com/skill", ".skill-meta.json", fetch);
+    assert.strictEqual(result.sourceVersion, undefined);
+    assert.ok(result.sourceError);
+  });
+
+  test("checkSourceVersion preserves permissive prerelease identifier validation", async () => {
+    const version = `1.2.3-${".".repeat(5000)}`;
+    const fetch = async () => JSON.stringify({ version });
+    const result = await checkSourceVersion("https://example.com/skill", ".skill-meta.json", fetch);
+    assert.strictEqual(result.sourceVersion, version);
+  });
+
+  test("checkSourceVersion trims long trailing slash runs without changing URL contents", async () => {
+    const requested: string[] = [];
+    const fetch = async (url: string) => {
+      requested.push(url);
+      return JSON.stringify({ version: "1.2.3" });
+    };
+    const source = "https://example.com/skill";
+    const result = await checkSourceVersion(`${source}${"/".repeat(20000)}`, ".skill-meta.json", fetch);
+    assert.strictEqual(result.sourceVersion, "1.2.3");
+    assert.deepStrictEqual(requested, [`${source}/.skill-meta.json`]);
+    const invalid = await checkSourceVersion("/".repeat(20000), ".skill-meta.json", fetch);
+    assert.ok(invalid.sourceError);
+    assert.strictEqual(requested.length, 1);
+  });
+
+  test("checkSourceVersion accepts long valid version", async () => {
+    const longValid = `1.2.3-${"abc".repeat(1000)}+build.1`;
+    const fetch = async () => JSON.stringify({ version: longValid });
+    const result = await checkSourceVersion("https://example.com/skill", ".skill-meta.json", fetch);
+    assert.strictEqual(result.sourceVersion, longValid);
+    assert.strictEqual(result.sourceUrl, "https://example.com/skill");
+  });
+
   test("checkSourceVersion rejects empty source URL", async () => {
     const fetch = async () => JSON.stringify({ version: "1.0.0" });
     const result = await checkSourceVersion("", ".skill-meta.json", fetch);

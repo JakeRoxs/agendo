@@ -50,6 +50,13 @@ export async function activate(context: vscode.ExtensionContext) {
         : boardViewProvider
       ).handleCanvasMessage(message);
     },
+    getDigest: async (scope) => {
+      const { buildTodoDigest } = await import("./todos/digestService");
+      const { matchesTodoScope } = await import("./todos/todoModel");
+      const todos = repository.getTodos().filter((todo) => matchesTodoScope(todo, scope));
+      const content = buildTodoDigest(todos, repository.getDependencyGraph());
+      return { content };
+    },
     getSettingsInfo: async () => {
       let skillStatus: unknown;
       try {
@@ -70,9 +77,9 @@ export async function activate(context: vscode.ExtensionContext) {
         workspace: {
           root: config.root,
           gitignored: config.gitignored,
-          backlogFolder: config.backlogFolder,
+          backloggedFolder: config.backloggedFolder,
           cancelledFolder: config.cancelledFolder,
-          completeFolder: config.completeFolder,
+          completedFolder: config.completedFolder,
           codeScanningEnabled: get<boolean>(Settings.CodeScanningEnabled),
         },
         viewOptions: {
@@ -105,12 +112,6 @@ export async function activate(context: vscode.ExtensionContext) {
           await vscode.commands.executeCommand("workbench.view.extension.agendo");
           return { success: true, reload: false };
         case "check-source":
-          if (component === "skill") {
-            await vscode.commands.executeCommand(Command.ManageSkill);
-          } else {
-            await vscode.commands.executeCommand(Command.ManageCanvas);
-          }
-          return { success: true };
         case "install":
           if (component === "skill") {
             await vscode.commands.executeCommand(Command.ManageSkill);
@@ -196,10 +197,13 @@ export async function activate(context: vscode.ExtensionContext) {
         [scanningTreeView, true],
       ] as const) {
         const scoped = collisions.filter((collision) => (collision.source !== "todo") === scanning);
+        const descriptions = scoped
+          .map((collision) => `${collision.id} (${collision.todos.length} files)`)
+          .join(", ");
         view.badge = scoped.length
           ? {
               value: scoped.length,
-              tooltip: `Duplicate IDs requiring reconciliation: ${scoped.map((collision) => `${collision.id} (${collision.todos.length} files)`).join(", ")}`,
+              tooltip: `Duplicate IDs requiring reconciliation: ${descriptions}`,
             }
           : undefined;
       }

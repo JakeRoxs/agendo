@@ -123,4 +123,84 @@ suite("Accomplishments Service", () => {
     const packet = buildAccomplishmentsPacket(todos, {});
     assert.ok(packet.text.includes("undated"));
   });
+
+  test("ignores empty tags array (no tag filter applied)", () => {
+    const todos = [makeTodo("001", "completed", Date.now(), undefined, [])];
+    const packet = buildAccomplishmentsPacket(todos, { tags: [] });
+    assert.strictEqual(packet.matched, 1);
+    assert.strictEqual(packet.included.length, 1);
+  });
+
+  test("requires all tags when multiple tags are requested", () => {
+    const todos = [
+      makeTodo("001", "completed", Date.now(), undefined, ["bug", "critical"]),
+      makeTodo("002", "completed", Date.now(), undefined, ["bug"]),
+    ];
+    const packet = buildAccomplishmentsPacket(todos, { tags: ["bug", "critical"] });
+    assert.strictEqual(packet.matched, 1);
+    assert.strictEqual(packet.included[0].id, "001");
+  });
+
+  test("filters by sonarqube source only", () => {
+    const todos = [
+      makeTodo("cql-001", "completed", Date.now()),
+      makeTodo("sq-001", "completed", Date.now()),
+      makeTodo("001", "completed", Date.now()),
+    ];
+    const packet = buildAccomplishmentsPacket(todos, { source: "sonarqube" });
+    assert.strictEqual(packet.matched, 1);
+    assert.strictEqual(packet.included[0].id, "sq-001");
+  });
+
+  test("sorts by completion date descending then id for determinism", () => {
+    const now = Date.now();
+    const todos = [
+      makeTodo("002", "completed", now - 1000),
+      makeTodo("001", "completed", now),
+      makeTodo("003", "completed", now - 1000),
+    ];
+    const packet = buildAccomplishmentsPacket(todos, {});
+    assert.strictEqual(packet.included[0].id, "001");
+    assert.strictEqual(packet.included[1].id, "002");
+    assert.strictEqual(packet.included[2].id, "003");
+  });
+
+  test("omits todos beyond max count", () => {
+    const todos = Array.from({ length: 30 }, (_, i) =>
+      makeTodo(String(i + 1).padStart(3, "0"), "completed", Date.now()),
+    );
+    const packet = buildAccomplishmentsPacket(todos, {});
+    assert.strictEqual(packet.matched, 30);
+    assert.strictEqual(packet.included.length, 25);
+    assert.strictEqual(packet.omittedCount, 5);
+  });
+
+  test("preserves date boundaries and filter header ordering", () => {
+    const date = "2026-10-27";
+    const todo = makeTodo("sq-001", "completed", Date.parse(date), "reports", ["bug"]);
+    const packet = buildAccomplishmentsPacket([todo, makeTodo("sq-002", "completed")], {
+      since: date,
+      until: new Date(date),
+      group: "reports",
+      tags: ["bug"],
+      source: "sonarqube",
+    });
+    assert.deepStrictEqual(packet.included, [todo]);
+    assert.ok(
+      packet.text.includes(
+        "Matched: 1 completed todos\nIncluded: 1 todos in this packet\n" +
+          "Filter: since 2026-10-27\nFilter: until 2026-10-27\n" +
+          "Filter: group reports\nFilter: tags bug\nFilter: source sonarqube\n\n",
+      ),
+    );
+  });
+
+  test("skips oversized outcomes while retaining later smaller todos", () => {
+    const oversized = { ...makeTodo("001", "completed"), summary: "x".repeat(50_000) };
+    const small = makeTodo("002", "completed");
+    const packet = buildAccomplishmentsPacket([oversized, small], {});
+    assert.deepStrictEqual(packet.included, [small]);
+    assert.strictEqual(packet.omittedCount, 1);
+    assert.ok(packet.text.includes("Omitted: 1 todos due to size/limits (not included)"));
+  });
 });

@@ -9,7 +9,11 @@ import { BoardViewProvider, buildBoardSnapshot } from "../todos/boardViewProvide
 import { ConfigService } from "../todos/configService";
 import { FilterService } from "../todos/filterService";
 import type { StatusService } from "../todos/statusService";
-import { buildCollisionReconcileContext, findTodoCollisions } from "../todos/todoCollisions";
+import {
+  buildCollisionReconcileContext,
+  collisionDetails,
+  findTodoCollisions,
+} from "../todos/todoCollisions";
 import { buildFileName, parseTodo, type TodoStatus } from "../todos/todoModel";
 import { TodoRepository } from "../todos/todoRepository";
 import { TodoTreeProvider } from "../todos/todoTreeProvider";
@@ -53,6 +57,17 @@ suite("todo ID collision diagnostics", () => {
     assert.strictEqual(collisions.length, 2);
     assert.deepStrictEqual(collisions.map((item) => item.source).sort(), ["sonarqube", "todo"]);
     assert.ok(collisions.every((item) => item.todos.length === 2));
+  });
+
+  test("collision details retain exact file paths, metadata, and reconciliation warning", () => {
+    const collision = findTodoCollisions([active, cancelled])[0];
+    assert.strictEqual(
+      collisionDetails(collision),
+      "Duplicate ID 003 (todo): 2 files\n" +
+        "003-in-progress-p2-example.md [in-progress, p2]\n" +
+        "cancelled/003-cancelled-p2-example.md [cancelled, p2]\n" +
+        "Reconciliation needed; no file has been selected as authoritative.",
+    );
   });
 
   test("tree warning lists hidden conflicting records and clears when the repository snapshot changes", async () => {
@@ -186,7 +201,8 @@ suite("todo ID collision diagnostics", () => {
       assert.ok(copied[1].includes("sq-003"));
       assert.ok(!copied[1].includes(active.fileName));
       await copy();
-      assert.ok(copied[2].includes(active.fileName) && copied[2].includes("sq-003"));
+      assert.ok(copied[2].includes(active.fileName));
+      assert.ok(copied[2].includes("sq-003"));
       await copy({ todoId: "999" });
       assert.strictEqual(copied.length, 3);
       assert.strictEqual(refreshed, 4);
@@ -266,13 +282,15 @@ suite("todo ID collision diagnostics", () => {
       assert.ok(focus);
       await focus({ kind: "todo", todo: active });
       assert.deepStrictEqual(regular.current, { collision: { id: "003", source: "todo" } });
-      assert.ok(regular.matches(active) && regular.matches(cancelled));
+      assert.ok(regular.matches(active));
+      assert.ok(regular.matches(cancelled));
       assert.ok(!regular.matches(scanner));
       assert.ok(regular.isActive);
       assert.deepStrictEqual(scanning.current, { text: "unrelated" });
       assert.strictEqual(regularRefreshes, 2);
       await focus({ todoId: "cql-003", collisionSource: "codeql" });
-      assert.ok(scanning.matches(scanner) && scanning.matches(scannerCancelled));
+      assert.ok(scanning.matches(scanner));
+      assert.ok(scanning.matches(scannerCancelled));
       assert.ok(!scanning.matches(active));
       assert.strictEqual(scanningRefreshes, 2);
       assert.deepStrictEqual(regular.current, { collision: { id: "003", source: "todo" } });

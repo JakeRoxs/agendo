@@ -339,9 +339,22 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 
   private dependencyNodes(todos: Todo[]): TreeNode[] {
-    const dependencyGroups = new Map<string, Todo[]>();
+    const dependencyGroups = this.buildDependencyGroups(todos);
     const processedIds = new Set<string>();
+    const result: TreeNode[] = [];
+    for (const [blockerId, dependents] of dependencyGroups) {
+      this.addDependencyNode(result, todos, blockerId, dependents, processedIds);
+    }
+    for (const todo of todos) {
+      if (!processedIds.has(todo.id)) {
+        result.push({ kind: "todo", todo });
+      }
+    }
+    return result;
+  }
 
+  private buildDependencyGroups(todos: Todo[]): Map<string, Todo[]> {
+    const dependencyGroups = new Map<string, Todo[]>();
     for (const todo of todos) {
       if (this.collisionFor(todo)) {
         continue;
@@ -356,31 +369,30 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
       }
       dependencyGroups.get(blockerId)?.push(todo);
     }
+    return dependencyGroups;
+  }
 
-    const result: TreeNode[] = [];
-    for (const [blockerId, dependents] of dependencyGroups) {
-      const blocker = todos.find((t) => t.id === blockerId && !this.collisionFor(t));
-      const remainingDependents = dependents.filter((todo) => !processedIds.has(todo.id));
-      if (blocker && !processedIds.has(blocker.id) && remainingDependents.length) {
-        result.push({
-          kind: "dependency",
-          todo: blocker,
-          dependents: sortTodos(remainingDependents, this.scope),
-        });
-        processedIds.add(blocker.id);
-        for (const dependent of remainingDependents) {
-          processedIds.add(dependent.id);
-        }
-      }
+  private addDependencyNode(
+    result: TreeNode[],
+    todos: Todo[],
+    blockerId: string,
+    dependents: Todo[],
+    processedIds: Set<string>,
+  ): void {
+    const blocker = todos.find((t) => t.id === blockerId && !this.collisionFor(t));
+    const remainingDependents = dependents.filter((todo) => !processedIds.has(todo.id));
+    if (!blocker || processedIds.has(blocker.id) || remainingDependents.length === 0) {
+      return;
     }
-
-    for (const todo of todos) {
-      if (!processedIds.has(todo.id)) {
-        result.push({ kind: "todo", todo });
-      }
+    result.push({
+      kind: "dependency",
+      todo: blocker,
+      dependents: sortTodos(remainingDependents, this.scope),
+    });
+    processedIds.add(blocker.id);
+    for (const dependent of remainingDependents) {
+      processedIds.add(dependent.id);
     }
-
-    return result;
   }
 
   getChildren(node?: TreeNode): TreeNode[] {
@@ -388,63 +400,72 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     const groupBy = get<string>(Settings.GroupBy);
 
     if (!node) {
-      if (this.scope === "code-scanning" && groupBy === "status") {
-        return (["codeql", "sonarqube"] as const).flatMap((source) => {
-          const count = todos.filter((todo) => getTodoSource(todo) === source).length;
-          return count ? [{ kind: "source" as const, source, count }] : [];
-        });
-      }
-      switch (groupBy) {
-        case "priority":
-          return this.priorityNodesRoot(todos);
-        case "group":
-          return this.groupNodesRoot(todos);
-        case "none":
-          return todos.map((todo) => ({ kind: "todo", todo }));
-        default:
-          return this.statusNodes(todos);
-      }
+      return this.getRootChildren(todos, groupBy);
     }
 
-    if (node.kind === "source") {
-      return this.statusNodes(
-        todos.filter((todo) => getTodoSource(todo) === node.source),
-        node.source,
-      );
+    switch (node.kind) {
+      case "source":
+        return this.getSourceChildren(todos, node);
+      case "status":
+        return this.getStatusChildren(todos, node);
+      case "dependency":
+        return node.dependents.map((todo) => ({ kind: "todo", todo }));
+      case "group":
+        return node.todos.map((todo) => ({ kind: "todo", todo }));
+      case "priority":
+        return this.getPriorityChildren(node);
+      default:
+        return [];
     }
+  }
 
-    if (node.kind === "status") {
-      const inStatus = todos.filter(
-        (t) => t.status === node.status && (!node.source || getTodoSource(t) === node.source),
-      );
-      const sourceGroup = node.source === "codeql" ? "CodeQL" : "SonarQube";
-      const grouped = inStatus.filter((t) => t.group && (!node.source || t.group !== sourceGroup));
-      const ungrouped = inStatus.filter(
-        (t) => !t.group || (node.source && t.group === sourceGroup),
-      );
-
-      if (grouped.length > 0) {
-        return this.groupNodes(node.status, grouped, ungrouped, node.source);
-      }
-      return this.priorityNodes(node.status, inStatus, node.source);
+  private getRootChildren(todos: Todo[], groupBy: string): TreeNode[] {
+    if (this.scope === "code-scanning" && groupBy === "status") {
+      return (["codeql", "sonarqube"] as const).flatMap((source) => {
+        const count = todos.filter((todo) => getTodoSource(todo) === source).length;
+        return count ? [{ kind: "source" as const, source, count }] : [];
+      });
     }
-
-    if (node.kind === "dependency") {
-      return node.dependents.map((todo) => ({ kind: "todo", todo }));
+    switch (groupBy) {
+      case "priority":
+        return this.priorityNodesRoot(todos);
+      case "group":
+        return this.groupNodesRoot(todos);
+      case "none":
+        return todos.map((todo) => ({ kind: "todo", todo }));
+      default:
+        return this.statusNodes(todos);
     }
+  }
 
-    if (node.kind === "group") {
-      return node.todos.map((todo) => ({ kind: "todo", todo }));
+  private getSourceChildren(todos: Todo[], node: SourceNode): TreeNode[] {
+    return this.statusNodes(
+      todos.filter((todo) => getTodoSource(todo) === node.source),
+      node.source,
+    );
+  }
+
+  private getStatusChildren(todos: Todo[], node: StatusNode): TreeNode[] {
+    const inStatus = todos.filter(
+      (t) => t.status === node.status && (!node.source || getTodoSource(t) === node.source),
+    );
+    const sourceGroup = node.source === "codeql" ? "CodeQL" : "SonarQube";
+    const grouped = inStatus.filter((t) => t.group && (!node.source || t.group !== sourceGroup));
+    const ungrouped = inStatus.filter(
+      (t) => !t.group || (node.source && t.group === sourceGroup),
+    );
+
+    if (grouped.length > 0) {
+      return this.groupNodes(node.status, grouped, ungrouped, node.source);
     }
+    return this.priorityNodes(node.status, inStatus, node.source);
+  }
 
-    if (node.kind === "priority") {
-      if (get<boolean>(Settings.ShowDependencyNodes)) {
-        return this.dependencyNodes(node.todos);
-      }
-      return node.todos.map((todo) => ({ kind: "todo", todo }));
+  private getPriorityChildren(node: PriorityNode): TreeNode[] {
+    if (get<boolean>(Settings.ShowDependencyNodes)) {
+      return this.dependencyNodes(node.todos);
     }
-
-    return [];
+    return node.todos.map((todo) => ({ kind: "todo", todo }));
   }
 
   private statusItem(node: StatusNode): vscode.TreeItem {

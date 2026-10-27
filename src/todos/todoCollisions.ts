@@ -23,7 +23,13 @@ export function findTodoCollisions(todos: readonly Todo[]): TodoCollision[] {
 }
 
 export function collisionDetails(collision: TodoCollision): string {
-  return `Duplicate ID ${collision.id} (${collision.source}): ${collision.todos.length} files\n${collision.todos.map((todo) => `${[todo.folder, todo.fileName].filter(Boolean).join("/")} [${todo.status}, ${todo.priority}]`).join("\n")}\nReconciliation needed; no file has been selected as authoritative.`;
+  const files = collision.todos
+    .map(
+      (todo) =>
+        `${[todo.folder, todo.fileName].filter(Boolean).join("/")} [${todo.status}, ${todo.priority}]`,
+    )
+    .join("\n");
+  return `Duplicate ID ${collision.id} (${collision.source}): ${collision.todos.length} files\n${files}\nReconciliation needed; no file has been selected as authoritative.`;
 }
 
 export function buildCollisionReconcileContext(

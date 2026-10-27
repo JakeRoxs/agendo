@@ -840,9 +840,9 @@
           "default": "p3",
           "description": "Default priority applied to newly created todos."
         },
-        "agendo.completeFolder": {
+        "agendo.completedFolder": {
           "type": "string",
-          "default": "complete",
+          "default": "completed",
           "description": "Subfolder name (under the root) for completed todos."
         },
         "agendo.cancelledFolder": {
@@ -850,7 +850,7 @@
           "default": "cancelled",
           "description": "Subfolder name (under the root) for cancelled todos."
         },
-        "agendo.backlogFolder": {
+        "agendo.backloggedFolder": {
           "type": "string",
           "default": "backlog",
           "description": "Subfolder name (under the root) for backlogged todos."

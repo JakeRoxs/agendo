@@ -175,7 +175,6 @@ function renderAgentControls() {
     </select></label>
     <button type="button" data-agent-preview>Preview Request</button>
     <span class="agent-activity" data-agent-activity aria-live="polite"><span class="agent-activity-dot" data-agent-dot></span><span data-agent-status-text>Session status unknown</span></span>
-    <span class="hint">Read-only help. Nothing is sent until you confirm.</span>
     <dialog class="agent-dialog" data-agent-dialog aria-labelledby="agent-preview-title">
       <h2 id="agent-preview-title">Review Agent Request</h2>
       <p>Review for sensitive information before sending or copying. This request does not authorize implementation or bypass approvals.</p>

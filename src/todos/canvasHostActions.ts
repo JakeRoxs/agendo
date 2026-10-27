@@ -25,14 +25,63 @@ export interface CanvasHostActions {
   setGroup(todoId: string, newGroup: unknown): Promise<void>;
 }
 
-export function createCanvasHostActions(options: CanvasHostActionsOptions): CanvasHostActions {
-  const { repository, status, links } = options;
+function assertTrusted(): void {
+  if (!vscode.workspace.isTrusted) {
+    throw new Error("Workspace must be trusted to modify todos");
+  }
+}
 
-  function assertTrusted(): void {
-    if (!vscode.workspace.isTrusted) {
-      throw new Error("Workspace must be trusted to modify todos");
+function assertIdValid(id: string): void {
+  const idRe = /^(?:(?:cql|sq)-)?\d{3,}$/;
+  if (!idRe.test(id)) {
+    throw new Error(`Invalid todo ID: ${id}`);
+  }
+}
+
+function validateStatus(raw: unknown): TodoStatus {
+  if (typeof raw !== "string") {
+    throw new TypeError(`Invalid status: expected a string, received ${typeof raw}`);
+  }
+  if (!TODO_STATUSES.includes(raw as TodoStatus)) {
+    throw new Error(`Invalid status: ${raw}`);
+  }
+  return raw as TodoStatus;
+}
+
+function validatePriority(raw: unknown): TodoPriority {
+  if (typeof raw !== "string") {
+    throw new TypeError(`Invalid priority: expected a string, received ${typeof raw}`);
+  }
+  if (!TODO_PRIORITIES.includes(raw as TodoPriority)) {
+    throw new Error(`Invalid priority: ${raw}`);
+  }
+  return raw as TodoPriority;
+}
+
+function validateGroup(raw: unknown): string | undefined {
+  if (typeof raw !== "string") {
+    throw new TypeError("Group must be a string");
+  }
+  if (raw.length > GROUP_MAX_LENGTH) {
+    throw new Error(`Group must be at most ${GROUP_MAX_LENGTH} characters`);
+  }
+  if (/[\r\n\0]/.test(raw)) {
+    throw new Error("Group must be a single line");
+  }
+  const trimmed = raw.trim();
+  return trimmed.length === 0 ? undefined : trimmed;
+}
+
+function assertWritable(todo: Todo): void {
+  for (const doc of vscode.workspace.textDocuments) {
+    if (doc.uri.toString() === todo.uri.toString() && doc.isDirty) {
+      throw new Error(`Todo file has unsaved changes: ${todo.fileName}`);
     }
   }
+}
+
+export function createCanvasHostActions(options: CanvasHostActionsOptions): CanvasHostActions {
+  const { repository, status, links } = options;
 
   function findTodo(id: string): Todo | undefined {
     const all = repository.getTodos();
@@ -44,49 +93,6 @@ export function createCanvasHostActions(options: CanvasHostActionsOptions): Canv
       throw new Error(`Ambiguous todo ID: ${id} matches ${matches.length} todos`);
     }
     return matches[0];
-  }
-
-  function assertIdValid(id: string): void {
-    const idRe = /^(?:(?:cql|sq)-)?\d{3,}$/;
-    if (!idRe.test(id)) {
-      throw new Error(`Invalid todo ID: ${id}`);
-    }
-  }
-
-  function validateStatus(raw: unknown): TodoStatus {
-    if (typeof raw !== "string" || !TODO_STATUSES.includes(raw as TodoStatus)) {
-      throw new Error(`Invalid status: ${String(raw)}`);
-    }
-    return raw as TodoStatus;
-  }
-
-  function validatePriority(raw: unknown): TodoPriority {
-    if (typeof raw !== "string" || !TODO_PRIORITIES.includes(raw as TodoPriority)) {
-      throw new Error(`Invalid priority: ${String(raw)}`);
-    }
-    return raw as TodoPriority;
-  }
-
-  function validateGroup(raw: unknown): string | undefined {
-    if (typeof raw !== "string") {
-      throw new Error("Group must be a string");
-    }
-    if (raw.length > GROUP_MAX_LENGTH) {
-      throw new Error(`Group must be at most ${GROUP_MAX_LENGTH} characters`);
-    }
-    if (/[\r\n\0]/.test(raw)) {
-      throw new Error("Group must be a single line");
-    }
-    const trimmed = raw.trim();
-    return trimmed.length === 0 ? undefined : trimmed;
-  }
-
-  function assertWritable(todo: Todo): void {
-    for (const doc of vscode.workspace.textDocuments) {
-      if (doc.uri.toString() === todo.uri.toString() && doc.isDirty) {
-        throw new Error(`Todo file has unsaved changes: ${todo.fileName}`);
-      }
-    }
   }
 
   async function refreshAfter(): Promise<void> {

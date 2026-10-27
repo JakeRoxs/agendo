@@ -197,9 +197,9 @@ suite("todoModel", () => {
         if (key === Settings.DefaultPriority) return "p2";
         if (key === Settings.OpenInPreview) return false;
         if (key === Settings.GitignoreTodos) return true;
-        if (key === Settings.CompleteFolder) return "completed";
+        if (key === Settings.CompletedFolder) return "completed";
         if (key === Settings.CancelledFolder) return "cancelled";
-        if (key === Settings.BacklogFolder) return "backlog";
+        if (key === Settings.BackloggedFolder) return "backlog";
         return undefined;
       },
       update: async (key: string, value: unknown, target: number) => {
@@ -316,7 +316,7 @@ suite("todoModel", () => {
       value: () => ({
         get: (key: string) => {
           if (key === Settings.GitignoreTodos) return true;
-          if (key === Settings.BacklogFolder) return "parked";
+          if (key === Settings.BackloggedFolder) return "parked";
           return undefined;
         },
         update: async () => undefined,
@@ -356,7 +356,7 @@ suite("todoModel", () => {
       value: () => ({
         get: (key: string) => {
           if (key === Settings.GitignoreTodos) return true;
-          if (key === Settings.BacklogFolder) return "parked";
+          if (key === Settings.BackloggedFolder) return "parked";
           return undefined;
         },
         update: async () => undefined,
@@ -373,10 +373,10 @@ suite("todoModel", () => {
       );
       const config = JSON.parse(Buffer.from(bytes).toString("utf8"));
       assert.deepStrictEqual(config, {
-        backlogFolder: "parked",
+        backloggedFolder: "parked",
       });
       assert.deepStrictEqual(service.toTodosConfig(), {
-        backlogFolder: "parked",
+        backloggedFolder: "parked",
       });
     } finally {
       Object.defineProperty(vscode.workspace, "getConfiguration", {
@@ -676,7 +676,7 @@ suite("todoModel", () => {
     const originalExecuteCommand = vscode.commands.executeCommand;
 
     const registrations = new Map<string, (...args: any[]) => any>();
-    const previewCalls: unknown[] = [];
+    const canvasOpenCalls: unknown[] = [];
     const setContextCalls: unknown[][] = [];
     let infoMessageCount = 0;
     let resolveRefresh: () => void = () => undefined;
@@ -694,7 +694,6 @@ suite("todoModel", () => {
     Object.defineProperty(vscode.commands, "executeCommand", {
       value: async (command: string, ...args: unknown[]) => {
         if (command === "setContext") setContextCalls.push(args);
-        if (command === "markdown.showPreview") previewCalls.push(args);
         return undefined;
       },
       configurable: true,
@@ -714,6 +713,14 @@ suite("todoModel", () => {
           getTodos: () => [],
           getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
         },
+        config: {
+          getWorkspaceFolder: () => ({ uri: { fsPath: "/tmp/workspace" } }),
+        },
+        canvasViewer: {
+          open: async (root: string, view: unknown) => {
+            canvasOpenCalls.push({ root, view });
+          },
+        },
         busy: new BusyIndicator(),
       } as never;
       const context = { subscriptions: [] as vscode.Disposable[] };
@@ -729,11 +736,14 @@ suite("todoModel", () => {
       await showDigest();
       assert.strictEqual(infoMessageCount, 1, "second call should be rejected as already loading");
 
-      // Completing the first run opens exactly one preview and clears the context.
+      // Completing the first run opens exactly one canvas view and clears the context.
       resolveRefresh();
       await first;
 
-      assert.strictEqual(previewCalls.length, 1, "only one preview should open");
+      assert.strictEqual(canvasOpenCalls.length, 1, "only one canvas view should open");
+      const call = canvasOpenCalls[0] as { root: string; view: { kind: string; scope: string } };
+      assert.strictEqual(call.view.kind, "digest");
+      assert.strictEqual(call.view.scope, "todos");
       const loadingTrue = setContextCalls.find(
         (args) => args[0] === "agendo.digestLoading" && args[1] === true,
       );
@@ -934,8 +944,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -1070,9 +1080,9 @@ suite("todoModel", () => {
     const service = new ConfigService();
     Object.defineProperty(service, "root", { get: () => "docs/todos" });
     Object.defineProperty(service, "gitignored", { get: () => true });
-    Object.defineProperty(service, "backlogFolder", { get: () => "backlog" });
+    Object.defineProperty(service, "backloggedFolder", { get: () => "backlog" });
     Object.defineProperty(service, "cancelledFolder", { get: () => "cancelled" });
-    Object.defineProperty(service, "completeFolder", { get: () => "completed" });
+    Object.defineProperty(service, "completedFolder", { get: () => "completed" });
 
     const rootUri = service.getRootUri();
     const subfolderUri = service.getSubfolderUri("backlog");
@@ -1144,8 +1154,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
@@ -1450,7 +1460,7 @@ suite("todoModel", () => {
 
       await fs.writeFile(
         path.join(todosDir, ".agendo-config.json"),
-        JSON.stringify({ completeFolder: "done" }),
+        JSON.stringify({ completedFolder: "done" }),
       );
       todos.setTodoStatus("001", "completed", root);
       await fs.stat(path.join(todosDir, "done", "001-completed-p2-sample.md"));
@@ -1975,10 +1985,10 @@ suite("todoModel", () => {
     for (const file of files) {
       const dependencies = file.startsWith("020") ? '\ndependencies: ["001"]' : "";
       const group = file.startsWith("001")
-        ? "\ngroup: zeta"
+        ? "\ngroup: Zeta"
         : file.startsWith("020")
           ? "\ngroup: alpha"
-          : "\ngroup: zeta";
+          : "\ngroup: Zeta";
       await vscode.workspace.fs.writeFile(
         vscode.Uri.joinPath(rootUri, "backlog", file),
         Buffer.from(
@@ -1990,8 +2000,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     Object.assign(config, { getTodoFolders: () => ["", "backlog", "completed", "cancelled"] });
@@ -2004,8 +2014,10 @@ suite("todoModel", () => {
     assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("001"), ["020"]);
     assert.deepStrictEqual(repository.getDependencyGraph().blocking.get("099"), []);
     const groups = repository.getGroups();
-    assert.deepStrictEqual(groups, ["alpha", "zeta"]);
+    assert.deepStrictEqual(groups, ["alpha", "Zeta"]);
     assert.strictEqual(repository.getGroups(), groups);
+    assert.deepStrictEqual(repository.getGroups("todos"), groups);
+    assert.deepStrictEqual(repository.getGroups("code-scanning"), []);
 
     const created: string[] = [];
     const listeners: Array<() => void> = [];
@@ -2262,6 +2274,22 @@ suite("todoModel", () => {
         "agendo.skillStatus",
       ]);
 
+      const canvasViewer = context.subscriptions[0] as unknown as {
+        actions: { handleSettingsAction(payload: unknown): Promise<unknown> };
+      };
+      for (const action of ["check-source", "install"]) {
+        for (const component of ["skill", "canvas"]) {
+          const commandCount = executedCommands.length;
+          assert.deepStrictEqual(
+            await canvasViewer.actions.handleSettingsAction({ action, component }),
+            { success: true },
+          );
+          assert.deepStrictEqual(executedCommands.slice(commandCount), [
+            component === "skill" ? Command.ManageSkill : Command.ManageCanvas,
+          ]);
+        }
+      }
+
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({
         kind: "todo",
@@ -2417,15 +2445,11 @@ suite("todoModel", () => {
       assert.deepStrictEqual(previewSteps, []);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
-        2,
-      );
-      assert.ok(
-        previewUris.some((uri) => uri.path.endsWith("agendo-task-digest.md")),
-        "task digest should preview a real file URI",
+        1,
       );
       assert.ok(
         previewUris.every((uri) => !uri.scheme.startsWith("untitled")),
-        "task digest must not use an untitled document",
+        "previews must not use an untitled document",
       );
       assert.ok(executedCommands.includes("setContext"));
       assert.ok(
@@ -2435,6 +2459,7 @@ suite("todoModel", () => {
             "Failed to set group:",
             "Failed to install skill:",
             "Failed to update skill:",
+            "Failed to show task digest:",
           ].some((prefix) => message.startsWith(prefix)),
         ),
       );
@@ -2839,8 +2864,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -2894,8 +2919,8 @@ suite("todoModel", () => {
 
     const config = {
       getRootUri: () => rootUri,
-      backlogFolder: "backlog",
-      completeFolder: "completed",
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
       cancelledFolder: "cancelled",
     } as never;
     const service = new StatusService(config);
@@ -3438,5 +3463,64 @@ suite("todoModel", () => {
       value: originalGetConfiguration,
       configurable: true,
     });
+  });
+
+  test("untrusted scanner imports stop before resolving workspace or fetching findings", async () => {
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const subscriptions: vscode.Disposable[] = [];
+    const originalRegister = vscode.commands.registerCommand;
+    const originalWarning = vscode.window.showWarningMessage;
+    const trustDescriptor = Object.getOwnPropertyDescriptor(vscode.workspace, "isTrusted");
+    const warnings: string[] = [];
+    let workspaceReads = 0;
+    const services = {
+      config: {
+        getWorkspaceFolder: () => {
+          workspaceReads++;
+          return undefined;
+        },
+      },
+    } as never;
+    try {
+      Object.defineProperty(vscode.workspace, "isTrusted", { configurable: true, value: false });
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        configurable: true,
+        value: (command: string, callback: (...args: any[]) => any) => {
+          registrations.set(command, callback);
+          return new vscode.Disposable(() => {});
+        },
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: async (message: string) => {
+          warnings.push(message);
+          return undefined;
+        },
+        configurable: true,
+      });
+      registerCommands({ subscriptions } as never, services);
+      const importCommand = registrations.get(Command.ImportCodeScanning);
+      assert.ok(importCommand);
+      assert.ok(registrations.has(Command.RefreshScanningTodo));
+      await importCommand();
+      assert.deepStrictEqual(warnings, [
+        "Trust this workspace before importing code-scanning findings.",
+      ]);
+      assert.strictEqual(workspaceReads, 0);
+    } finally {
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegister,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalWarning,
+        configurable: true,
+      });
+      if (trustDescriptor) {
+        Object.defineProperty(vscode.workspace, "isTrusted", trustDescriptor);
+      } else {
+        Reflect.deleteProperty(vscode.workspace, "isTrusted");
+      }
+      for (const subscription of subscriptions) subscription.dispose();
+    }
   });
 });

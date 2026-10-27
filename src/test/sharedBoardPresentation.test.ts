@@ -38,7 +38,7 @@ function makeRepository(todos: Todo[]): TodoRepository {
 }
 
 function extractScript(html: string): string {
-  const match = /<script[^>]*>([\s\S]*?)<\/script>/i.exec(html);
+  const match = /<script[^>]*>([\s\S]*?)<\/script\s*>/i.exec(html);
   assert.ok(match, "Expected a <script> block in HTML");
   return match[1];
 }
@@ -315,8 +315,23 @@ suite("shared board presentation", () => {
     const filter = new FilterService(memoryState());
     const status = {} as unknown as StatusService;
     const board = new BoardViewProvider(repo, filter, status, state);
+    const messages: unknown[] = [];
+    Object.assign(board, {
+      panel: {
+        webview: {
+          postMessage: async (message: unknown) => {
+            messages.push(message);
+            return true;
+          },
+        },
+      },
+    });
     try {
       await board.handleCanvasMessage({ type: "ready" });
+      const snapshot = board.getSnapshot();
+      assert.strictEqual(snapshot.scope, "todos");
+      assert.strictEqual(snapshot.columns.length, 6);
+      assert.deepStrictEqual(messages, [{ type: "snapshot", snapshot }]);
     } finally {
       board.dispose();
     }

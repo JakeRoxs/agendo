@@ -11,6 +11,7 @@ import {
   readScanningProvenance,
   readScanningSnapshot,
   reconcileScanningSnapshot,
+  type ScanningProvenance,
   type ScanningSnapshot,
   scanningIdentity,
   serializeScanningSnapshot,
@@ -23,6 +24,7 @@ import {
   parseFrontmatter,
   SCANNING_ID_PREFIX,
   splitFrontmatter,
+  type Todo,
   type TodoPriority,
 } from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
@@ -53,7 +55,8 @@ ruleMarkdown.addRule("sonarSubheadings", {
 ruleMarkdown.addRule("sonarCodeExamples", {
   filter: "pre",
   replacement: (_content, node) => {
-    const code = String(node.textContent || "");
+    const content = node.textContent;
+    const code = typeof content === "string" ? content : "";
     const fence = "`".repeat(
       Math.max(3, ...Array.from(code.matchAll(/`+/g), (match) => match[0].length + 1)),
     );
@@ -79,11 +82,22 @@ export async function sonarQubeDefaults(
   return {
     server,
     project:
-      env.SONAR_PROJECT_KEY?.trim() ||
-      properties.match(/^\s*sonar\.projectKey\s*[=:]\s*(.*?)\s*$/m)?.[1] ||
-      "",
+      env.SONAR_PROJECT_KEY?.trim() || readProjectKey(properties),
     token: server ? token : "",
   };
+}
+
+function readProjectKey(properties: string): string {
+  const key = "sonar.projectKey";
+  for (const line of properties.split(/\r\n?|\n/)) {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(key)) continue;
+    const assignment = trimmed.slice(key.length).trimStart();
+    if (assignment.startsWith("=") || assignment.startsWith(":")) {
+      return assignment.slice(1).trim();
+    }
+  }
+  return "";
 }
 
 export function sonarQubeEnvironmentToken(
@@ -121,7 +135,7 @@ export function scanningPriority(severity: string): TodoPriority {
 }
 
 function text(value: string): string {
-  return value.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}[\]<>#|!]/g, "\\$&");
+  return value.replace(/[\r\n]+/g, " ").replace(/[\\`*_{}[\]<>#|!]/g, String.raw`\$&`);
 }
 
 function replaceGroup(content: string, group: string | undefined): string {
@@ -168,11 +182,14 @@ function updateImportedGroup(
 }
 
 function findingCriterionLine(finding: ScanningFinding, met: boolean, returned: boolean): string {
-  const location = finding.path
-    ? finding.line
-      ? `${finding.path}:${finding.line}`
-      : finding.path
-    : "project-level";
+  let location: string;
+  if (!finding.path) {
+    location = "project-level";
+  } else if (finding.line) {
+    location = `${finding.path}:${finding.line}`;
+  } else {
+    location = finding.path;
+  }
   const status = returned ? "" : " (not returned)";
   return `- [${met ? "x" : " "}] [${finding.id}] \`${finding.rule}\` — ${text(finding.message)} (${location})${status}`;
 }
@@ -183,7 +200,7 @@ const FINDING_ENTRY_RE = /^-\s*\[([ xX])\]\s*\[([^\]]+)\]\s(.*)$/;
 
 function parseFindingsChecklist(content: string): Map<string, boolean> {
   const metByFinding = new Map<string, boolean>();
-  const match = content.match(/### Findings[\s\S]*?### End Findings/);
+  const match = /### Findings[\s\S]*?### End Findings/.exec(content);
   if (!match) {
     return metByFinding;
   }
@@ -222,7 +239,7 @@ export function updateFindingsChecklist(
   }
   lines.push("", FINDINGS_END, "");
   const block = lines.join("\n");
-  const sectionMatch = content.match(/### Findings[\s\S]*?### End Findings/);
+  const sectionMatch = /### Findings[\s\S]*?### End Findings/.exec(content);
   if (!sectionMatch) {
     const introEnd = content.indexOf("## Acceptance Criteria");
     if (introEnd === -1) {
@@ -272,8 +289,8 @@ export function updateScanningEvidence(
   if (
     start < 0 ||
     end < start ||
-    content.indexOf(START, start + START.length) !== -1 ||
-    content.indexOf(END, end + END.length) !== -1
+    content.includes(START, start + START.length) ||
+    content.includes(END, end + END.length)
   ) {
     throw new Error("Scanner evidence markers are missing; restore them before importing again.");
   }
@@ -511,16 +528,45 @@ export async function fetchSonarQubeCliBranches(
   return fetchSonarQubeBranches(server, project, "", createSonarCliRequest(cwd, server, run));
 }
 
-export async function fetchSonarQube(
-  server: string,
+interface SonarIssue {
+  key: string;
+  rule: string;
+  severity: string;
+  message: string;
+  component: string;
+  line?: number;
+}
+
+function sonarIssueFinding(
+  issue: SonarIssue,
+  base: URL,
+  project: string,
+  branch?: string,
+): ScanningFinding {
+  const link = new URL("project/issues", base);
+  const params = new URLSearchParams({ id: project, issues: issue.key });
+  if (branch) params.set("branch", branch);
+  link.search = params.toString();
+  return {
+    id: issue.key,
+    rule: issue.rule,
+    severity: issue.severity,
+    message: issue.message,
+    path: issue.component.startsWith(`${project}:`)
+      ? issue.component.slice(project.length + 1)
+      : issue.component,
+    line: issue.line,
+    url: link.toString(),
+  };
+}
+
+async function fetchPaginatedIssues(
+  base: URL,
   project: string,
   token: string,
   request?: (url: URL) => Promise<unknown>,
-  duplicationThreshold?: number,
   branch?: string,
-): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
-  const base = validateSonarUrl(server);
-  const threshold = duplicationThreshold ?? 0.05;
+): Promise<ScanningFinding[]> {
   const findings: ScanningFinding[] = [];
   for (let page = 1; ; page++) {
     const url = new URL("api/issues/search", base);
@@ -533,14 +579,7 @@ export async function fetchSonarQube(
     if (branch) params.set("branch", branch);
     url.search = params.toString();
     const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
-      issues: Array<{
-        key: string;
-        rule: string;
-        severity: string;
-        message: string;
-        component: string;
-        line?: number;
-      }>;
+      issues: SonarIssue[];
       paging: { total: number };
     };
     if (
@@ -551,21 +590,7 @@ export async function fetchSonarQube(
       throw new Error("Unexpected SonarQube issues response.");
     }
     for (const issue of payload.issues) {
-      const link = new URL("project/issues", base);
-      const linkParams = new URLSearchParams({ id: project, issues: issue.key });
-      if (branch) linkParams.set("branch", branch);
-      link.search = linkParams.toString();
-      findings.push({
-        id: issue.key,
-        rule: issue.rule,
-        severity: issue.severity,
-        message: issue.message,
-        path: issue.component.startsWith(`${project}:`)
-          ? issue.component.slice(project.length + 1)
-          : issue.component,
-        line: issue.line,
-        url: link.toString(),
-      });
+      findings.push(sonarIssueFinding(issue, base, project, branch));
     }
     if (findings.length >= payload.paging.total) {
       break;
@@ -576,59 +601,83 @@ export async function fetchSonarQube(
       );
     }
   }
-  const rules = new Map<string, { title: string; description: string }>();
-  for (const key of new Set(findings.map((finding) => finding.rule))) {
-    const url = new URL("api/rules/show", base);
-    url.search = new URLSearchParams({ key }).toString();
-    const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
-      rule?: {
-        key: string;
-        name: string;
-        descriptionSections?: Array<{ key: string; content: string }>;
-        htmlDesc?: string;
-        mdDesc?: string;
-      };
+  return findings;
+}
+
+async function fetchRuleDetail(
+  base: URL,
+  key: string,
+  token: string,
+  request?: (url: URL) => Promise<unknown>,
+): Promise<{ title: string; description: string }> {
+  const url = new URL("api/rules/show", base);
+  url.search = new URLSearchParams({ key }).toString();
+  const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
+    rule?: {
+      key: string;
+      name: string;
+      descriptionSections?: Array<{ key: string; content: string }>;
+      htmlDesc?: string;
+      mdDesc?: string;
     };
-    const rule = payload?.rule;
-    if (rule?.key !== key || typeof rule.name !== "string") {
-      throw new Error("Unexpected SonarQube rule response. No todos were imported.");
-    }
-    const sections = rule.descriptionSections
-      ?.map((section) => {
-        const headings: Record<string, string> = {
-          root_cause: "Why is this an issue?",
-          how_to_fix: "How to fix it",
-          resources: "References",
-          assess_the_problem: "Assess the problem",
-          introduction: "Overview",
-        };
-        const heading = headings[section.key] || section.key.replace(/_/g, " ");
-        return `#### ${text(heading)}\n\n${ruleMarkdown.turndown(section.content)}`;
-      })
-      .join("\n\n");
-    const description =
-      sections || (rule.htmlDesc ? ruleMarkdown.turndown(rule.htmlDesc) : rule.mdDesc || "");
-    rules.set(key, {
-      title: rule.name,
-      description: description.replace(/<!--/g, "&lt;!--"),
-    });
+  };
+  const rule = payload?.rule;
+  if (rule?.key !== key || typeof rule.name !== "string") {
+    throw new Error("Unexpected SonarQube rule response. No todos were imported.");
   }
-  for (const finding of findings) {
-    const rule = rules.get(finding.rule);
-    finding.ruleTitle = rule?.title;
-    finding.ruleDescription = rule?.description;
-  }
+  const sections = rule.descriptionSections
+    ?.map((section) => {
+      const headings: Record<string, string> = {
+        root_cause: "Why is this an issue?",
+        how_to_fix: "How to fix it",
+        resources: "References",
+        assess_the_problem: "Assess the problem",
+        introduction: "Overview",
+      };
+      const heading = headings[section.key] || section.key.replace(/_/g, " ");
+      return `#### ${text(heading)}\n\n${ruleMarkdown.turndown(section.content)}`;
+    })
+    .join("\n\n");
+  const description =
+    sections || (rule.htmlDesc ? ruleMarkdown.turndown(rule.htmlDesc) : rule.mdDesc || "");
+  return {
+    title: rule.name,
+    description: description.replace(/<!--/g, "&lt;!--"),
+  };
+}
 
+const DUPLICATION_RULE_DESCRIPTION =
+  "This file has a high density of duplicated lines. Consider refactoring to extract shared code or remove redundant blocks.";
+
+async function readDuplicationMetrics(
+  url: URL,
+  token: string,
+  request?: (url: URL) => Promise<unknown>,
+): Promise<{ density: number; duplicatedLines: number } | undefined> {
+  const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
+    component?: { measures?: Array<{ metric: string; value: string | number }> };
+  };
+  const measures = payload?.component?.measures;
+  if (!Array.isArray(measures)) return undefined;
+  const density = measures.find((measure) => measure.metric === "duplicated_lines_density");
+  const lines = measures.find((measure) => measure.metric === "duplicated_lines");
+  return {
+    density: density ? Number(density.value) : 0,
+    duplicatedLines: lines ? Number(lines.value) : 0,
+  };
+}
+
+async function checkDuplicationMetrics(
+  base: URL,
+  project: string,
+  filePaths: Set<string>,
+  token: string,
+  request: ((url: URL) => Promise<unknown>) | undefined,
+  branch: string | undefined,
+  options: { threshold: number; description: string },
+): Promise<ScanningFinding[]> {
   const duplicationRuleKey = "sonarqube:duplicated_lines";
-  if (!rules.has(duplicationRuleKey)) {
-    rules.set(duplicationRuleKey, {
-      title: "Duplicated code detected",
-      description:
-        "This file has a high density of duplicated lines. Consider refactoring to extract shared code or remove redundant blocks.",
-    });
-  }
-
-  const filePaths = new Set(findings.map((finding) => finding.path));
+  const duplicationFindings: ScanningFinding[] = [];
   for (const filePath of filePaths) {
     try {
       const url = new URL("api/measures/component", base);
@@ -637,16 +686,10 @@ export async function fetchSonarQube(
         metricKeys: "duplicated_lines,duplicated_lines_density",
         ...(branch ? { branch } : {}),
       }).toString();
-      const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
-        component?: { measures?: Array<{ metric: string; value: string | number }> };
-      };
-      const measures = payload?.component?.measures;
-      if (!Array.isArray(measures)) continue;
-      const densityMeasure = measures.find((m) => m.metric === "duplicated_lines_density");
-      const linesMeasure = measures.find((m) => m.metric === "duplicated_lines");
-      const density = densityMeasure ? Number(densityMeasure.value) : 0;
-      const duplicatedLines = linesMeasure ? Number(linesMeasure.value) : 0;
-      if (density >= threshold && duplicatedLines > 0) {
+      const measures = await readDuplicationMetrics(url, token, request);
+      if (!measures) continue;
+      const { density, duplicatedLines } = measures;
+      if (density >= options.threshold && duplicatedLines > 0) {
         const link = new URL("project/issues", base);
         const linkParams = new URLSearchParams({
           id: project,
@@ -655,7 +698,7 @@ export async function fetchSonarQube(
         });
         if (branch) linkParams.set("branch", branch);
         link.search = linkParams.toString();
-        findings.push({
+        duplicationFindings.push({
           id: `dup-${project}-${filePath}`,
           rule: duplicationRuleKey,
           severity: "MAJOR",
@@ -663,20 +706,57 @@ export async function fetchSonarQube(
           path: filePath,
           url: link.toString(),
           ruleTitle: "Duplicated code detected",
-          ruleDescription: rules.get(duplicationRuleKey)?.description,
+          ruleDescription: options.description,
         });
       }
     } catch {
       // Skip files where duplication metrics are unavailable
     }
   }
+  return duplicationFindings;
+}
 
+export async function fetchSonarQube(
+  server: string,
+  project: string,
+  token: string,
+  request?: (url: URL) => Promise<unknown>,
+  duplicationThreshold?: number,
+  branch?: string,
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
+  const base = validateSonarUrl(server);
+  const threshold = duplicationThreshold ?? 0.05;
+  const findings = await fetchPaginatedIssues(base, project, token, request, branch);
+  const rules = new Map<string, { title: string; description: string }>();
+  for (const key of new Set(findings.map((finding) => finding.rule))) {
+    rules.set(key, await fetchRuleDetail(base, key, token, request));
+  }
+  for (const finding of findings) {
+    const rule = rules.get(finding.rule);
+    finding.ruleTitle = rule?.title;
+    finding.ruleDescription = rule?.description;
+  }
+  const duplicationRuleKey = "sonarqube:duplicated_lines";
+  const duplicationFindings = await checkDuplicationMetrics(
+    base,
+    project,
+    new Set(findings.map((f) => f.path)),
+    token,
+    request,
+    branch,
+    {
+      threshold,
+      description: rules.get(duplicationRuleKey)?.description ?? DUPLICATION_RULE_DESCRIPTION,
+    },
+  );
+  findings.push(...duplicationFindings);
   return { scope: `${base.toString()}#${project}`, ...(branch ? { branch } : {}), findings };
 }
 
 async function fetchSonarQubePage(url: URL, token: string): Promise<unknown> {
+  const credentials = Buffer.from(`${token}:`).toString("base64");
   const response = await fetch(url, {
-    headers: { Authorization: `Basic ${Buffer.from(`${token}:`).toString("base64")}` },
+    headers: { Authorization: `Basic ${credentials}` },
     signal: AbortSignal.timeout(30_000),
     redirect: "error",
   });
@@ -696,7 +776,283 @@ export interface ScanningImportResult {
   reviewRequired: string[];
 }
 
-/** Requires a complete source result; fetchers reject failed/incomplete pagination before import. */
+/** Outcome of processing one scanner import group. */
+interface ImportGroupWrite {
+  uri: vscode.Uri;
+  before?: string;
+  after: string;
+  changed: boolean;
+  reviewRequired: string[];
+}
+
+interface ImportContext {
+  provenance: Omit<ScanningProvenance, "target">;
+  target?: string;
+  existing: Todo[];
+  root: vscode.Uri;
+  retrievedAt: string;
+}
+
+async function readImportBaseline(context: ImportContext, provenance: ScanningProvenance) {
+  const identity = scanningIdentity(provenance);
+  const matches = context.existing.filter(
+    (candidate) => candidate.frontmatter.scan_identity === identity,
+  );
+  if (matches.length > 1)
+    throw new Error("Duplicate scanner import identity; reconcile it before refreshing.");
+  const todo = matches[0];
+  if (todo && getTodoSource(todo) !== provenance.source)
+    throw new Error("Scanner identity belongs to a different source.");
+  if (context.target !== undefined && !todo)
+    throw new Error("The imported refresh target no longer exists.");
+  const before = todo ? await readText(todo.uri) : undefined;
+  const oldProvenance = before ? readScanningProvenance(before) : undefined;
+  if (oldProvenance && scanningIdentity(oldProvenance) !== identity)
+    throw new Error("Scanner refresh scope does not match its provenance.");
+  const owned = before?.slice(before.indexOf(START), before.indexOf(END) + END.length);
+  const previous = owned ? readScanningSnapshot(owned, provenance) : undefined;
+  return { todo, before, previous };
+}
+
+async function processImportGroup(
+  context: ImportContext,
+  key: string,
+  alerts: ScanningFinding[],
+  nextId: number,
+): Promise<{ write: ImportGroupWrite; changes: FindingChanges; nextId: number }> {
+  const provenance = { ...context.provenance, target: key };
+  const { todo, before, previous } = await readImportBaseline(context, provenance);
+  const { snapshot, changes } = reconcileScanningSnapshot(
+    provenance,
+    previous,
+    alerts,
+    Boolean(todo),
+    context.retrievedAt,
+  );
+  const changed =
+    !previous ||
+    JSON.stringify({ ...previous, retrievedAt: "" }) !==
+      JSON.stringify({ ...snapshot, retrievedAt: "" });
+  const review = Boolean(
+    todo && ["ready", "completed"].includes(todo.status) && (changed || alerts.length),
+  );
+  const reviewRequired: string[] = [];
+  if (review && todo) reviewRequired.push(todo.id);
+  const rules = new Map(snapshot.rules.map((rule) => [rule.id, rule]));
+  const observations = snapshot.findings.map(({ returned: _returned, ...finding }) => ({
+    ...finding,
+    ruleTitle: rules.get(finding.rule)?.title,
+    ruleDescription: rules.get(finding.rule)?.description,
+  }));
+  if (todo && before !== undefined) {
+    const updatedContent = updateImportedGroup(
+      before,
+      provenance.source,
+      provenance.grouping,
+      key,
+      alerts,
+      previous,
+    );
+    const after = writeScanningProvenance(
+      updateFindingsChecklist(
+        updateScanningEvidence(updatedContent, observations, snapshot),
+        observations,
+        snapshot,
+      ),
+      snapshot,
+      review,
+    );
+    return {
+      write: { uri: todo.uri, before, after, changed, reviewRequired },
+      changes,
+      nextId,
+    };
+  }
+  const id = `${SCANNING_ID_PREFIX[provenance.source]}-${String(nextId).padStart(3, "0")}`;
+  return {
+    write: newImportWrite(context, provenance, snapshot, observations, alerts, id),
+    changes,
+    nextId: nextId + 1,
+  };
+}
+
+function importTitle(grouping: ScanningGrouping, key: string, finding: ScanningFinding): string {
+  if (grouping === "file") {
+    return key || "Project-level findings";
+  }
+  if (grouping === "rule") return key;
+  const linePart = finding.line ? `:${finding.line}` : "";
+  return `${finding.path || "Project"}${linePart} - ${finding.rule}`;
+}
+
+function newImportWrite(
+  context: ImportContext,
+  provenance: ScanningProvenance,
+  snapshot: ScanningSnapshot,
+  observations: ScanningFinding[],
+  alerts: ScanningFinding[],
+  id: string,
+): ImportGroupWrite {
+  const { source, grouping, target: key } = provenance;
+  const identity = scanningIdentity(provenance);
+  const title = importTitle(grouping, key, alerts[0]);
+  const priority = alerts
+    .map((alert) => scanningPriority(alert.severity))
+    .sort((a, b) => a.localeCompare(b))[0];
+  const group = grouping === "finding" ? alerts[0].path || "Project-level findings" : undefined;
+  const folder = vscode.Uri.joinPath(context.root, "code-scanning", source);
+  const uri = vscode.Uri.joinPath(folder, buildFileName(id, "pending", priority, title));
+  const content = [
+    "---",
+    "status: pending",
+    `priority: ${priority}`,
+    `issue_id: "${id}"`,
+    `tags: [code-scanning, ${source}]`,
+    ...(group ? [`group: ${JSON.stringify(group)}`] : []),
+    "dependencies: []",
+    `scan_identity: ${identity}`,
+    `scan_source: ${source}`,
+    `scan_grouping: ${grouping}`,
+    `scan_target: ${JSON.stringify(key)}`,
+    "---",
+    "",
+    `# ${text(title)}`,
+    "",
+    "Review these scanner findings and verify any fix before completing this todo.",
+    "",
+    evidence(observations, snapshot),
+    "",
+    "## Acceptance Criteria",
+    "",
+    buildFindingsChecklist(observations),
+    "",
+    "- [ ] Review each finding and address or document its disposition",
+    "- [ ] Verify changes with tests and a new scan",
+    "",
+    "## Work Log",
+    "",
+  ].join("\n");
+  const after = writeScanningProvenance(content, snapshot, false);
+  return { uri, after, changed: false, reviewRequired: [] };
+}
+
+async function preflightWrites(writes: ImportGroupWrite[]): Promise<void> {
+  for (const write of writes) {
+    if (
+      vscode.workspace.textDocuments.some(
+        (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
+      )
+    )
+      throw new Error("Save todo changes before refreshing scanner evidence.");
+    if (write.before !== undefined && (await readText(write.uri)) !== write.before)
+      throw new Error("A scanner todo changed while preparing the refresh; retry.");
+    if (write.before === undefined) {
+      await assertNewImportPath(write.uri);
+    }
+  }
+}
+
+async function assertNewImportPath(uri: vscode.Uri): Promise<void> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    throw new Error("A new scanner todo already exists; refresh and retry.");
+  } catch (error) {
+    if (!(error instanceof vscode.FileSystemError) || error.code !== "FileNotFound") throw error;
+  }
+}
+
+async function writeImportResults(
+  writes: ImportGroupWrite[],
+  root: vscode.Uri,
+  source: ScanningSource,
+): Promise<void> {
+  for (const write of writes) {
+    if (
+      vscode.workspace.textDocuments.some(
+        (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
+      )
+    )
+      throw new Error("Save todo changes before refreshing scanner evidence.");
+    if (write.before !== undefined) {
+      if ((await readText(write.uri)) !== write.before)
+        throw new Error("A scanner todo changed during refresh; retry.");
+      await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
+    } else {
+      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, "code-scanning", source));
+      const edit = new vscode.WorkspaceEdit();
+      edit.createFile(write.uri, { overwrite: false });
+      edit.insert(write.uri, new vscode.Position(0, 0), write.after);
+      if (
+        !(await vscode.workspace.applyEdit(edit)) ||
+        !(await (await vscode.workspace.openTextDocument(write.uri)).save())
+      ) {
+        throw new Error("Unable to create and save the imported scanner todo.");
+      }
+    }
+  }
+}
+
+function groupImportFindings(findings: ScanningFinding[], grouping: ScanningGrouping) {
+  const groups = new Map<string, ScanningFinding[]>();
+  const findingIds = new Set<string>();
+  for (const finding of findings) {
+    if (!validFinding(finding) || findingIds.has(finding.id)) {
+      throw new Error("Scanner returned an invalid finding. No todos were imported.");
+    }
+    findingIds.add(finding.id);
+    let key: string;
+    if (grouping === "file") {
+      key = finding.path;
+    } else if (grouping === "rule") {
+      key = finding.rule;
+    } else {
+      key = finding.id;
+    }
+    const group = groups.get(key) ?? [];
+    group.push(finding);
+    groups.set(key, group);
+  }
+  return groups;
+}
+
+async function addExistingImportGroups(
+  groups: Map<string, ScanningFinding[]>,
+  existing: Todo[],
+  scope: Omit<ScanningProvenance, "target">,
+): Promise<void> {
+  for (const todo of existing) {
+    if (
+      getTodoSource(todo) !== scope.source ||
+      todo.frontmatter.scan_scope !== scope.scope ||
+      todo.frontmatter.scan_grouping !== scope.grouping ||
+      todo.frontmatter.scan_branch !== scope.branch
+    ) {
+      continue;
+    }
+    const provenance = readScanningProvenance(await readText(todo.uri));
+    if (provenance?.source !== scope.source)
+      throw new Error("Invalid scanner provenance for an existing import.");
+    if (!groups.has(provenance.target)) groups.set(provenance.target, []);
+  }
+}
+
+function accumulateImportResult(
+  result: ScanningImportResult,
+  write: ImportGroupWrite,
+  changes: FindingChanges,
+): void {
+  if (write.before === undefined) {
+    result.created++;
+  } else {
+    result.refreshed++;
+    if (write.changed) result.updated++;
+  }
+  for (const field of Object.keys(result.changes) as Array<keyof FindingChanges>) {
+    result.changes[field] += changes[field];
+  }
+  result.reviewRequired.push(...write.reviewRequired);
+}
+
 export async function importScanningFindings(
   config: ConfigService,
   repository: TodoRepository,
@@ -722,34 +1078,16 @@ export async function importScanningFindings(
   if (scope.includes("://")) validateSonarUrl(scope.split("#")[0]);
   await repository.refresh();
   const existing = repository.getTodos();
-  const groups = new Map<string, ScanningFinding[]>();
-  const findingIds = new Set<string>();
-  for (const finding of findings) {
-    if (!validFinding(finding) || findingIds.has(finding.id)) {
-      throw new Error("Scanner returned an invalid finding. No todos were imported.");
-    }
-    findingIds.add(finding.id);
-    const key =
-      grouping === "file" ? finding.path : grouping === "rule" ? finding.rule : finding.id;
-    const group = groups.get(key) ?? [];
-    group.push(finding);
-    groups.set(key, group);
-  }
-  for (const todo of existing) {
-    if (
-      getTodoSource(todo) !== source ||
-      todo.frontmatter.scan_scope !== scope ||
-      todo.frontmatter.scan_grouping !== grouping ||
-      todo.frontmatter.scan_branch !== options.branch
-    )
-      continue;
-    const provenance = readScanningProvenance(await readText(todo.uri));
-    if (!provenance || provenance.source !== source)
-      throw new Error("Invalid scanner provenance for an existing import.");
-    if (!groups.has(provenance.target)) groups.set(provenance.target, []);
-  }
+  const groups = groupImportFindings(findings, grouping);
+  const provenance = {
+    source,
+    scope,
+    grouping,
+    ...(options.branch === undefined ? {} : { branch: options.branch }),
+  };
+  await addExistingImportGroups(groups, existing, provenance);
   if (options.target !== undefined) {
-    const findingsForTarget = groups.get(options.target) || [];
+    const findingsForTarget = groups.get(options.target) ?? [];
     groups.clear();
     groups.set(options.target, findingsForTarget);
   }
@@ -761,163 +1099,27 @@ export async function importScanningFindings(
     changes: { added: 0, changed: 0, unchanged: 0, notReturned: 0, uncompared: 0 },
     reviewRequired: [],
   };
-  const writes: Array<{ uri: vscode.Uri; before?: string; after: string }> = [];
-  const retrievedAt = new Date().toISOString();
+  const writes: ImportGroupWrite[] = [];
+  const context: ImportContext = {
+    provenance,
+    target: options.target,
+    existing,
+    root,
+    retrievedAt: new Date().toISOString(),
+  };
   for (const [key, alerts] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
-    const provenance = {
-      source,
-      scope,
-      grouping,
-      target: key,
-      ...(options.branch === undefined ? {} : { branch: options.branch }),
-    };
-    const identity = scanningIdentity(provenance);
-    const matches = existing.filter(
-      (candidate) => candidate.frontmatter.scan_identity === identity,
-    );
-    if (matches.length > 1)
-      throw new Error("Duplicate scanner import identity; reconcile it before refreshing.");
-    const todo = matches[0];
-    if (todo && getTodoSource(todo) !== source)
-      throw new Error("Scanner identity belongs to a different source.");
-    if (options.target !== undefined && !todo)
-      throw new Error("The imported refresh target no longer exists.");
-    const before = todo ? await readText(todo.uri) : undefined;
-    const oldProvenance = before ? readScanningProvenance(before) : undefined;
-    if (oldProvenance && scanningIdentity(oldProvenance) !== identity)
-      throw new Error("Scanner refresh scope does not match its provenance.");
-    const owned = before?.slice(before.indexOf(START), before.indexOf(END) + END.length);
-    const previous = owned ? readScanningSnapshot(owned, provenance) : undefined;
-    const { snapshot, changes } = reconcileScanningSnapshot(
-      provenance,
-      previous,
+    const { write, changes, nextId: nextIdAfter } = await processImportGroup(
+      context,
+      key,
       alerts,
-      Boolean(todo),
-      retrievedAt,
+      nextId,
     );
-    for (const field of Object.keys(result.changes) as Array<keyof FindingChanges>)
-      result.changes[field] += changes[field];
-    const changed =
-      !previous ||
-      JSON.stringify({ ...previous, retrievedAt: "" }) !==
-        JSON.stringify({ ...snapshot, retrievedAt: "" });
-    const review = Boolean(
-      todo && ["ready", "completed"].includes(todo.status) && (changed || alerts.length),
-    );
-    if (review && todo) result.reviewRequired.push(todo.id);
-    const rules = new Map(snapshot.rules.map((rule) => [rule.id, rule]));
-    const observations = snapshot.findings.map(({ returned: _returned, ...finding }) => ({
-      ...finding,
-      ruleTitle: rules.get(finding.rule)?.title,
-      ruleDescription: rules.get(finding.rule)?.description,
-    }));
-    if (todo && before !== undefined) {
-      const updatedContent = updateImportedGroup(before, source, grouping, key, alerts, previous);
-      writes.push({
-        uri: todo.uri,
-        before,
-        after: writeScanningProvenance(
-          updateFindingsChecklist(
-            updateScanningEvidence(updatedContent, observations, snapshot),
-            observations,
-            snapshot,
-          ),
-          snapshot,
-          review,
-        ),
-      });
-      result.refreshed++;
-      if (changed) result.updated++;
-      continue;
-    }
-    const title =
-      grouping === "file"
-        ? key || "Project-level findings"
-        : grouping === "rule"
-          ? key
-          : `${alerts[0].path || "Project"}${alerts[0].line ? `:${alerts[0].line}` : ""} - ${alerts[0].rule}`;
-    const id = `${SCANNING_ID_PREFIX[source]}-${String(nextId++).padStart(3, "0")}`;
-    const priority = alerts.map((alert) => scanningPriority(alert.severity)).sort()[0];
-    const group = grouping === "finding" ? alerts[0].path || "Project-level findings" : undefined;
-    const folder = vscode.Uri.joinPath(root, "code-scanning", source);
-    const uri = vscode.Uri.joinPath(folder, buildFileName(id, "pending", priority, title));
-    const content = [
-      "---",
-      "status: pending",
-      `priority: ${priority}`,
-      `issue_id: "${id}"`,
-      `tags: [code-scanning, ${source}]`,
-      ...(group ? [`group: ${JSON.stringify(group)}`] : []),
-      "dependencies: []",
-      `scan_identity: ${identity}`,
-      `scan_source: ${source}`,
-      `scan_grouping: ${grouping}`,
-      `scan_target: ${JSON.stringify(key)}`,
-      "---",
-      "",
-      `# ${source === "codeql" ? "CodeQL" : "SonarQube"}: ${text(title)}`,
-      "",
-      "Review these scanner findings and verify any fix before completing this todo.",
-      "",
-      evidence(observations, snapshot),
-      "",
-      "## Acceptance Criteria",
-      "",
-      buildFindingsChecklist(observations),
-      "",
-      "- [ ] Review each finding and address or document its disposition",
-      "- [ ] Verify changes with tests and a new scan",
-      "",
-      "## Work Log",
-      "",
-    ].join("\n");
-    writes.push({ uri, after: writeScanningProvenance(content, snapshot, false) });
-    result.created++;
+    nextId = nextIdAfter;
+    writes.push(write);
+    accumulateImportResult(result, write, changes);
   }
-  // Preflight all targets before writing so a later dirty file cannot leave earlier baselines refreshed.
-  for (const write of writes) {
-    if (
-      vscode.workspace.textDocuments.some(
-        (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
-      )
-    )
-      throw new Error("Save todo changes before refreshing scanner evidence.");
-    if (write.before !== undefined && (await readText(write.uri)) !== write.before)
-      throw new Error("A scanner todo changed while preparing the refresh; retry.");
-    if (write.before === undefined) {
-      try {
-        await vscode.workspace.fs.stat(write.uri);
-        throw new Error("A new scanner todo already exists; refresh and retry.");
-      } catch (error) {
-        if (!(error instanceof vscode.FileSystemError) || error.code !== "FileNotFound")
-          throw error;
-      }
-    }
-  }
-  for (const write of writes) {
-    if (
-      vscode.workspace.textDocuments.some(
-        (document) => document.uri.toString() === write.uri.toString() && document.isDirty,
-      )
-    )
-      throw new Error("Save todo changes before refreshing scanner evidence.");
-    if (write.before !== undefined) {
-      if ((await readText(write.uri)) !== write.before)
-        throw new Error("A scanner todo changed during refresh; retry.");
-      await vscode.workspace.fs.writeFile(write.uri, Buffer.from(write.after, "utf8"));
-    } else {
-      await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(root, "code-scanning", source));
-      const edit = new vscode.WorkspaceEdit();
-      edit.createFile(write.uri, { overwrite: false });
-      edit.insert(write.uri, new vscode.Position(0, 0), write.after);
-      if (
-        !(await vscode.workspace.applyEdit(edit)) ||
-        !(await (await vscode.workspace.openTextDocument(write.uri)).save())
-      ) {
-        throw new Error("Unable to create and save the imported scanner todo.");
-      }
-    }
-  }
+  await preflightWrites(writes);
+  await writeImportResults(writes, root, source);
   if (result.created) {
     await config.writeConfigFile({ force: true });
     await config.applyGitignore({ force: true });
