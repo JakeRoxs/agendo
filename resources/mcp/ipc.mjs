@@ -87,7 +87,7 @@ export async function sendGetProblemsRequest(endpoint, params) {
   const requestParams = buildProblemsParams(params);
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const requestObject = { id, method: 'get_problems', params: requestParams };
-  const requestBytes = Buffer.from(JSON.stringify(requestObject), 'utf8');
+  const requestBytes = Buffer.from(`${JSON.stringify(requestObject)}\n`, 'utf8');
   if (requestBytes.length > MAX_REQUEST_BYTES) {
     throw new Error(
       `${EDITOR_UNAVAILABLE_CODE}: request exceeds ${MAX_REQUEST_BYTES} bytes`

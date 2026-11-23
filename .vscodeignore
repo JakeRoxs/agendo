@@ -1,6 +1,7 @@
 .vscode/**
 .vscode-test/**
 .kilo/**
+.kilo2/**
 .github/**
 .sonarlint/**
 .scannerwork/**

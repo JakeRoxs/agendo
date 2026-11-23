@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as net from "node:net";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { DiagnosticsService, ProblemErrorCode } from "../mcp/diagnosticsService";
@@ -650,6 +651,7 @@ suite("mcpProblems", () => {
       mockGetDiagnostics([]),
     ];
     let bridge: IpcBridge | undefined;
+    const discoveryDirectory = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
     try {
       const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
       const originalGetConfiguration = vscode.workspace.getConfiguration;
@@ -671,12 +673,16 @@ suite("mcpProblems", () => {
       });
       try {
         const service = new DiagnosticsService();
-        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
+        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectory });
         if (!bridge) {
           throw new Error("bridge not created");
         }
         const endpoint = bridge.getEndpoint();
         await waitForListening(endpoint);
+        const registrations = fs.readdirSync(discoveryDirectory);
+        assert.strictEqual(registrations.length, 1);
+        const recordPath = path.join(discoveryDirectory, registrations[0]);
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), { endpoint, hostPid: process.pid });
 
         // The private temp directory is only meaningful on Unix; Windows uses
         // an OS named pipe with no per-window temp directory.
@@ -694,6 +700,7 @@ suite("mcpProblems", () => {
           if (!removed) await new Promise<void>((resolve) => setTimeout(resolve, 50));
         }
         assert.ok(removed, "endpoint socket should be removed on opt-out");
+        assert.deepStrictEqual(fs.readdirSync(discoveryDirectory), []);
         if (parentDir) {
           assert.ok(
             fs.existsSync(parentDir),
@@ -729,6 +736,7 @@ suite("mcpProblems", () => {
         }
       }
     } finally {
+      fs.rmSync(discoveryDirectory, { recursive: true, force: true });
       for (const r of restore) {
         r();
       }

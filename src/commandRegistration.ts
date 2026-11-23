@@ -1,4 +1,3 @@
-import { existsSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
@@ -62,6 +61,7 @@ import {
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
 import { boardReturnTarget } from "./todos/workspaceNavigation";
+import { installMcpServer } from "./mcp/installServer";
 
 export interface CommandServices {
   config: ConfigService;
@@ -79,6 +79,7 @@ export interface CommandServices {
   refreshSkillStatus: () => void;
   scanning?: Pick<CommandServices, "filter" | "treeState" | "treeProvider" | "boardViewProvider">;
   problemsEndpoint?: string;
+  problemsDiscoveryDirectory?: string;
 }
 
 type Register = (command: string, callback: (...args: any[]) => any) => void;
@@ -206,20 +207,31 @@ export function registerCommands(
       scanning = false;
     }
   });
+  async function prepareMcpServer(): Promise<string | undefined> {
+    try {
+      return await installMcpServer(context);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not prepare the Agendo MCP server: ${String(error)}`);
+      return undefined;
+    }
+  }
+
+  const diagnosticsArgs = services.problemsDiscoveryDirectory
+    ? ["--workspace-discovery", services.problemsDiscoveryDirectory]
+    : ["--endpoint", services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock")];
+  const diagnosticsNotice = services.problemsDiscoveryDirectory
+    ? "This configuration discovers the workspace after VS Code restarts. Without an explicit host, diagnostics require exactly one matching window."
+    : "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.";
+
   register(Command.ShowMcpConfig, async () => {
-    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
-    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
-    const serverPath = existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs");
-    // Endpoint exposed by the local diagnostics IPC bridge (plumbed into
-    // CommandServices by the extension host). Falls back to the stable
-    // convention the bundled MCP server defaults to (resources/mcp/ipc.mjs).
-    const endpoint = services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock");
-    // Generic shape consumed by any MCP client (Kilo, Claude, Codex, etc.).
+    const serverPath = await prepareMcpServer();
+    if (!serverPath) return;
+    // Generic MCP client configuration shape.
     const mcpConfig = {
       mcpServers: {
         agendo: {
           command: "node",
-          args: [serverPath, "--endpoint", endpoint],
+          args: [serverPath, ...diagnosticsArgs],
           description: "Agendo todo management",
         },
       },
@@ -230,24 +242,25 @@ export function registerCommands(
       language: "json",
     });
     vscode.window.showTextDocument(doc, { preview: false });
-    await vscode.window.showInformationMessage(
-      "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.",
-    );
+    await vscode.window.showInformationMessage(diagnosticsNotice);
   });
   register(Command.ShowKiloMcpConfig, async () => {
-    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
-    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
-    const serverPath = existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs");
-    // Endpoint exposed by the local diagnostics IPC bridge (plumbed into
-    // CommandServices by the extension host). Falls back to the stable
-    // convention the bundled MCP server defaults to (resources/mcp/ipc.mjs).
-    const endpoint = services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock");
+    const discoveryDirectory = services.problemsDiscoveryDirectory;
+    if (!discoveryDirectory) {
+      void vscode.window.showWarningMessage(
+        "Open a local folder or saved local workspace in VS Code, then run Agendo: Show Kilo MCP Configuration again. Persistent diagnostics configuration requires a local workspace.",
+      );
+      return;
+    }
+    const serverPath = await prepareMcpServer();
+    if (!serverPath) return;
     // Kilo-compatible shape.
     const mcpConfig = {
       mcp: {
         agendo: {
           type: "local",
-          command: ["node", serverPath, "--endpoint", endpoint],
+          command: ["node", serverPath, "--workspace-discovery", discoveryDirectory],
+          environment: { AGENDO_VSCODE_HOST_PID: "{env:KILO_PARENT_PID}" },
           enabled: true,
           description: "Agendo todo management and diagnostics",
         },
@@ -258,9 +271,9 @@ export function registerCommands(
       content: json,
       language: "json",
     });
-    vscode.window.showTextDocument(doc, { preview: false });
-    await vscode.window.showInformationMessage(
-      "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.",
+    await vscode.window.showTextDocument(doc, { preview: false });
+    void vscode.window.showInformationMessage(
+      "Use this entry in Kilo's user-level configuration, not project config. Kilo supplies the launching window's identity automatically after VS Code restarts.",
     );
   });
 }

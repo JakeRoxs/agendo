@@ -10,6 +10,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { discoverEndpoint } from './discovery.mjs';
 import {
   getProblemsHandler,
   getProblemsInputSchema,
@@ -29,16 +30,30 @@ import {
 } from '../canvas/agendo-work-session/todos.mjs';
 
 const workspaceRoot = resolveWorkspaceRoot(process.cwd());
-const endpoint = parseEndpoint(process.argv) ?? getIpcEndpoint();
+const endpoint = option('--endpoint');
+const discoveryDirectory = option('--workspace-discovery');
 
-function parseEndpoint(argv) {
+async function diagnosticsEndpoint() {
+  if (endpoint !== undefined) return endpoint;
+  if (!discoveryDirectory) return getIpcEndpoint();
+  const configuredPid = process.env.AGENDO_VSCODE_HOST_PID;
+  if (!configuredPid) return discoverEndpoint(discoveryDirectory);
+  const hostPid = Number(configuredPid);
+  if (!/^[0-9]+$/.test(configuredPid) || !Number.isSafeInteger(hostPid) || hostPid <= 1) {
+    throw new Error('invalid_input: AGENDO_VSCODE_HOST_PID must be a VS Code extension-host PID. For Kilo, use the generated entry in user-level config.');
+  }
+  return discoverEndpoint(discoveryDirectory, hostPid);
+}
+
+function option(name) {
+  const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--endpoint') {
+    if (arg === name) {
       return argv[i + 1] ?? undefined;
     }
-    if (arg.startsWith('--endpoint=')) {
-      return arg.slice('--endpoint='.length);
+    if (arg.startsWith(`${name}=`)) {
+      return arg.slice(name.length + 1);
     }
   }
   return undefined;
@@ -177,7 +192,7 @@ server.tool(
   'get_problems',
   'Get diagnostic problems for a path or workspace folder (read-only)',
   getProblemsInputSchema(),
-  async (args) => getProblemsHandler(endpoint, args)
+  async (args) => getProblemsHandler(await diagnosticsEndpoint(), args)
 );
 
 const transport = new StdioServerTransport();

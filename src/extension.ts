@@ -22,10 +22,17 @@ import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
 import { DiagnosticsService } from "./mcp/diagnosticsService";
+import { installMcpServer } from "./mcp/installServer";
 import { IpcBridge } from "./mcp/ipcBridge";
+import { workspaceDiscoveryDirectory } from "./mcp/workspaceDiscovery";
 
 export async function activate(context: vscode.ExtensionContext) {
   out`${Settings.Identifier} activated`;
+
+  // Refresh existing client configurations without changing their server path.
+  await installMcpServer(context).catch((error: unknown) => {
+    out`Could not prepare the Agendo MCP server: ${String(error)}`;
+  });
 
   const config = new ConfigService();
   const repository = new TodoRepository(config);
@@ -249,7 +256,12 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Expose the local diagnostics IPC endpoint to MCP configuration commands.
-  const problemsBridge = await IpcBridge.create({ context, diagnostics: new DiagnosticsService() });
+  const problemsDiscoveryDirectory = workspaceDiscoveryDirectory(context);
+  const problemsBridge = await IpcBridge.create({
+    context,
+    diagnostics: new DiagnosticsService(),
+    discoveryDirectory: problemsDiscoveryDirectory,
+  });
   context.subscriptions.push(problemsBridge);
 
   const services: CommandServices = {
@@ -273,6 +285,7 @@ export async function activate(context: vscode.ExtensionContext) {
       boardViewProvider: scanningBoardViewProvider,
     },
     problemsEndpoint: problemsBridge.getEndpoint(),
+    problemsDiscoveryDirectory,
   };
   registerCommands(context, services);
 

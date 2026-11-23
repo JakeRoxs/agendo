@@ -5,6 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { out } from "../output";
+import { publishEndpoint } from "./workspaceDiscovery";
 import type {
   DiagnosticsService,
   GetProblemsParams,
@@ -22,6 +23,7 @@ const REQUEST_TIMEOUT = 30_000; // 30 seconds
 export interface IpcBridgeOptions {
   context: vscode.ExtensionContext;
   diagnostics: DiagnosticsService;
+  discoveryDirectory?: string;
 }
 
 /**
@@ -70,6 +72,8 @@ export class IpcBridge implements vscode.Disposable {
   private readonly context: vscode.ExtensionContext;
   private readonly diagnostics: DiagnosticsService;
   private configListener: vscode.Disposable | undefined;
+  private readonly discoveryDirectory: string | undefined;
+  private registration: vscode.Disposable | undefined;
 
   /**
    * Create a bridge and await its initial startup. The constructor performs
@@ -92,6 +96,7 @@ export class IpcBridge implements vscode.Disposable {
   constructor(options: IpcBridgeOptions) {
     this.context = options.context;
     this.diagnostics = options.diagnostics;
+    this.discoveryDirectory = options.discoveryDirectory;
     this.endpoint = computeEndpoint();
 
     const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -130,14 +135,17 @@ export class IpcBridge implements vscode.Disposable {
     }
   }
 
-  private async update(): Promise<void> {
-    const enabled = vscode.workspace
+  private isEnabled(): boolean {
+    return isLocalDesktopHost() && vscode.workspace
       .getConfiguration("agendo")
       .get("mcp.problems.enabled", true);
-    if (!enabled || !isLocalDesktopHost()) {
+  }
+
+  private async update(): Promise<void> {
+    if (!this.isEnabled()) {
       // Opt-out or non-local host: stop listening but keep the config listener
       // alive so a later opt-in re-enables the bridge.
-      this.stopListening();
+      if (this.listening) this.stopListening();
       return;
     }
     if (this.listening) {
@@ -147,7 +155,7 @@ export class IpcBridge implements vscode.Disposable {
   }
 
   private async start(): Promise<void> {
-    if (this.disposed || this.listening) {
+    if (this.disposed || this.server) {
       return;
     }
     // Remove any stale socket left by an unclean shutdown so the server can
@@ -171,25 +179,37 @@ export class IpcBridge implements vscode.Disposable {
       );
     }
     this.server = server;
-    await new Promise<void>((resolve, reject) => {
-      server.listen({ path: this.endpoint }, () => resolve());
-      server.on("error", (error) => {
-        reject(
-          new McpError(
-            ProblemErrorCode.INTERNAL,
-            `Failed to listen on IPC endpoint: ${error instanceof Error ? error.message : String(error)}`,
-          ),
-        );
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once("close", resolve);
+        server.on("error", (error) => {
+          reject(new McpError(ProblemErrorCode.INTERNAL, `Failed to listen on IPC endpoint: ${error.message}`));
+        });
+        server.listen({ path: this.endpoint }, resolve);
       });
-    });
-    this.listening = true;
+      if (this.server !== server) return;
+      this.listening = true;
+      if (!this.isEnabled()) {
+        this.stopListening();
+        return;
+      }
+      if (this.discoveryDirectory) {
+        this.registration = publishEndpoint(this.discoveryDirectory, this.endpoint);
+      }
+    } catch (error) {
+      if (this.server === server) this.stopListening();
+      throw error;
+    }
   }
 
   /** Stop listening and clean up the owned endpoint; keep the config listener alive. */
   private stopListening(): void {
-    if (!this.listening) {
-      return;
+    try {
+      this.registration?.dispose();
+    } catch (error) {
+      out`Failed to remove diagnostics endpoint registration: ${error}`;
     }
+    this.registration = undefined;
     this.listening = false;
     if (this.server) {
       const server = this.server;

@@ -50,7 +50,9 @@ function mockCreateConnection(socket) {
 
 /** Parse the request bytes written to the fake socket. */
 function captureRequest(socket) {
-  return JSON.parse(Buffer.concat(socket.written).toString('utf8'));
+  const frame = Buffer.concat(socket.written).toString('utf8');
+  assert.ok(frame.endsWith('\n'), 'IPC requests must end with a newline');
+  return JSON.parse(frame);
 }
 
 describe('IPC endpoint constant', () => {
