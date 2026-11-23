@@ -122,7 +122,7 @@ function isWithin(uri: vscode.Uri, base: vscode.Uri): boolean {
 }
 
 function hasTraversalSegments(relPath: string): boolean {
-  return relPath.split(/[\\/]/).some((segment) => segment === "..");
+  return relPath.split(/[\\/]/).includes("..");
 }
 
 /**
@@ -152,6 +152,52 @@ function resolveSafePath(baseUri: vscode.Uri, relPath: string): vscode.Uri | und
 /** Workspace-relative path with `/` separators, relative to the selected workspace folder. */
 function relativePath(folderUri: vscode.Uri, uri: vscode.Uri): string {
   return path.relative(folderUri.fsPath, uri.fsPath).replace(/\\/g, "/");
+}
+
+/** Reject params that are not a plain JSON object. */
+function requireObjectParams(params: unknown): void {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    throw new McpError(ProblemErrorCode.INVALID_PARAMS, "params must be a JSON object.");
+  }
+}
+
+/** Reject a param that is present but not a string. */
+function requireStringParam(value: unknown, message: string): void {
+  if (value !== undefined && typeof value !== "string") {
+    throw new McpError(ProblemErrorCode.INVALID_PARAMS, message);
+  }
+}
+
+/** Validate the optional severity array. */
+function validateSeverity(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+  if (!Array.isArray(value)) {
+    throw new McpError(ProblemErrorCode.INVALID_PARAMS, "severity must be an array.");
+  }
+  const valid = new Set(["error", "warning", "information", "hint"]);
+  for (const severity of value) {
+    if (typeof severity !== "string" || !valid.has(severity)) {
+      throw new McpError(
+        ProblemErrorCode.INVALID_PARAMS,
+        `Invalid severity: ${String(severity)}.`,
+      );
+    }
+  }
+}
+
+/** Validate the optional limit. */
+function validateLimit(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be an integer.");
+  }
+  if (value < 1 || value > 500) {
+    throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be between 1 and 500.");
+  }
 }
 
 export class DiagnosticsService {
@@ -193,26 +239,7 @@ export class DiagnosticsService {
       ? new Set(params.severity.map((severity) => SeverityToVsCode[severity]))
       : undefined;
 
-    // Flatten matching (uri, diagnostic) records and filter each diagnostic
-    // individually by severity. A file with mixed severities contributes only
-    // the matching records.
-    const matched: Array<{ uri: vscode.Uri; diagnostic: vscode.Diagnostic }> = [];
-    for (const [uri, diagnostics] of all) {
-      // Workspace docs only: within the selected workspace folder.
-      if (!isWithin(uri, folder.uri)) {
-        continue;
-      }
-      // Path containment (file or directory).
-      if (targetUri && !isWithin(uri, targetUri)) {
-        continue;
-      }
-      for (const diagnostic of diagnostics) {
-        if (severitySet && !severitySet.has(diagnostic.severity)) {
-          continue;
-        }
-        matched.push({ uri, diagnostic });
-      }
-    }
+    const matched = this.collectMatching(folder.uri, targetUri, severitySet, all);
 
     const total = matched.length;
     let truncated = false;
@@ -222,10 +249,7 @@ export class DiagnosticsService {
       limited = matched.slice(0, limit);
     }
 
-    const diagnostics: ProblemDiagnostic[] = [];
-    for (const { uri, diagnostic } of limited) {
-      diagnostics.push(this.toProblemDiagnostic(folder.uri, uri, diagnostic));
-    }
+    const diagnostics = this.buildDiagnostics(folder.uri, limited);
 
     return {
       workspaceFolder: folder.name,
@@ -273,43 +297,17 @@ export class DiagnosticsService {
   /** Validate IPC params before using them, so malformed caller input yields a
    * stable INVALID_PARAMS wire error instead of an INTERNAL TypeError. */
   private validateParams(params: unknown): void {
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "params must be a JSON object.");
-    }
+    requireObjectParams(params);
     const p = params as {
       path?: unknown;
       workspaceFolder?: unknown;
       severity?: unknown;
       limit?: unknown;
     };
-    if (p.path !== undefined && typeof p.path !== "string") {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "path must be a string.");
-    }
-    if (p.workspaceFolder !== undefined && typeof p.workspaceFolder !== "string") {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "workspaceFolder must be a string.");
-    }
-    if (p.severity !== undefined) {
-      if (!Array.isArray(p.severity)) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "severity must be an array.");
-      }
-      const valid = new Set(["error", "warning", "information", "hint"]);
-      for (const severity of p.severity) {
-        if (typeof severity !== "string" || !valid.has(severity)) {
-          throw new McpError(
-            ProblemErrorCode.INVALID_PARAMS,
-            `Invalid severity: ${String(severity)}.`,
-          );
-        }
-      }
-    }
-    if (p.limit !== undefined) {
-      if (typeof p.limit !== "number" || !Number.isFinite(p.limit) || !Number.isInteger(p.limit)) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be an integer.");
-      }
-      if (p.limit < 1 || p.limit > 500) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be between 1 and 500.");
-      }
-    }
+    requireStringParam(p.path, "path must be a string.");
+    requireStringParam(p.workspaceFolder, "workspaceFolder must be a string.");
+    validateSeverity(p.severity);
+    validateLimit(p.limit);
   }
 
   private toProblemDiagnostic(folderUri: vscode.Uri, uri: vscode.Uri, diagnostic: vscode.Diagnostic): ProblemDiagnostic {
@@ -330,6 +328,46 @@ export class DiagnosticsService {
         },
       },
     };
+  }
+
+  /** Collect (uri, diagnostic) records within the folder, optionally bounded by
+   * targetUri, and filtered per diagnostic by severity. */
+  private collectMatching(
+    folderUri: vscode.Uri,
+    targetUri: vscode.Uri | undefined,
+    severitySet: Set<vscode.DiagnosticSeverity> | undefined,
+    all: Iterable<readonly [vscode.Uri, vscode.Diagnostic[]]>,
+  ): Array<{ uri: vscode.Uri; diagnostic: vscode.Diagnostic }> {
+    const matched: Array<{ uri: vscode.Uri; diagnostic: vscode.Diagnostic }> = [];
+    for (const [uri, diagnostics] of all) {
+      // Workspace docs only: within the selected workspace folder.
+      if (!isWithin(uri, folderUri)) {
+        continue;
+      }
+      // Path containment (file or directory).
+      if (targetUri && !isWithin(uri, targetUri)) {
+        continue;
+      }
+      for (const diagnostic of diagnostics) {
+        if (severitySet && !severitySet.has(diagnostic.severity)) {
+          continue;
+        }
+        matched.push({ uri, diagnostic });
+      }
+    }
+    return matched;
+  }
+
+  /** Convert matched records to wire diagnostics with one-based ranges. */
+  private buildDiagnostics(
+    folderUri: vscode.Uri,
+    limited: Array<{ uri: vscode.Uri; diagnostic: vscode.Diagnostic }>,
+  ): ProblemDiagnostic[] {
+    const diagnostics: ProblemDiagnostic[] = [];
+    for (const { uri, diagnostic } of limited) {
+      diagnostics.push(this.toProblemDiagnostic(folderUri, uri, diagnostic));
+    }
+    return diagnostics;
   }
 }
 

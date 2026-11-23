@@ -249,7 +249,7 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Expose the local diagnostics IPC endpoint to MCP configuration commands.
-  const problemsBridge = new IpcBridge({ context, diagnostics: new DiagnosticsService() });
+  const problemsBridge = await IpcBridge.create({ context, diagnostics: new DiagnosticsService() });
   context.subscriptions.push(problemsBridge);
 
   const services: CommandServices = {

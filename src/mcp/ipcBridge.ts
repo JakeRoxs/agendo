@@ -30,7 +30,7 @@ export interface IpcBridgeOptions {
  * on any host.
  */
 export function windowsNamedPipe(token: string): string {
-  return `\\\\.\\\\pipe\\\\agendo-${token}`;
+  return String.raw`\\.\pipe\agendo-${token}`;
 }
 
 /**
@@ -63,12 +63,31 @@ function computeEndpoint(): string {
  */
 export class IpcBridge implements vscode.Disposable {
   private server: net.Server | undefined;
-  private endpoint: string;
+  private readonly endpoint: string;
   private listening = false;
   private disposed = false;
+  private endpointCleaned = false;
   private readonly context: vscode.ExtensionContext;
   private readonly diagnostics: DiagnosticsService;
   private configListener: vscode.Disposable | undefined;
+
+  /**
+   * Create a bridge and await its initial startup. The constructor performs
+   * only synchronous initialization and handler registration; startup is
+   * asynchronous so callers can observe and handle failures before the bridge
+   * is handed off. On a startup failure the bridge is disposed and the error
+   * is re-thrown.
+   */
+  static async create(options: IpcBridgeOptions): Promise<IpcBridge> {
+    const bridge = new IpcBridge(options);
+    try {
+      await bridge.update();
+    } catch (error) {
+      bridge.dispose();
+      throw error;
+    }
+    return bridge;
+  }
 
   constructor(options: IpcBridgeOptions) {
     this.context = options.context;
@@ -88,8 +107,6 @@ export class IpcBridge implements vscode.Disposable {
     // Terminal disposal on extension deactivation.
     const lifecycleDisposable = new vscode.Disposable(() => this.dispose());
     this.context.subscriptions.push(lifecycleDisposable);
-
-    this.update();
   }
 
   /** Endpoint the MCP server connects to via `--endpoint`. */
@@ -104,6 +121,9 @@ export class IpcBridge implements vscode.Disposable {
     }
     this.disposed = true;
     this.stopListening();
+    // Clean up the owned endpoint/temp directory on terminal disposal even when
+    // the bridge was already stopped (no server-close callback will fire).
+    this.cleanupEndpoint();
     if (this.configListener) {
       this.configListener.dispose();
       this.configListener = undefined;
@@ -172,8 +192,9 @@ export class IpcBridge implements vscode.Disposable {
     }
     this.listening = false;
     if (this.server) {
-      this.server.close(() => {
-        this.server = undefined;
+      const server = this.server;
+      this.server = undefined;
+      server.close(() => {
         this.cleanupEndpoint();
       });
     } else {
@@ -181,35 +202,43 @@ export class IpcBridge implements vscode.Disposable {
     }
   }
 
+  /** Remove the owned endpoint and, on Unix, the private temp directory.
+   * Runs at most once and only on terminal disposal; a temporary opt-out
+   * intentionally leaves the temp directory so a later opt-in can reuse the
+   * same endpoint. */
   private cleanupEndpoint(): void {
-    if (this.disposed && !this.server) {
-      try {
-        if (process.platform === "win32") {
-          // Named pipes are released by closing the server; best-effort removal.
-          try {
-            fs.rmSync(this.endpoint, { recursive: true, force: true });
-          } catch {
-            /* ignore */
-          }
-        } else {
-          // Safe cleanup: only remove a socket we actually own.
-          try {
-            const stat = fs.statSync(this.endpoint);
-            if (stat.isSocket()) {
-              fs.rmSync(this.endpoint, { force: true });
-            }
-          } catch {
-            /* ignore */
-          }
-          try {
-            fs.rmSync(path.dirname(this.endpoint), { recursive: true, force: true });
-          } catch {
-            /* ignore */
-          }
-        }
-      } catch {
-        /* ignore */
+    if (!this.disposed || this.endpointCleaned) {
+      return;
+    }
+    if (process.platform === "win32") {
+      this.removeNamedPipeEndpoint();
+    } else {
+      this.removeUnixSocketEndpoint();
+    }
+    this.endpointCleaned = true;
+  }
+
+  private removeNamedPipeEndpoint(): void {
+    try {
+      fs.rmSync(this.endpoint, { recursive: true, force: true });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private removeUnixSocketEndpoint(): void {
+    try {
+      const stat = fs.statSync(this.endpoint);
+      if (stat.isSocket()) {
+        fs.rmSync(this.endpoint, { force: true });
       }
+    } catch {
+      /* ignore */
+    }
+    try {
+      fs.rmSync(path.dirname(this.endpoint), { recursive: true, force: true });
+    } catch {
+      /* ignore */
     }
   }
 
@@ -269,42 +298,60 @@ export class IpcBridge implements vscode.Disposable {
   /** Validate IPC params/fields before using them, so malformed caller input
    * yields a stable INVALID_PARAMS wire error instead of an INTERNAL TypeError. */
   private validateParams(params: unknown): void {
-    if (!params || typeof params !== "object" || Array.isArray(params)) {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "params must be a JSON object.");
-    }
+    this.requireJsonObject(params);
     const p = params as {
       path?: unknown;
       workspaceFolder?: unknown;
       severity?: unknown;
       limit?: unknown;
     };
-    if (p.path !== undefined && typeof p.path !== "string") {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "path must be a string.");
+    if (p.path !== undefined) {
+      this.requireString(p.path, "path must be a string.");
     }
-    if (p.workspaceFolder !== undefined && typeof p.workspaceFolder !== "string") {
-      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "workspaceFolder must be a string.");
+    if (p.workspaceFolder !== undefined) {
+      this.requireString(p.workspaceFolder, "workspaceFolder must be a string.");
     }
     if (p.severity !== undefined) {
-      if (!Array.isArray(p.severity)) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "severity must be an array.");
-      }
-      const valid = new Set(["error", "warning", "information", "hint"]);
-      for (const severity of p.severity) {
-        if (typeof severity !== "string" || !valid.has(severity)) {
-          throw new McpError(
-            ProblemErrorCode.INVALID_PARAMS,
-            `Invalid severity: ${String(severity)}.`,
-          );
-        }
-      }
+      this.requireSeverityArray(p.severity);
     }
     if (p.limit !== undefined) {
-      if (typeof p.limit !== "number" || !Number.isFinite(p.limit) || !Number.isInteger(p.limit)) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be an integer.");
+      this.requireLimit(p.limit);
+    }
+  }
+
+  private requireJsonObject(params: unknown): void {
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "params must be a JSON object.");
+    }
+  }
+
+  private requireString(value: unknown, message: string): void {
+    if (typeof value !== "string") {
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, message);
+    }
+  }
+
+  private requireSeverityArray(severity: unknown): void {
+    if (!Array.isArray(severity)) {
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "severity must be an array.");
+    }
+    const valid = new Set(["error", "warning", "information", "hint"]);
+    for (const item of severity) {
+      if (typeof item !== "string" || !valid.has(item)) {
+        throw new McpError(
+          ProblemErrorCode.INVALID_PARAMS,
+          `Invalid severity: ${String(item)}.`,
+        );
       }
-      if (p.limit < 1 || p.limit > 500) {
-        throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be between 1 and 500.");
-      }
+    }
+  }
+
+  private requireLimit(limit: unknown): void {
+    if (typeof limit !== "number" || !Number.isFinite(limit) || !Number.isInteger(limit)) {
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be an integer.");
+    }
+    if (limit < 1 || limit > 500) {
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, "limit must be between 1 and 500.");
     }
   }
 
@@ -321,18 +368,16 @@ export class IpcBridge implements vscode.Disposable {
     const total = result.total;
     let truncated = result.truncated;
     let kept = result.diagnostics;
-    let payload = JSON.stringify(response) + "\n";
+    let payload = `${JSON.stringify(response)}\n`;
     while (Buffer.byteLength(payload) > MAX_RESPONSE && kept.length > 0) {
       kept = kept.slice(0, kept.length / 2);
       truncated = true;
       response = { ...response, result: { ...result, diagnostics: kept, total, truncated } };
-      payload = JSON.stringify(response) + "\n";
+      payload = `${JSON.stringify(response)}\n`;
     }
     if (Buffer.byteLength(payload) > MAX_RESPONSE) {
       // Last resort: report an empty result so the reply always fits the frame.
       response = { ...response, result: { ...result, diagnostics: [], total, truncated: true } };
-      truncated = true;
-      payload = JSON.stringify(response) + "\n";
     }
     return response;
   }

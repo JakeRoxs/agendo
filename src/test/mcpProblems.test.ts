@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as net from "node:net";
+import * as path from "node:path";
 import * as vscode from "vscode";
 import { DiagnosticsService, ProblemErrorCode } from "../mcp/diagnosticsService";
 import type { GetProblemsParams, GetProblemsResult } from "../mcp/diagnosticsService";
@@ -552,7 +553,7 @@ suite("mcpProblems", () => {
   });
 
   test("windows named pipe path is exact", () => {
-    assert.strictEqual(windowsNamedPipe("abc-123"), "\\\\.\\\\pipe\\\\agendo-abc-123");
+    assert.strictEqual(windowsNamedPipe("abc-123"), "\\\\.\\pipe\\agendo-abc-123");
   });
 
   test("bridge stops on opt-out and re-enables on opt-in", async () => {
@@ -584,7 +585,7 @@ suite("mcpProblems", () => {
       });
       try {
       const service = new DiagnosticsService();
-      bridge = new IpcBridge({ context: mockContext, diagnostics: service });
+      bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
       if (!bridge) {
         throw new Error("bridge not created");
       }
@@ -643,6 +644,97 @@ suite("mcpProblems", () => {
     }
   });
 
+  test("bridge retains temp directory on opt-out and removes it on dispose", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
+      mockGetDiagnostics([]),
+    ];
+    let bridge: IpcBridge | undefined;
+    try {
+      const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
+      const originalGetConfiguration = vscode.workspace.getConfiguration;
+      const configListeners: Array<(event: never) => void> = [];
+      let problemsEnabled = true;
+      Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+        value: (listener: (event: never) => void) => {
+          configListeners.push(listener);
+          return { dispose() {} };
+        },
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: () => ({
+          get: (key: string, defaultValue?: unknown) =>
+            key === "mcp.problems.enabled" ? problemsEnabled : defaultValue,
+        }),
+        configurable: true,
+      });
+      try {
+        const service = new DiagnosticsService();
+        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
+        if (!bridge) {
+          throw new Error("bridge not created");
+        }
+        const endpoint = bridge.getEndpoint();
+        await waitForListening(endpoint);
+
+        // The private temp directory is only meaningful on Unix; Windows uses
+        // an OS named pipe with no per-window temp directory.
+        const parentDir = process.platform !== "win32" ? path.dirname(endpoint) : undefined;
+
+        // Opt-out: the socket is removed but the private temp directory is
+        // retained so a later opt-in can reuse the same endpoint.
+        problemsEnabled = false;
+        configListeners.forEach((l) => {
+          l({ affectsConfiguration: () => true } as never);
+        });
+        let removed = false;
+        for (let i = 0; i < 100 && !removed; i++) {
+          removed = !fs.existsSync(endpoint);
+          if (!removed) await new Promise<void>((resolve) => setTimeout(resolve, 50));
+        }
+        assert.ok(removed, "endpoint socket should be removed on opt-out");
+        if (parentDir) {
+          assert.ok(
+            fs.existsSync(parentDir),
+            "private temp directory should remain reusable during opt-out",
+          );
+        }
+
+        // Terminal disposal removes the owned endpoint/temp directory even
+        // though the bridge was already stopped.
+        bridge.dispose();
+        if (parentDir) {
+          let gone = false;
+          for (let i = 0; i < 100 && !gone; i++) {
+            gone = !fs.existsSync(parentDir);
+            if (!gone) await new Promise<void>((resolve) => setTimeout(resolve, 50));
+          }
+          assert.ok(gone, "private temp directory should be removed on dispose");
+        }
+      } finally {
+        Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+          value: originalOnDidChangeConfiguration,
+          configurable: true,
+        });
+        Object.defineProperty(vscode.workspace, "getConfiguration", {
+          value: originalGetConfiguration,
+          configurable: true,
+        });
+        if (bridge) {
+          bridge.dispose();
+        }
+        for (const r of restore) {
+          r();
+        }
+      }
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
   test("IpcBridge rejects oversized request frames and bounds responses", async () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
@@ -664,7 +756,7 @@ suite("mcpProblems", () => {
     let bridge: IpcBridge | undefined;
     try {
       const service = new DiagnosticsService();
-      bridge = new IpcBridge({ context: mockContext, diagnostics: service });
+      bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
       if (!bridge) {
         throw new Error("bridge not created");
       }
@@ -748,7 +840,7 @@ suite("mcpProblems", () => {
     let bridge: IpcBridge | undefined;
     try {
       const service = new DiagnosticsService();
-      bridge = new IpcBridge({ context: mockContext, diagnostics: service });
+      bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
       if (!bridge) {
         throw new Error("bridge not created");
       }
@@ -786,7 +878,7 @@ suite("mcpProblems", () => {
     let bridge: IpcBridge | undefined;
     try {
       const service = new DiagnosticsService();
-      bridge = new IpcBridge({ context: mockContext, diagnostics: service });
+      bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
       if (!bridge) {
         throw new Error("bridge not created");
       }
@@ -822,7 +914,7 @@ suite("mcpProblems", () => {
     ];
     try {
       const service = new DiagnosticsService();
-      const bridge = new IpcBridge({ context: mockContext, diagnostics: service });
+      const bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
       const endpoint = bridge.getEndpoint();
       await waitForListening(endpoint);
 
