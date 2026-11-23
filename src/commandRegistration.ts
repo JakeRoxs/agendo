@@ -1,5 +1,3 @@
-import * as os from "node:os";
-import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
@@ -78,8 +76,6 @@ export interface CommandServices {
   boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
   scanning?: Pick<CommandServices, "filter" | "treeState" | "treeProvider" | "boardViewProvider">;
-  problemsEndpoint?: string;
-  problemsDiscoveryDirectory?: string;
 }
 
 type Register = (command: string, callback: (...args: any[]) => any) => void;
@@ -216,22 +212,17 @@ export function registerCommands(
     }
   }
 
-  const diagnosticsArgs = services.problemsDiscoveryDirectory
-    ? ["--workspace-discovery", services.problemsDiscoveryDirectory]
-    : ["--endpoint", services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock")];
-  const diagnosticsNotice = services.problemsDiscoveryDirectory
-    ? "This configuration discovers the workspace after VS Code restarts. Without an explicit host, diagnostics require exactly one matching window."
-    : "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.";
-
   register(Command.ShowMcpConfig, async () => {
     const serverPath = await prepareMcpServer();
     if (!serverPath) return;
-    // Generic MCP client configuration shape.
+    // Generic MCP client configuration shape: no workspace, socket, or PID
+    // values are needed; the server discovers the matching VS Code diagnostics
+    // bridge from the client's working directory and inherited environment.
     const mcpConfig = {
       mcpServers: {
         agendo: {
           command: "node",
-          args: [serverPath, ...diagnosticsArgs],
+          args: [serverPath],
           description: "Agendo todo management",
         },
       },
@@ -242,25 +233,20 @@ export function registerCommands(
       language: "json",
     });
     vscode.window.showTextDocument(doc, { preview: false });
-    await vscode.window.showInformationMessage(diagnosticsNotice);
+    await vscode.window.showInformationMessage(
+      "This configuration needs no workspace, socket, or PID values. The server discovers the matching VS Code diagnostics bridge from the client's working directory and inherited environment.",
+    );
   });
   register(Command.ShowKiloMcpConfig, async () => {
-    const discoveryDirectory = services.problemsDiscoveryDirectory;
-    if (!discoveryDirectory) {
-      void vscode.window.showWarningMessage(
-        "Open a local folder or saved local workspace in VS Code, then run Agendo: Show Kilo MCP Configuration again. Persistent diagnostics configuration requires a local workspace.",
-      );
-      return;
-    }
     const serverPath = await prepareMcpServer();
     if (!serverPath) return;
-    // Kilo-compatible shape.
+    // Kilo-compatible shape: Kilo supplies the launching window's identity
+    // automatically through the inherited KILO_PARENT_PID environment variable.
     const mcpConfig = {
       mcp: {
         agendo: {
           type: "local",
-          command: ["node", serverPath, "--workspace-discovery", discoveryDirectory],
-          environment: { AGENDO_VSCODE_HOST_PID: "{env:KILO_PARENT_PID}" },
+          command: ["node", serverPath],
           enabled: true,
           description: "Agendo todo management and diagnostics",
         },
@@ -273,7 +259,7 @@ export function registerCommands(
     });
     await vscode.window.showTextDocument(doc, { preview: false });
     void vscode.window.showInformationMessage(
-      "Use this entry in Kilo's user-level configuration, not project config. Kilo supplies the launching window's identity automatically after VS Code restarts.",
+      "Use this entry in Kilo's user-level configuration, not project config. Kilo supplies the launching window's identity automatically via the inherited KILO_PARENT_PID environment variable; no workspace, socket, or PID values are needed.",
     );
   });
 }

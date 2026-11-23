@@ -35,7 +35,7 @@ suite("McpConfig commands", () => {
     return { extensionPath, globalStorageUri: vscode.Uri.file(join(directory, "global storage")) };
   }
 
-  async function setupCommands(problemsDiscoveryDirectory?: string) {
+  async function setupCommands() {
     const captured: Array<{ command: string; callback: () => Promise<void> }> = [];
     mock(vscode.commands, "registerCommand", (id: string, callback: () => Promise<void>) => {
       captured.push({ command: id, callback });
@@ -60,10 +60,7 @@ suite("McpConfig commands", () => {
       warnings.push(msg);
     });
 
-    const services: any = {
-      problemsEndpoint: "/tmp/agendo-problems.sock",
-      problemsDiscoveryDirectory,
-    };
+    const services: any = {};
     const context: any = {
       ...await makeContext("1.0.0", "// MCP server bundle"),
       subscriptions: [],
@@ -84,7 +81,7 @@ suite("McpConfig commands", () => {
     assert.strictEqual(await installMcpServer(updatedContext), first);
   });
 
-  test("ShowMcpConfig emits generic mcpServers shape", async () => {
+  test("ShowMcpConfig emits generic mcpServers shape without endpoint or discovery args", async () => {
     const { captured, openedDocs, shownDocs, infoMessages, stablePath } = await setupCommands();
     const showMcpConfig = captured.find((c) => c.command === Command.ShowMcpConfig)?.callback;
     assert.ok(showMcpConfig, "ShowMcpConfig callback should be registered");
@@ -93,25 +90,55 @@ suite("McpConfig commands", () => {
     assert.strictEqual(openedDocs.length, 1);
     const config = JSON.parse(openedDocs[0].content);
     const serverArgs = config.mcpServers.agendo.args;
-    assert.ok(Array.isArray(serverArgs) && serverArgs.length === 3);
-    assert.strictEqual(serverArgs[1], "--endpoint");
-    assert.strictEqual(serverArgs[2], "/tmp/agendo-problems.sock");
+    assert.ok(Array.isArray(serverArgs) && serverArgs.length === 1);
     assert.strictEqual(serverArgs[0], stablePath);
-    assert.strictEqual(await readFile(stablePath, "utf8"), "// MCP server bundle");
+    assert.strictEqual(config.mcpServers.agendo.command, "node");
     assert.strictEqual(config.mcpServers.agendo.description, "Agendo todo management");
+    assert.strictEqual(config.mcpServers.agendo.environment, undefined);
     assert.strictEqual(shownDocs.length, 1);
     assert.strictEqual(infoMessages.length, 1);
-    assert.ok(infoMessages[0].includes("diagnostics endpoint"));
+    assert.ok(infoMessages[0].includes("no workspace, socket, or PID values"));
   });
 
-  test("ShowKiloMcpConfig warns instead of emitting a temporary socket without a local workspace", async () => {
-    const { captured, openedDocs, warnings } = await setupCommands();
+  test("ShowKiloMcpConfig emits generic Kilo shape without workspace or host PID", async () => {
+    const { captured, openedDocs, shownDocs, infoMessages, warnings, stablePath } = await setupCommands();
     const showKiloMcpConfig = captured.find((c) => c.command === Command.ShowKiloMcpConfig)?.callback;
     assert.ok(showKiloMcpConfig, "ShowKiloMcpConfig callback should be registered");
     await showKiloMcpConfig();
 
-    assert.deepStrictEqual(openedDocs, []);
-    assert.match(warnings[0], /Open a local folder/);
+    assert.strictEqual(openedDocs.length, 1);
+    assert.strictEqual(warnings.length, 0);
+    const config = JSON.parse(openedDocs[0].content);
+    const kilo = config.mcp.agendo;
+    assert.strictEqual(kilo.type, "local");
+    assert.deepStrictEqual(kilo.command, ["node", stablePath]);
+    assert.strictEqual(kilo.enabled, true);
+    assert.strictEqual(kilo.environment, undefined);
+    assert.strictEqual(kilo.description, "Agendo todo management and diagnostics");
+    assert.strictEqual(shownDocs.length, 1);
+    assert.strictEqual(infoMessages.length, 1);
+    assert.ok(infoMessages[0].includes("KILO_PARENT_PID"));
+    assert.ok(infoMessages[0].includes("no workspace, socket, or PID values"));
+  });
+
+  test("both config formats are generic with no endpoint, discovery, or host PID values", async () => {
+    const { captured, openedDocs, infoMessages, stablePath } = await setupCommands();
+    for (const command of [Command.ShowMcpConfig, Command.ShowKiloMcpConfig]) {
+      const entry = captured.find((item) => item.command === command);
+      assert.ok(entry);
+      await entry.callback();
+    }
+    const generic = JSON.parse(openedDocs[0].content).mcpServers.agendo;
+    const kilo = JSON.parse(openedDocs[1].content).mcp.agendo;
+    assert.deepStrictEqual(generic.args, [stablePath]);
+    assert.strictEqual(generic.command, "node");
+    assert.strictEqual(generic.environment, undefined);
+    assert.deepStrictEqual(kilo.command, ["node", stablePath]);
+    assert.strictEqual(kilo.type, "local");
+    assert.strictEqual(kilo.enabled, true);
+    assert.strictEqual(kilo.environment, undefined);
+    assert.ok(infoMessages[0].includes("no workspace, socket, or PID values"));
+    assert.ok(infoMessages[1].includes("KILO_PARENT_PID"));
   });
 
   test("an untitled workspace with a local folder uses the same discovery key as the folder", () => {
@@ -136,25 +163,5 @@ suite("McpConfig commands", () => {
     assert.strictEqual(workspaceDiscoveryDirectory({
       globalStorageUri: storage.with({ scheme: "vscode-userdata" }),
     } as vscode.ExtensionContext), fileDirectory);
-  });
-
-  test("both config formats prefer stable discovery over the active socket", async () => {
-    const discovery = join(directory, "workspace registrations");
-    const { captured, openedDocs, infoMessages, stablePath } = await setupCommands(discovery);
-    for (const command of [Command.ShowMcpConfig, Command.ShowKiloMcpConfig]) {
-      const entry = captured.find((item) => item.command === command);
-      assert.ok(entry);
-      await entry.callback();
-    }
-    const generic = JSON.parse(openedDocs[0].content).mcpServers.agendo;
-    const kilo = JSON.parse(openedDocs[1].content).mcp.agendo;
-    assert.deepStrictEqual(generic.args, [stablePath, "--workspace-discovery", discovery]);
-    assert.deepStrictEqual(kilo.command, ["node", ...generic.args]);
-    assert.strictEqual(kilo.type, "local");
-    assert.strictEqual(kilo.enabled, true);
-    assert.strictEqual(generic.environment, undefined);
-    assert.deepStrictEqual(kilo.environment, { AGENDO_VSCODE_HOST_PID: "{env:KILO_PARENT_PID}" });
-    assert.ok(infoMessages[1].includes("user-level configuration"));
-    assert.ok(infoMessages.every((message) => message.includes("after VS Code restarts")));
   });
 });

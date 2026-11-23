@@ -23,7 +23,7 @@ const REQUEST_TIMEOUT = 30_000; // 30 seconds
 export interface IpcBridgeOptions {
   context: vscode.ExtensionContext;
   diagnostics: DiagnosticsService;
-  discoveryDirectory?: string;
+  discoveryDirectories?: string[];
 }
 
 /**
@@ -72,8 +72,8 @@ export class IpcBridge implements vscode.Disposable {
   private readonly context: vscode.ExtensionContext;
   private readonly diagnostics: DiagnosticsService;
   private configListener: vscode.Disposable | undefined;
-  private readonly discoveryDirectory: string | undefined;
-  private registration: vscode.Disposable | undefined;
+  private readonly discoveryDirectories: string[] | undefined;
+  private readonly registrations: Array<vscode.Disposable> = [];
 
   /**
    * Create a bridge and await its initial startup. The constructor performs
@@ -96,7 +96,7 @@ export class IpcBridge implements vscode.Disposable {
   constructor(options: IpcBridgeOptions) {
     this.context = options.context;
     this.diagnostics = options.diagnostics;
-    this.discoveryDirectory = options.discoveryDirectory;
+    this.discoveryDirectories = options.discoveryDirectories;
     this.endpoint = computeEndpoint();
 
     const configListener = vscode.workspace.onDidChangeConfiguration((event) => {
@@ -193,8 +193,11 @@ export class IpcBridge implements vscode.Disposable {
         this.stopListening();
         return;
       }
-      if (this.discoveryDirectory) {
-        this.registration = publishEndpoint(this.discoveryDirectory, this.endpoint);
+      if (this.discoveryDirectories) {
+        for (const directory of this.discoveryDirectories) {
+          const registration = publishEndpoint(directory, this.endpoint);
+          this.registrations.push(registration);
+        }
       }
     } catch (error) {
       if (this.server === server) this.stopListening();
@@ -202,14 +205,16 @@ export class IpcBridge implements vscode.Disposable {
     }
   }
 
-  /** Stop listening and clean up the owned endpoint; keep the config listener alive. */
+  /** Stop listening and clean up all registrations; keep the config listener alive. */
   private stopListening(): void {
-    try {
-      this.registration?.dispose();
-    } catch (error) {
-      out`Failed to remove diagnostics endpoint registration: ${error}`;
+    for (const registration of this.registrations) {
+      try {
+        registration.dispose();
+      } catch (error) {
+        out`Failed to remove diagnostics endpoint registration: ${error}`;
+      }
     }
-    this.registration = undefined;
+    this.registrations.length = 0;
     this.listening = false;
     if (this.server) {
       const server = this.server;

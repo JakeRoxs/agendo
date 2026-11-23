@@ -10,11 +10,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { discoverEndpoint } from './discovery.mjs';
 import {
   getProblemsHandler,
   getProblemsInputSchema,
-  getIpcEndpoint,
 } from './ipc.mjs';
 import {
   loadTodo,
@@ -29,20 +30,41 @@ import {
   resolveWorkspaceRoot,
 } from '../canvas/agendo-work-session/todos.mjs';
 
-const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+const serverPath = fileURLToPath(import.meta.url);
+const serverDir = dirname(serverPath);
+// Registration root is the `workspaces/` sibling of the executing stable
+// server bundle. A `--workspace-discovery` override preserves one-time
+// backwards compatibility.
+const registrationRoot = join(serverDir, 'workspaces');
+
 const endpoint = option('--endpoint');
 const discoveryDirectory = option('--workspace-discovery');
 
+const registryRoot = discoveryDirectory ?? registrationRoot;
+
+const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+
 async function diagnosticsEndpoint() {
   if (endpoint !== undefined) return endpoint;
-  if (!discoveryDirectory) return getIpcEndpoint();
-  const configuredPid = process.env.AGENDO_VSCODE_HOST_PID;
-  if (!configuredPid) return discoverEndpoint(discoveryDirectory);
-  const hostPid = Number(configuredPid);
-  if (!/^[0-9]+$/.test(configuredPid) || !Number.isSafeInteger(hostPid) || hostPid <= 1) {
-    throw new Error('invalid_input: AGENDO_VSCODE_HOST_PID must be a VS Code extension-host PID. For Kilo, use the generated entry in user-level config.');
+
+  // Kilo supplies the launching window's identity through the inherited
+  // KILO_PARENT_PID environment variable. Never require it in user config.
+  const kiloParentPid = process.env.KILO_PARENT_PID;
+  let hostPid = undefined;
+  if (kiloParentPid !== undefined && kiloParentPid !== '') {
+    if (!/^[0-9]+$/.test(kiloParentPid)) {
+      throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
+    }
+    const pid = Number(kiloParentPid);
+    if (!Number.isSafeInteger(pid) || pid <= 1) {
+      throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
+    }
+    hostPid = pid;
   }
-  return discoverEndpoint(discoveryDirectory, hostPid);
+
+  // The server's CWD is the workspace root for Kilo (Instance.directory); for
+  // generic clients it is wherever the MCP client launched the server.
+  return discoverEndpoint(registryRoot, { hostPid, cwd: process.cwd() });
 }
 
 function option(name) {
@@ -192,7 +214,13 @@ server.tool(
   'get_problems',
   'Get diagnostic problems for a path or workspace folder (read-only)',
   getProblemsInputSchema(),
-  async (args) => getProblemsHandler(await diagnosticsEndpoint(), args)
+  async (args) => {
+    const result = await getProblemsHandler(await diagnosticsEndpoint(), args);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      structuredContent: result,
+    };
+  }
 );
 
 const transport = new StdioServerTransport();

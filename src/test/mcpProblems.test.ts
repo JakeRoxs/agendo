@@ -673,7 +673,7 @@ suite("mcpProblems", () => {
       });
       try {
         const service = new DiagnosticsService();
-        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectory });
+        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectories: [discoveryDirectory] });
         if (!bridge) {
           throw new Error("bridge not created");
         }
@@ -737,6 +737,83 @@ suite("mcpProblems", () => {
       }
     } finally {
       fs.rmSync(discoveryDirectory, { recursive: true, force: true });
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("bridge publishes to all discovery directories and cleans them together on dispose", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
+      mockGetDiagnostics([]),
+    ];
+    let bridge: IpcBridge | undefined;
+    const discoveryDirectories = [
+      fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")),
+      fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")),
+    ];
+    try {
+      const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
+      const originalGetConfiguration = vscode.workspace.getConfiguration;
+      const configListeners: Array<(event: never) => void> = [];
+      let problemsEnabled = true;
+      Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+        value: (listener: (event: never) => void) => {
+          configListeners.push(listener);
+          return { dispose() {} };
+        },
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "getConfiguration", {
+        value: () => ({
+          get: (key: string, defaultValue?: unknown) =>
+            key === "mcp.problems.enabled" ? problemsEnabled : defaultValue,
+        }),
+        configurable: true,
+      });
+      try {
+        const service = new DiagnosticsService();
+        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectories });
+        if (!bridge) {
+          throw new Error("bridge not created");
+        }
+        const endpoint = bridge.getEndpoint();
+        await waitForListening(endpoint);
+
+        // One registration per discovery directory, same endpoint + hostPid.
+        for (const directory of discoveryDirectories) {
+          const registrations = fs.readdirSync(directory);
+          assert.strictEqual(registrations.length, 1);
+          const recordPath = path.join(directory, registrations[0]);
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), { endpoint, hostPid: process.pid });
+        }
+
+        // Terminal disposal cleans up registrations in every directory.
+        bridge.dispose();
+        for (const directory of discoveryDirectories) {
+          assert.deepStrictEqual(fs.readdirSync(directory), []);
+        }
+      } finally {
+        Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+          value: originalOnDidChangeConfiguration,
+          configurable: true,
+        });
+        Object.defineProperty(vscode.workspace, "getConfiguration", {
+          value: originalGetConfiguration,
+          configurable: true,
+        });
+        if (bridge) {
+          bridge.dispose();
+        }
+        for (const r of restore) {
+          r();
+        }
+      }
+    } finally {
+      for (const directory of discoveryDirectories) {
+        fs.rmSync(directory, { recursive: true, force: true });
+      }
       for (const r of restore) {
         r();
       }

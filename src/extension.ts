@@ -256,11 +256,24 @@ export async function activate(context: vscode.ExtensionContext) {
   );
 
   // Expose the local diagnostics IPC endpoint to MCP configuration commands.
-  const problemsDiscoveryDirectory = workspaceDiscoveryDirectory(context);
+  // Register the bridge's endpoint under every local workspace folder (and the
+  // saved workspace file as an alias) so the MCP server can route by CWD.
+  const localFolders = vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
+  const discoveryDirectories = localFolders
+    .map((folder) => workspaceDiscoveryDirectory(context, folder.uri))
+    .filter((directory): directory is string => Boolean(directory));
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile?.scheme === "file") {
+    const fileDirectory = workspaceDiscoveryDirectory(context, workspaceFile);
+    if (fileDirectory && !discoveryDirectories.includes(fileDirectory)) {
+      discoveryDirectories.push(fileDirectory);
+    }
+  }
+
   const problemsBridge = await IpcBridge.create({
     context,
     diagnostics: new DiagnosticsService(),
-    discoveryDirectory: problemsDiscoveryDirectory,
+    discoveryDirectories,
   });
   context.subscriptions.push(problemsBridge);
 
@@ -284,8 +297,6 @@ export async function activate(context: vscode.ExtensionContext) {
       treeProvider: scanningTreeProvider,
       boardViewProvider: scanningBoardViewProvider,
     },
-    problemsEndpoint: problemsBridge.getEndpoint(),
-    problemsDiscoveryDirectory,
   };
   registerCommands(context, services);
 
