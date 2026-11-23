@@ -2,7 +2,7 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Extension Version](https://img.shields.io/badge/extension-0.3.0-blue.svg)
+![Extension Version](https://img.shields.io/badge/extension-0.3.1-blue.svg)
 ![Skill Version](https://img.shields.io/badge/skill-1.6.2-orange.svg)
 ![Canvas Version](https://img.shields.io/badge/canvas-0.1.11-purple.svg)
 
