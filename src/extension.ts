@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
+import type { CommandServices } from "./commandRegistration";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
 import { out, outputChannel } from "./output";
@@ -20,9 +21,18 @@ import { findTodoCollisions } from "./todos/todoCollisions";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
+import { DiagnosticsService } from "./mcp/diagnosticsService";
+import { installMcpServer } from "./mcp/installServer";
+import { IpcBridge } from "./mcp/ipcBridge";
+import { workspaceDiscoveryDirectory } from "./mcp/workspaceDiscovery";
 
 export async function activate(context: vscode.ExtensionContext) {
   out`${Settings.Identifier} activated`;
+
+  // Refresh existing client configurations without changing their server path.
+  await installMcpServer(context).catch((error: unknown) => {
+    out`Could not prepare the Agendo MCP server: ${String(error)}`;
+  });
 
   const config = new ConfigService();
   const repository = new TodoRepository(config);
@@ -245,7 +255,29 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  registerCommands(context, {
+  // Expose the local diagnostics IPC endpoint to MCP configuration commands.
+  // Register the bridge's endpoint under every local workspace folder (and the
+  // saved workspace file as an alias) so the MCP server can route by CWD.
+  const localFolders = vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
+  const discoveryDirectories = localFolders
+    .map((folder) => workspaceDiscoveryDirectory(context, folder.uri))
+    .filter((directory): directory is string => Boolean(directory));
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile?.scheme === "file") {
+    const fileDirectory = workspaceDiscoveryDirectory(context, workspaceFile);
+    if (fileDirectory && !discoveryDirectories.includes(fileDirectory)) {
+      discoveryDirectories.push(fileDirectory);
+    }
+  }
+
+  const problemsBridge = await IpcBridge.create({
+    context,
+    diagnostics: new DiagnosticsService(),
+    discoveryDirectories,
+  });
+  context.subscriptions.push(problemsBridge);
+
+  const services: CommandServices = {
     config,
     repository,
     filter,
@@ -265,7 +297,8 @@ export async function activate(context: vscode.ExtensionContext) {
       treeProvider: scanningTreeProvider,
       boardViewProvider: scanningBoardViewProvider,
     },
-  });
+  };
+  registerCommands(context, services);
 
   await updateFilterContexts(filter);
   await updateFilterContexts(scanningFilter, "agendo.codeScanning");

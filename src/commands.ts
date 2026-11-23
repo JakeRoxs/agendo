@@ -70,4 +70,5 @@ export enum Command {
   ImportFromClipboardLoading = "agendo.importFromClipboard.loading",
   RefreshScanningTodo = "agendo.refreshScanningTodo",
   ShowMcpConfig = "agendo.showMcpConfig",
+  ShowKiloMcpConfig = "agendo.showKiloMcpConfig",
 }

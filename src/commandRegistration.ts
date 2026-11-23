@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
@@ -61,6 +59,7 @@ import {
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
 import { boardReturnTarget } from "./todos/workspaceNavigation";
+import { installMcpServer } from "./mcp/installServer";
 
 export interface CommandServices {
   config: ConfigService;
@@ -204,16 +203,26 @@ export function registerCommands(
       scanning = false;
     }
   });
+  async function prepareMcpServer(): Promise<string | undefined> {
+    try {
+      return await installMcpServer(context);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`Could not prepare the Agendo MCP server: ${String(error)}`);
+      return undefined;
+    }
+  }
+
   register(Command.ShowMcpConfig, async () => {
-    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
-    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
+    const serverPath = await prepareMcpServer();
+    if (!serverPath) return;
+    // Generic MCP client configuration shape: no workspace, socket, or PID
+    // values are needed; the server discovers the matching VS Code diagnostics
+    // bridge from the client's working directory and inherited environment.
     const mcpConfig = {
       mcpServers: {
         agendo: {
           command: "node",
-          args: [
-            existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs"),
-          ],
+          args: [serverPath],
           description: "Agendo todo management",
         },
       },
@@ -224,6 +233,34 @@ export function registerCommands(
       language: "json",
     });
     vscode.window.showTextDocument(doc, { preview: false });
+    await vscode.window.showInformationMessage(
+      "This configuration needs no workspace, socket, or PID values. The server discovers the matching VS Code diagnostics bridge from the client's working directory and inherited environment.",
+    );
+  });
+  register(Command.ShowKiloMcpConfig, async () => {
+    const serverPath = await prepareMcpServer();
+    if (!serverPath) return;
+    // Kilo-compatible shape: Kilo supplies the launching window's identity
+    // automatically through the inherited KILO_PARENT_PID environment variable.
+    const mcpConfig = {
+      mcp: {
+        agendo: {
+          type: "local",
+          command: ["node", serverPath],
+          enabled: true,
+          description: "Agendo todo management and diagnostics",
+        },
+      },
+    };
+    const json = JSON.stringify(mcpConfig, null, 2);
+    const doc = await vscode.workspace.openTextDocument({
+      content: json,
+      language: "json",
+    });
+    await vscode.window.showTextDocument(doc, { preview: false });
+    void vscode.window.showInformationMessage(
+      "Use this entry in Kilo's user-level configuration, not project config. Kilo supplies the launching window's identity automatically via the inherited KILO_PARENT_PID environment variable; no workspace, socket, or PID values are needed.",
+    );
   });
 }
 
