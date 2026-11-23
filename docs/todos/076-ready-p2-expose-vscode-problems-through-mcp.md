@@ -1,5 +1,5 @@
 ---
-status: pending
+status: ready
 priority: p2
 issue_id: "076"
 tags: [mcp, vscode, diagnostics, integration]
@@ -23,7 +23,7 @@ The initial implementation targets desktop VS Code on Linux and Windows, with an
 - MCP tool permissions use the exposed tool name. Kilo has special default read mapping for MCP resource-list/read tools, but not arbitrary custom tools (`kilocode/packages/opencode/src/permission/index.ts`). The generated config should not imply that this tool bypasses the user's configured agent permissions; test and document permission behavior for `agendo_get_problems`.
 - Agendo already depends on `@modelcontextprotocol/sdk` and has a bundle step for an MCP server (`package.json`), so protocol registration does not require introducing the SDK. `activate()` receives an extension context whose subscriptions are disposed by VS Code, while the current exported `deactivate()` has no explicit cleanup (`src/extension.ts`).
 - Agendo already has a generic stdio MCP server in `resources/mcp/server.mjs`, an MCP configuration command in `src/commandRegistration.ts`, and an MCP SDK runtime dependency. The server is launched as a separate process and currently handles todo operations; it cannot directly call the VS Code API. `get_problems` should extend this server and use an extension-host bridge, rather than introduce a second MCP server/configuration.
-- The existing “Show MCP Configuration” command emits a generic `mcpServers` config with the installed extension's bundled server path. The new tool should be available through this existing server entry; Kilo compatibility should be validated without making Kilo-specific config the product contract.
+- The existing “Show MCP Configuration” command emits a generic `mcpServers` config with the installed extension's bundled server path. Preserve that schema for existing clients and add a separate Kilo-compatible configuration command rather than replacing the generic format.
 - Local IPC needs platform-specific endpoint naming: Unix-domain sockets on Linux and named pipes on Windows. Node's `net` APIs can expose the same request protocol over either endpoint, but endpoint creation, permissions, stale endpoint handling, and cleanup differ by OS. On Windows, use a per-user location/name with appropriate access control rather than assuming Unix `chmod` semantics.
 - Node's `node:net` API supports Unix-domain sockets on non-Windows and named pipes on Windows, so one transport implementation can select an endpoint by `process.platform`. On Linux, filesystem socket paths are typically limited to 107 bytes; Node removes a socket on normal server close but a process crash can leave it behind. On Windows, pipe names use the `\\.\pipe\` namespace and do not persist after the final handle closes. Node's IPC server options default `readableAll` and `writableAll` to false; use the defaults and verify actual access behavior on supported Windows versions.
 - The extension manifest supports VS Code 1.103+, targets Node 18 for the MCP bundle, and already packages `resources/mcp/server.bundle.mjs` while excluding the unbundled source. Keep new runtime code within the Node/Vscode API baseline and test the actual packaged artifact, not only `server.mjs`.
@@ -44,12 +44,12 @@ Implement v1 as a local IPC bridge enabled by default for Linux and Windows desk
 
 1. Add a small diagnostics service that reads `vscode.languages.getDiagnostics()` on every request, resolves the workspace folder, validates workspace-relative path filters, applies severity and limit filters, and serializes stable JSON positions and optional source/code fields.
 2. Add `agendo.mcp.problems.enabled`, default true. Start the diagnostics bridge automatically on supported local desktop extension hosts and stop it when explicitly disabled. The existing “Show MCP Configuration” command displays config with the active window's endpoint without an enable prompt. For v1, label the generated endpoint/config as session-scoped and require users to regenerate it and reconnect after that VS Code window restarts.
-3. Put the IPC framing and endpoint selection behind a small shared helper used by extension host and stdio server. Use newline-delimited JSON, one request per connection, maximum request/response sizes, and a short timeout. Use a short private `mkdtemp`-created Unix socket directory on Linux and a per-user, random per-window named pipe on Windows. Do not enable Node's `readableAll` or `writableAll`. Never remove an active or unverified endpoint to recover from a bind collision.
+3. Implement matching IPC framing and endpoint selection on both sides using newline-delimited JSON and one request per connection, with bounded request/response sizes and timeouts. Use a short private `mkdtemp`-created Unix socket directory on Linux and a random per-window named pipe on Windows. Do not enable Node's `readableAll` or `writableAll`. Never remove an active or unverified endpoint to recover from a bind collision.
 4. Register the listener with `context.subscriptions` and ensure deactivation closes the listener and removes only its owned endpoint. Map absent/unreachable endpoint to a typed `editor_unavailable` tool error. Register protocol/log diagnostics only on stderr; keep MCP stdout clean.
-5. Add `get_problems` to the existing stdio server in `resources/mcp/server.mjs` using the already-installed SDK. Extend the existing “Show MCP Configuration” command to include the installed bundled server path and current window endpoint. Keep server key `agendo` and tool name `get_problems`; verify Kilo exposes `agendo_get_problems`, while preserving client-neutral MCP behavior and normal Kilo per-agent permissions.
+5. Add `get_problems` to the existing stdio server in `resources/mcp/server.mjs` using the already-installed SDK. Preserve the existing generic “Show MCP Configuration” output and add a separate Kilo configuration command; both must include the installed server path and current window endpoint. Keep server key `agendo` and tool name `get_problems`; verify Kilo exposes `agendo_get_problems`, while preserving client-neutral MCP behavior and normal Kilo per-agent permissions.
 6. Keep workspace-based endpoint discovery, remote/web extension-host support, cross-machine IPC, automatic edits to client configuration files, and `ambiguous_window` behavior out of v1.
 
-**Triage decision:** The diagnostics bridge is enabled by default, with `agendo.mcp.problems.enabled` as an explicit opt-out. Keep pending until the session-scoped configuration lifecycle and endpoint ownership/cleanup protocol are accepted; implementation has not been authorized by this triage note.
+**Triage decision:** The diagnostics bridge is enabled by default, with `agendo.mcp.problems.enabled` as an explicit opt-out. V1 uses a session-scoped endpoint; rerun “Show MCP Configuration” and reconnect after the originating window restarts. Linux uses a short, private temporary socket directory; Windows uses a random per-window named pipe.
 
 ## Tool Contract
 
@@ -90,12 +90,12 @@ The MCP server key is `agendo`; Kilo exposes the tool as `agendo_get_problems` a
 ## Acceptance Criteria
 
 - [ ] The diagnostics bridge starts by default (setting defaults true), can be explicitly disabled, works on Linux and Windows local desktop VS Code, and reads the current published diagnostic snapshot on each request, including diagnostics published for unsaved edits.
-- [ ] The tool supports workspace-relative file/directory filters, explicit multi-root folder selection, severity filtering, and a default limit of 100 capped at 500; invalid/out-of-scope paths are rejected.
-- [ ] Results include selected workspace folder, ISO-8601 UTC capture time, filtered total, truncation metadata, POSIX-style relative paths, one-based start/end line and character positions (converting VS Code's zero-based API positions), severity, message, and optional source/code values; non-file diagnostics are excluded from the filesystem-path contract.
-- [ ] The extension bridge uses an explicit per-window Unix socket on Linux (short private directory; path under OS limits) and named pipe on Windows (per-user scope and random window token), validates request framing/size, handles stale owned endpoints without deleting active/unverified endpoints, and closes/cleans up its endpoint on deactivation.
-- [ ] `get_problems` is added to the existing stdio MCP server, which reserves stdout for protocol messages, sends logs to stderr, bounds requests, and returns `editor_unavailable` when the configured extension host is unavailable.
-- [ ] The existing MCP configuration command generates a working session-scoped config using the installed server path and current window endpoint for supported generic MCP clients, explains that it must be regenerated/reconnected after the window restarts, and Kilo exposes `agendo_get_problems` without bypassing normal per-agent permissions.
-- [ ] Tests cover severity/path filtering, multi-root requirements, invalid selectors, limits/truncation, serialization, Linux socket and Windows named-pipe security/cleanup, remote/web host refusal, unavailable editor behavior, and bridge disposal.
+- [x] The tool supports workspace-relative file/directory filters, explicit multi-root folder selection, severity filtering, and a default limit of 100 capped at 500; invalid/out-of-scope paths are rejected.
+- [x] Results include selected workspace folder, ISO-8601 UTC capture time, filtered total, truncation metadata, POSIX-style relative paths, one-based start/end line and character positions (converting VS Code's zero-based API positions), severity, message, and optional source/code values; non-file diagnostics are excluded from the filesystem-path contract.
+- [ ] The extension bridge uses an explicit per-window Unix socket on Linux (short private directory; path under OS limits) and named pipe on Windows (per-user scope and random window token), validates request framing/size, handles stale owned endpoints without deleting active/unverified endpoints, and closes/cleans up its endpoint on deactivation. Linux is tested; actual Windows IPC/ACL and cleanup remain unverified on this host.
+- [x] `get_problems` is added to the existing stdio MCP server, which reserves stdout for protocol messages, sends logs to stderr, bounds requests, and returns `editor_unavailable` when the configured extension host is unavailable.
+- [x] The existing generic MCP configuration command retains its prior `mcpServers` schema and includes the current endpoint; a separate Kilo command emits Kilo's `mcp`/`type: local` schema. Both use the installed server path, explain session-scoped regeneration/reconnection after window restart, and preserve normal Kilo per-agent permissions.
+- [ ] Tests cover severity/path filtering, multi-root requirements, invalid selectors, limits/truncation, serialization, Linux socket and Windows named-pipe security/cleanup, remote/web host refusal, unavailable editor behavior, and bridge disposal. Linux cases are covered; actual Windows named-pipe behavior remains untested.
 - [ ] End-to-end validation introduces a language-server diagnostic in an unsaved buffer, queries that file through at least one generic MCP client and Kilo, and confirms returned message and position match VS Code; closing the originating window makes the same call return `editor_unavailable`.
 
 ## Technical Details
@@ -103,7 +103,7 @@ The MCP server key is `agendo`; Kilo exposes the tool as `agendo_get_problems` a
 - `src/extension.ts` — register/start the default-on diagnostics bridge from `activate()` and dispose it during deactivation.
 - Diagnostics service — read VS Code diagnostics, validate selected workspace/path scope, filter, and serialize results.
 - `resources/mcp/server.mjs` — add `get_problems` to the existing client-neutral stdio MCP server and communicate with the extension over local IPC.
-- `src/commandRegistration.ts` — extend the existing MCP configuration command with the current window's platform-specific IPC endpoint.
+- `src/commandRegistration.ts` / `src/commands.ts` / `package.json` — preserve generic MCP configuration and expose a separate Kilo-compatible configuration command, both with the current window's endpoint.
 - IPC bridge — use Unix-domain sockets on Linux and named pipes on Windows with platform-appropriate per-user protection and cleanup.
 - Kilo reference source — `/home/jake/repos/kilocode/packages/core/src/v1/config/mcp.ts`, `/home/jake/repos/kilocode/packages/opencode/src/mcp/index.ts`, `/home/jake/repos/kilocode/packages/opencode/src/mcp/catalog.ts`, and `/home/jake/repos/kilocode/packages/opencode/src/permission/index.ts`.
 
@@ -121,9 +121,9 @@ The MCP server key is `agendo`; Kilo exposes the tool as `agendo_get_problems` a
 
 ## Resume Context
 
-**Current state:** Agendo already has a client-neutral stdio MCP server/config command. Proposed v1 extends it with `get_problems`, with the diagnostics bridge on by default and an explicit opt-out setting; `node:net` supports Unix sockets (Linux) and named pipes (Windows). Linux socket path limits/crash recovery, Windows pipe access, local-only host support, one-based position conversion, and session-scoped config behavior are specified.
+**Current state:** Implementation is complete and Linux tests/build pass. The default-on extension bridge and existing client-neutral stdio server are integrated; generic and Kilo-specific configuration commands both pass the current per-window endpoint. Windows named-pipe execution and live unsaved-buffer end-to-end behavior remain unverified.
 
-**Next step:** Implement the default-on bridge setting and config command, shared bounded IPC helper, diagnostics filtering service, and `get_problems` tool with platform-specific tests.
+**Next step:** Run the end-to-end unsaved-diagnostic check with a generic MCP client and Kilo, then validate named-pipe creation, connection, opt-out/re-enable, and cleanup on Windows before completing the todo.
 
 ## Work Log
 
@@ -167,3 +167,51 @@ The MCP server key is `agendo`; Kilo exposes the tool as `agendo_get_problems` a
 - `vscode.languages.getDiagnostics()` exposes API positions as zero-based values, so the public tool must increment both line and character values to meet the one-based contract.
 - Per-window selection and persistent copied client configuration conflict unless endpoint identity is stable; v1 needs an explicit session-lifetime/reconnect statement or a separately designed workspace-ownership policy.
 - Default-on behavior is user's chosen baseline; the setting is an opt-out rather than a consent prompt.
+
+### 2026-11-23 - Begin implementation
+
+**By:** Kilo
+
+**Actions:**
+
+- Approved implementation by moving todo 076 to `in-progress`.
+- Split implementation across extension-host diagnostics/IPC and existing stdio MCP server/config generation with a matching newline-delimited JSON request/response contract.
+
+**Learnings:**
+
+- None yet
+
+### 2026-11-23 - MCP client implementation and review
+
+**By:** Kilo
+
+**Actions:**
+
+- Extended the existing MCP server/configuration flow with a `get_problems` IPC client and platform-appropriate default endpoint.
+- Review identified unbounded response accumulation and mismatch with documented optional/default/capped parameters; corrected response/request byte bounds, JSONL parsing/response ID validation, and parameter defaults/capping.
+- Corrected Windows named-pipe endpoint escaping in the default constant.
+- Ran `node --test resources/mcp/test/ipc.test.mjs`: 22 tests passed, 0 failed.
+
+**Learnings:**
+
+- The MCP client must enforce its own response bound even though the trusted extension bridge also validates request framing.
+- Default endpoint and explicit current-window endpoint should remain distinct; generated config must always pass the active bridge endpoint.
+
+### 2026-11-23 - Implementation and Linux validation
+
+**By:** Kilo
+
+**Actions:**
+
+- Added a default-on (`agendo.mcp.problems.enabled`, default `true`) extension-host diagnostics service and per-window IPC bridge; setting opt-out stops listening and can be reversed without restarting the window.
+- Added `get_problems` to Agendo's existing stdio MCP server with optional path/workspace/severity/limit filters, bounded UTF-8 JSONL IPC, default limit 100 capped at 500, per-diagnostic severity/limit handling, stable errors, relative paths, one-based positions, capture time, totals and truncation metadata.
+- Implemented Linux Unix-socket and Windows named-pipe endpoint construction, local desktop-host gating, extension disposal, and bounded response serialization.
+- Preserved the existing generic `Show MCP Configuration` format and added a separate Kilo-compatible configuration command; both include the per-window endpoint and session-reconnect notice.
+- `npm test`: 457 passing, 0 failing; includes diagnostics, IPC lifecycle, frame-limit, and both config-command suites.
+- `node --test resources/mcp/test/ipc.test.mjs`: 22 passing, 0 failing.
+- `npm run test:canvas`: 287 passing, 0 failing.
+- `npm run bundle`: passed; `git diff --check`: passed.
+
+**Learnings:**
+
+- On Linux, the bridge and generic/Kilo MCP command paths are covered by tests. Windows named-pipe execution and the live Go unsaved-buffer/client-disconnect scenario still require end-to-end validation on their target hosts.

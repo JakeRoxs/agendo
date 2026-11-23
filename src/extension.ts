@@ -2,6 +2,7 @@ import { basename } from "node:path";
 import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
 import { registerCommands, updateFilterContexts } from "./commandRegistration";
+import type { CommandServices } from "./commandRegistration";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
 import { out, outputChannel } from "./output";
@@ -20,6 +21,8 @@ import { findTodoCollisions } from "./todos/todoCollisions";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
+import { DiagnosticsService } from "./mcp/diagnosticsService";
+import { IpcBridge } from "./mcp/ipcBridge";
 
 export async function activate(context: vscode.ExtensionContext) {
   out`${Settings.Identifier} activated`;
@@ -245,7 +248,11 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
-  registerCommands(context, {
+  // Expose the local diagnostics IPC endpoint to MCP configuration commands.
+  const problemsBridge = new IpcBridge({ context, diagnostics: new DiagnosticsService() });
+  context.subscriptions.push(problemsBridge);
+
+  const services: CommandServices = {
     config,
     repository,
     filter,
@@ -265,7 +272,9 @@ export async function activate(context: vscode.ExtensionContext) {
       treeProvider: scanningTreeProvider,
       boardViewProvider: scanningBoardViewProvider,
     },
-  });
+    problemsEndpoint: problemsBridge.getEndpoint(),
+  };
+  registerCommands(context, services);
 
   await updateFilterContexts(filter);
   await updateFilterContexts(scanningFilter, "agendo.codeScanning");

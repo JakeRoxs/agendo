@@ -27,6 +27,7 @@ export enum Settings {
   SonarQubeUrl = "codeScanning.sonarqube.url",
   SonarQubeProjectKey = "codeScanning.sonarqube.projectKey",
   CriteriaChangesEnabled = "criteriaChanges.enabled",
+  McpProblemsEnabled = "mcp.problems.enabled",
 }
 
 /**

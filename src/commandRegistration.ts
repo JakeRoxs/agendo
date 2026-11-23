@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
@@ -77,6 +78,7 @@ export interface CommandServices {
   boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
   scanning?: Pick<CommandServices, "filter" | "treeState" | "treeProvider" | "boardViewProvider">;
+  problemsEndpoint?: string;
 }
 
 type Register = (command: string, callback: (...args: any[]) => any) => void;
@@ -207,13 +209,17 @@ export function registerCommands(
   register(Command.ShowMcpConfig, async () => {
     const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
     const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
+    const serverPath = existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs");
+    // Endpoint exposed by the local diagnostics IPC bridge (plumbed into
+    // CommandServices by the extension host). Falls back to the stable
+    // convention the bundled MCP server defaults to (resources/mcp/ipc.mjs).
+    const endpoint = services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock");
+    // Generic shape consumed by any MCP client (Kilo, Claude, Codex, etc.).
     const mcpConfig = {
       mcpServers: {
         agendo: {
           command: "node",
-          args: [
-            existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs"),
-          ],
+          args: [serverPath, "--endpoint", endpoint],
           description: "Agendo todo management",
         },
       },
@@ -224,6 +230,38 @@ export function registerCommands(
       language: "json",
     });
     vscode.window.showTextDocument(doc, { preview: false });
+    await vscode.window.showInformationMessage(
+      "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.",
+    );
+  });
+  register(Command.ShowKiloMcpConfig, async () => {
+    const serverDirectory = path.join(context.extensionPath, "resources", "mcp");
+    const bundledServer = path.join(serverDirectory, "server.bundle.mjs");
+    const serverPath = existsSync(bundledServer) ? bundledServer : path.join(serverDirectory, "server.mjs");
+    // Endpoint exposed by the local diagnostics IPC bridge (plumbed into
+    // CommandServices by the extension host). Falls back to the stable
+    // convention the bundled MCP server defaults to (resources/mcp/ipc.mjs).
+    const endpoint = services.problemsEndpoint ?? path.join(os.tmpdir(), "agendo-problems.sock");
+    // Kilo-compatible shape.
+    const mcpConfig = {
+      mcp: {
+        agendo: {
+          type: "local",
+          command: ["node", serverPath, "--endpoint", endpoint],
+          enabled: true,
+          description: "Agendo todo management and diagnostics",
+        },
+      },
+    };
+    const json = JSON.stringify(mcpConfig, null, 2);
+    const doc = await vscode.workspace.openTextDocument({
+      content: json,
+      language: "json",
+    });
+    vscode.window.showTextDocument(doc, { preview: false });
+    await vscode.window.showInformationMessage(
+      "This configuration uses the current VS Code window's diagnostics endpoint. Regenerate it and reconnect the MCP client after restarting this window.",
+    );
   });
 }
 

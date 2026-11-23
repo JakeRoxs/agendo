@@ -11,6 +11,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import {
+  getProblemsHandler,
+  getProblemsInputSchema,
+  getIpcEndpoint,
+} from './ipc.mjs';
+import {
   loadTodo,
   getRelations,
   listGroups,
@@ -24,6 +29,20 @@ import {
 } from '../canvas/agendo-work-session/todos.mjs';
 
 const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+const endpoint = parseEndpoint(process.argv) ?? getIpcEndpoint();
+
+function parseEndpoint(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--endpoint') {
+      return argv[i + 1] ?? undefined;
+    }
+    if (arg.startsWith('--endpoint=')) {
+      return arg.slice('--endpoint='.length);
+    }
+  }
+  return undefined;
+}
 
 const server = new McpServer({
   name: 'agendo',
@@ -152,6 +171,13 @@ server.tool(
     const filePath = findTodoFile(todoId, workspaceRoot);
     return filePath ? { path: filePath } : { error: 'Todo not found' };
   }
+);
+
+server.tool(
+  'get_problems',
+  'Get diagnostic problems for a path or workspace folder (read-only)',
+  getProblemsInputSchema(),
+  async (args) => getProblemsHandler(endpoint, args)
 );
 
 const transport = new StdioServerTransport();
