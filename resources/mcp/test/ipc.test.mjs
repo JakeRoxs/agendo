@@ -61,7 +61,7 @@ describe('IPC endpoint constant', () => {
     assert.ok(IPC_ENDPOINT.length > 0);
     assert.strictEqual(IPC_ENDPOINT, getIpcEndpoint());
     if (process.platform === 'win32') {
-      assert.ok(IPC_ENDPOINT.startsWith('\\\\.\\\\pipe\\\\'));
+      assert.strictEqual(IPC_ENDPOINT, String.raw`\\.\pipe\agendo-problems.sock`);
     } else {
       assert.ok(IPC_ENDPOINT.includes(os.tmpdir()));
     }
@@ -320,6 +320,7 @@ describe('getProblemsHandler', () => {
 
   it('rejects fractional limit', async () => {
     await assert.rejects(getProblemsHandler('endpoint', { path: 'x', workspaceFolder: 'x', severity: [], limit: 1.5 }), (err) => {
+      assert.ok(err instanceof TypeError);
       assert.ok(err.message.startsWith('invalid_input:'));
       return true;
     });

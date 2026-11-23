@@ -10,7 +10,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverEndpoint } from './discovery.mjs';
 import {
@@ -50,9 +50,9 @@ async function diagnosticsEndpoint() {
   // Kilo supplies the launching window's identity through the inherited
   // KILO_PARENT_PID environment variable. Never require it in user config.
   const kiloParentPid = process.env.KILO_PARENT_PID;
-  let hostPid = undefined;
+  let hostPid;
   if (kiloParentPid !== undefined && kiloParentPid !== '') {
-    if (!/^[0-9]+$/.test(kiloParentPid)) {
+    if (!/^\d+$/.test(kiloParentPid)) {
       throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
     }
     const pid = Number(kiloParentPid);
@@ -86,10 +86,12 @@ const server = new McpServer({
   version: '0.3.0',
 });
 
-server.tool(
+server.registerTool(
   'get_todo_context',
-  'Get full context for a todo including criteria, dependencies, work log, and scanner evidence',
-  { todoId: z.string().describe('Todo ID, e.g. "001" or "sq-123"') },
+  {
+    description: 'Get full context for a todo including criteria, dependencies, work log, and scanner evidence',
+    inputSchema: { todoId: z.string().describe('Todo ID, e.g. "001" or "sq-123"') },
+  },
   async ({ todoId }) => {
     const todo = loadTodo(todoId, workspaceRoot);
     const relations = getRelations(todoId, workspaceRoot);
@@ -114,10 +116,9 @@ server.tool(
   }
 );
 
-server.tool(
+server.registerTool(
   'list_groups',
-  'List all todo groups with member counts',
-  {},
+  { description: 'List all todo groups with member counts', inputSchema: {} },
   async () => {
     const groups = listGroups(workspaceRoot);
     return groups.map(g => ({
@@ -127,10 +128,9 @@ server.tool(
   }
 );
 
-server.tool(
+server.registerTool(
   'list_group_members',
-  'List all todos in a group',
-  { groupName: z.string().describe('Group name') },
+  { description: 'List all todos in a group', inputSchema: { groupName: z.string().describe('Group name') } },
   async ({ groupName }) => {
     const members = loadGroupTodos(groupName, workspaceRoot);
     return members.map(m => ({
@@ -142,78 +142,87 @@ server.tool(
   }
 );
 
-server.tool(
+server.registerTool(
   'get_dependencies',
-  'Get what blocks a todo and what it blocks',
-  { todoId: z.string().describe('Todo ID') },
+  { description: 'Get what blocks a todo and what it blocks', inputSchema: { todoId: z.string().describe('Todo ID') } },
   async ({ todoId }) => {
     return getRelations(todoId, workspaceRoot);
   }
 );
 
-server.tool(
+server.registerTool(
   'set_status',
-  'Set the status of a todo',
   {
-    todoId: z.string().describe('Todo ID'),
-    status: z.enum(['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled']).describe('New status'),
+    description: 'Set the status of a todo',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      status: z.enum(['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled']).describe('New status'),
+    },
   },
   async ({ todoId, status }) => {
     return setTodoStatus(todoId, status, workspaceRoot);
   }
 );
 
-server.tool(
+server.registerTool(
   'set_priority',
-  'Set the priority of a todo',
   {
-    todoId: z.string().describe('Todo ID'),
-    priority: z.enum(['p1', 'p2', 'p3']).describe('New priority'),
+    description: 'Set the priority of a todo',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      priority: z.enum(['p1', 'p2', 'p3']).describe('New priority'),
+    },
   },
   async ({ todoId, priority }) => {
     return setTodoPriority(todoId, priority, workspaceRoot);
   }
 );
 
-server.tool(
+server.registerTool(
   'set_group',
-  'Set or clear the group of a todo',
   {
-    todoId: z.string().describe('Todo ID'),
-    group: z.string().describe('Group name (empty string to clear)'),
+    description: 'Set or clear the group of a todo',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      group: z.string().describe('Group name (empty string to clear)'),
+    },
   },
   async ({ todoId, group }) => {
     return setTodoGroup(todoId, group, workspaceRoot);
   }
 );
 
-server.tool(
+server.registerTool(
   'toggle_criterion',
-  'Mark an acceptance criterion as met or unmet',
   {
-    todoId: z.string().describe('Todo ID'),
-    criterionIndex: z.number().int().min(0).describe('Criterion index (0-based)'),
-    met: z.boolean().describe('Whether the criterion is met'),
+    description: 'Mark an acceptance criterion as met or unmet',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      criterionIndex: z.number().int().min(0).describe('Criterion index (0-based)'),
+      met: z.boolean().describe('Whether the criterion is met'),
+    },
   },
   async ({ todoId, criterionIndex, met }) => {
     return setCriterionMet(todoId, criterionIndex, met, workspaceRoot);
   }
 );
 
-server.tool(
+server.registerTool(
   'get_todo_file',
-  'Get the filesystem path of a todo file',
-  { todoId: z.string().describe('Todo ID') },
+  { description: 'Get the filesystem path of a todo file', inputSchema: { todoId: z.string().describe('Todo ID') } },
   async ({ todoId }) => {
     const filePath = findTodoFile(todoId, workspaceRoot);
     return filePath ? { path: filePath } : { error: 'Todo not found' };
   }
 );
 
-server.tool(
+server.registerTool(
   'get_problems',
-  'Get diagnostic problems for a path or workspace folder (read-only)',
-  getProblemsInputSchema(),
+  {
+    description: 'Get diagnostic problems for a path or workspace folder (read-only)',
+    inputSchema: getProblemsInputSchema(),
+    annotations: { readOnlyHint: true },
+  },
   async (args) => {
     const result = await getProblemsHandler(await diagnosticsEndpoint(), args);
     return {

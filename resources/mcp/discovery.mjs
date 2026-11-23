@@ -4,14 +4,14 @@ import { createConnection } from 'node:net';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 const uuid = '[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}';
-const registrationName = new RegExp(`^${uuid}\\.json$`);
+const registrationName = new RegExp(String.raw`^${uuid}\.json$`);
 const unixDirectory = new RegExp(`^agendo-ipc-${uuid}$`);
 const pipePrefix = String.raw`\\.\pipe\agendo-`;
 const pipeToken = new RegExp(`^${uuid}$`);
 
 /** Canonicalize an absolute filesystem path for cross-platform identity comparison. */
 function normalizePath(path) {
-  const normalized = resolve(path).replace(/\\/g, '/');
+  const normalized = resolve(path).replaceAll('\\', '/');
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }
 
@@ -44,6 +44,66 @@ async function readEndpoint(fullPath, name) {
     if (error.code === 'ENOENT' || error instanceof SyntaxError) return undefined;
     throw error;
   }
+}
+
+async function readDirectory(directory) {
+  try {
+    return await readdir(directory, { withFileTypes: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+
+async function readRegistrations(directory, identity) {
+  const entries = await readDirectory(directory);
+  const files = entries.filter((entry) => entry.isFile() && registrationName.test(entry.name));
+  const records = await Promise.all(files.map((entry) => readEndpoint(join(directory, entry.name), entry.name)));
+  return records.filter(Boolean).map((record) => ({ ...record, identity }));
+}
+
+async function collectRegistrations(directory) {
+  const entries = await readDirectory(directory);
+  const directIdentity = /^[a-f0-9]{64}$/.test(basename(directory)) ? basename(directory) : undefined;
+  const directories = entries.filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name));
+  const nested = await Promise.all(directories.map((entry) => readRegistrations(join(directory, entry.name), entry.name)));
+  const direct = await readRegistrations(directory, directIdentity);
+  return [...direct, ...nested.flat()];
+}
+
+function selectHostRecords(records, hostPid) {
+  if (hostPid === undefined) return records;
+  const matching = records.filter((record) => record.hostPid === hostPid);
+  if (matching.length === 0) {
+    throw new Error('editor_unavailable: The originating VS Code window has no listening Agendo diagnostics bridge.');
+  }
+  return matching;
+}
+
+function scopeToWorkspace(records, cwdIdentity) {
+  if (cwdIdentity === undefined) return records;
+  const matching = records.filter((record) => record.identity === cwdIdentity);
+  return matching.length ? matching : records;
+}
+
+async function liveEndpoints(records) {
+  const endpoints = [...new Set(records.map((record) => record.endpoint))];
+  const live = await Promise.all(endpoints.map(async (endpoint) => await isListening(endpoint) ? endpoint : undefined));
+  return live.filter(Boolean);
+}
+
+function selectEndpoint(live, { hostPid, cwdIdentity }) {
+  if (live.length === 1) return live[0];
+  if (live.length > 1) {
+    throw new Error('ambiguous_window: Multiple VS Code diagnostics bridges match and the originating window cannot be uniquely identified. Use an explicit --endpoint or leave only one matching window open.');
+  }
+  if (hostPid !== undefined) {
+    throw new Error('editor_unavailable: The originating VS Code window has no listening Agendo diagnostics bridge.');
+  }
+  if (cwdIdentity !== undefined) {
+    throw new Error('editor_unavailable: No VS Code diagnostics bridge is listening for this workspace. Open it in VS Code with Agendo enabled.');
+  }
+  throw new Error('editor_unavailable: No VS Code diagnostics bridge is listening for this workspace. Open it in VS Code with Agendo enabled.');
 }
 
 function isListening(endpoint) {
@@ -87,68 +147,8 @@ function isListening(endpoint) {
 export async function discoverEndpoint(directory, options = {}) {
   const { hostPid, cwd } = options;
   const cwdIdentity = cwd ? workspaceIdentity(resolve(cwd)) : undefined;
-
-  const records = [];
-  const readDirectory = async (registrationDirectory, identity) => {
-    let entries;
-    try {
-      entries = await readdir(registrationDirectory, { withFileTypes: true });
-    } catch (error) {
-      if (error.code === 'ENOENT') return;
-      throw error;
-    }
-    for (const entry of entries) {
-      if (!entry.isFile() || !registrationName.test(entry.name)) continue;
-      const record = await readEndpoint(join(registrationDirectory, entry.name), entry.name);
-      if (record) records.push({ ...record, identity });
-    }
-  };
-
-  let directories;
-  try {
-    directories = await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
-    directories = [];
-  }
-  const directoryIdentity = /^[a-f0-9]{64}$/.test(basename(directory)) ? basename(directory) : undefined;
-  await readDirectory(directory, directoryIdentity);
-  for (const entry of directories) {
-    if (entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name)) {
-      await readDirectory(join(directory, entry.name), entry.name);
-    }
-  }
-
-  // Kilo clients supply the originating extension-host PID. Filter to that host
-  // only; never fall back to another PID.
-  let candidates = records;
-  if (hostPid !== undefined) {
-    candidates = records.filter((record) => record.hostPid === hostPid);
-    if (candidates.length === 0) {
-      throw new Error('editor_unavailable: The originating VS Code window has no listening Agendo diagnostics bridge.');
-    }
-  }
-
-  // Prefer registrations whose workspace identity matches the client's CWD.
-  let scoped = candidates;
-  if (cwdIdentity !== undefined) {
-    const cwdMatches = candidates.filter((record) => record.identity === cwdIdentity);
-    if (cwdMatches.length > 0) scoped = cwdMatches;
-  }
-
-  const endpoints = [...new Set(scoped.map((record) => record.endpoint))];
-  const live = (await Promise.all(endpoints.map(async (endpoint) => await isListening(endpoint) ? endpoint : undefined))).filter(Boolean);
-
-  if (live.length === 1) return live[0];
-  if (live.length > 1) {
-    throw new Error('ambiguous_window: Multiple VS Code diagnostics bridges match and the originating window cannot be uniquely identified. Use an explicit --endpoint or leave only one matching window open.');
-  }
-
-  if (hostPid !== undefined) {
-    throw new Error('editor_unavailable: The originating VS Code window has no listening Agendo diagnostics bridge.');
-  }
-  if (cwdIdentity !== undefined) {
-    throw new Error('editor_unavailable: No VS Code diagnostics bridge is listening for this workspace. Open it in VS Code with Agendo enabled.');
-  }
-  throw new Error('editor_unavailable: No VS Code diagnostics bridge is listening for this workspace. Open it in VS Code with Agendo enabled.');
+  const records = await collectRegistrations(directory);
+  const candidates = selectHostRecords(records, hostPid);
+  const scoped = scopeToWorkspace(candidates, cwdIdentity);
+  return selectEndpoint(await liveEndpoints(scoped), { hostPid, cwdIdentity });
 }

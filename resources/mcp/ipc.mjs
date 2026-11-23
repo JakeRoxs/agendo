@@ -32,7 +32,7 @@ const NEWLINE_BYTE = 0x0a;
 
 /** Default IPC endpoint used when --endpoint is not supplied. */
 export const IPC_ENDPOINT = process.platform === 'win32'
-  ? '\\\\.\\pipe\\agendo-problems.sock'
+  ? String.raw`\\.\pipe\agendo-problems.sock`
   : path.join(os.tmpdir(), 'agendo-problems.sock');
 
 export function getIpcEndpoint() {
@@ -216,12 +216,12 @@ export async function getProblemsHandler(endpoint, { path, workspaceFolder, seve
   let effectiveLimit = 100;
   if (limit !== undefined) {
     if (!Number.isInteger(limit)) {
-      throw new Error('invalid_input: limit must be an integer');
+      throw new TypeError('invalid_input: limit must be an integer');
     }
     if (limit < 1) {
       throw new Error('invalid_input: limit must be a positive integer');
     }
-    effectiveLimit = limit > 500 ? 500 : limit;
+    effectiveLimit = Math.min(limit, 500);
   }
   const params = buildProblemsParams({ path, workspaceFolder, severity, limit: effectiveLimit });
   return sendGetProblemsRequest(endpoint, params);
