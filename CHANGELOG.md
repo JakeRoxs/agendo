@@ -4,6 +4,33 @@ All notable changes to the Agendo extension are documented here.
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-23
+
+Includes Agendo skill **1.7.0**
+
+### Added
+
+- Read-only `get_problems` MCP tool for diagnostics published by the active VS Code workspace, including unsaved-buffer diagnostics when language extensions publish them
+- Default-on VS Code diagnostics bridge with an opt-out setting, using local Unix sockets on Linux and named pipes on Windows
+- Workspace-based endpoint discovery for generic MCP clients and automatic Kilo window binding through its inherited VS Code host identity
+- Separate Kilo-compatible MCP configuration while preserving the generic `mcpServers` configuration format
+- SonarQube skill guidance that prefers live VS Code Problems and falls back to Agendo MCP while distinguishing IDE snapshots from server scan results
+
+### Changed
+
+- MCP server bundles are copied to stable extension global storage and refreshed on activation, so generated client configuration does not depend on a versioned extension-install path
+- Generated MCP configurations use runtime workspace and host discovery instead of embedding temporary socket paths or host identifiers
+
+### Fixed
+
+- Terminate MCP diagnostics requests with the newline required by the extension bridge's JSONL protocol
+- Return diagnostics in standard MCP text content and structured content so clients can display tool results
+- Preserve diagnostic-level severity filtering, totals, truncation, and workspace-relative paths across the MCP bridge
+
+### Upgrade notes
+
+- Run **Agendo: Show Kilo MCP Configuration** once after upgrading and replace the existing `mcp.agendo` entry in Kilo's user-level configuration; later VS Code restarts do not require another config edit
+
 ## [0.3.1] - 2026-10-27
 
 Includes work-session canvas **0.1.11**.

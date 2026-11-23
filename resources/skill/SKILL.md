@@ -154,6 +154,33 @@ import identity. Preserve these markers and metadata. Keep work logs, decisions,
 the managed block. Importing findings does not authorize status changes; missing alerts do not prove
 completion. The lifecycle and verification rules below apply equally to scanner todos.
 
+#### SonarQube Diagnostics Source Selection
+
+When collecting SonarQube-related findings for the current VS Code workspace, prefer live editor
+diagnostics in this order:
+
+1. Use a host-provided VS Code Problems tool if one is available in the current tool set.
+2. If no host Problems tool is available, or it fails because the editor/connection is unavailable,
+   call Agendo MCP `agendo_get_problems` as the fallback. Do not use this fallback to mask invalid
+   arguments; correct the workspace/path/severity parameters and retry the original tool first.
+3. For a multi-root workspace, provide the selected `workspaceFolder`. Use workspace-relative
+   `path` to scope a file or directory, and use supported severity values only. The Agendo tool
+   defaults to 100 results and caps `limit` at 500; if `truncated` is true, narrow the scope and
+   query again rather than treating the partial result as a complete scan.
+
+These tools return a point-in-time snapshot of diagnostics currently published by VS Code language
+extensions. They can include diagnostics for unsaved edits when an extension publishes them, but
+they are not a complete SonarQube server issue inventory. An empty diagnostics array means no
+diagnostics were published in the requested scope at capture time; it does not prove that the
+SonarQube server has no open findings. Do not issue a `read` operation to try to populate Problems.
+
+For SonarQube scanner imports, include only results whose diagnostic `source` and/or `code`
+identifies a SonarQube/SonarLint rule. Keep their source and capture time in Scanner Evidence, and
+do not silently merge IDE diagnostics with server-scanner results or claim that either cleared the
+other. If a diagnostic has no stable SonarQube issue identity, do not fabricate an `sq-*` scanner
+identity or `scan_identity`; track it as a regular todo instead. Use the scanner-specific ID and
+identity format only when the SonarQube source provides a stable issue identity.
+
 A file-based import is a focus for investigation, not a prohibition against necessary changes in
 related files. A finding reported in one file may require changes to a shared helper, caller, test,
 or other related file. When working a scanner todo:

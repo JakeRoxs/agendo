@@ -55,7 +55,10 @@ are structured frontmatter, while `group`, `tags`, and an external `key` are opt
 
 CodeQL and SonarQube todos use separate `cql-` and `sq-` IDs and source-specific folders. The skill
 can work on those imported todos, but it does not fetch scanner alerts; use **Agendo: Import
-Code-Scanning Todos...** in the extension for scanner imports.
+Code-Scanning Todos...** in the extension for server-scanner imports. When inspecting live
+SonarQube IDE diagnostics, the skill prefers a host-provided VS Code Problems tool and falls back to
+Agendo's read-only MCP diagnostics tool when that is unavailable. IDE diagnostics are a point-in-time
+snapshot, not a complete SonarQube server scan.
 
 ## Keep work resumable
 
