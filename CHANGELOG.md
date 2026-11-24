@@ -2,7 +2,7 @@
 
 All notable changes to the Agendo extension are documented here.
 
-## [0.3.3] - Unreleased
+## [0.3.3] - 2026-11-24
 
 Includes Agendo skill **1.9.0** and work-session canvas **0.1.13**
 
