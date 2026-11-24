@@ -1,42 +1,21 @@
 import type * as vscode from "vscode";
+import {
+  ACTIVE_STATUSES as SharedActiveStatuses,
+  TERMINAL_STATUSES as SharedTerminalStatuses,
+  type TodoPriority,
+  type TodoStatus,
+  buildFileName,
+  FILENAME_RE,
+  PRIORITIES,
+  STATUSES,
+} from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 
-/**
- * Lifecycle status of a todo.
- *
- * - `pending` is an active state awaiting triage (lives in the root folder).
- * - `in-progress` is an active state for work currently being done (root folder).
- * - `ready` is an active state for work that is likely done and being polished,
- *   still awaiting confirmation that it is complete and functional (root folder).
- * - `backlogged` is a deprioritized-but-open state (moves to the backlog subfolder).
- * - `completed` is a terminal state for work fully finished and verified.
- * - `cancelled` is a terminal state for abandoned or superseded work.
- */
-export type TodoStatus =
-  | "pending"
-  | "in-progress"
-  | "ready"
-  | "backlogged"
-  | "completed"
-  | "cancelled";
-
-export type TodoPriority = "p1" | "p2" | "p3";
-
-export const TODO_STATUSES: TodoStatus[] = [
-  "pending",
-  "in-progress",
-  "ready",
-  "backlogged",
-  "completed",
-  "cancelled",
-];
-
-export const TODO_PRIORITIES: TodoPriority[] = ["p1", "p2", "p3"];
-
-/** Statuses that represent active, in-progress work. */
-export const ACTIVE_STATUSES: TodoStatus[] = ["pending", "in-progress", "ready"];
-
-/** Statuses that are terminal (finished or abandoned). */
-export const TERMINAL_STATUSES: TodoStatus[] = ["completed", "cancelled"];
+export type { TodoStatus, TodoPriority };
+export const TODO_STATUSES: TodoStatus[] = STATUSES as unknown as TodoStatus[];
+export const TODO_PRIORITIES: TodoPriority[] = PRIORITIES as unknown as TodoPriority[];
+export const ACTIVE_STATUSES: TodoStatus[] = SharedActiveStatuses as unknown as TodoStatus[];
+export const TERMINAL_STATUSES: TodoStatus[] = SharedTerminalStatuses as unknown as TodoStatus[];
+export { buildFileName };
 
 export const SCANNING_ID_PREFIX = { codeql: "cql", sonarqube: "sq" } as const;
 export type ScanningSource = keyof typeof SCANNING_ID_PREFIX;
@@ -125,44 +104,12 @@ export function getBlockedBy(todo: Todo, allTodos: readonly Todo[]): string[] {
     .map((t) => t.id);
 }
 
-const FILENAME_RE =
-  /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|completed|cancelled)-(p[123])-(.+)\.md$/i;
-
 /** True when a filename matches the Agendo naming contract. */
 export function isTodoFileName(fileName: string): boolean {
   return FILENAME_RE.test(fileName);
 }
 
 /** Normalize a todo description into a safe filename segment. */
-function sanitizeDescription(description: string): string {
-  const normalized = description
-    .trim()
-    .replace(/[\\/]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/[._]+/g, "-")
-    .replace(/[^a-zA-Z0-9-]+/g, "-")
-    .replace(/-+/g, "-")
-    .toLowerCase();
-
-  const withoutLeadingHyphen = normalized.startsWith("-") ? normalized.slice(1) : normalized;
-  const withoutTrailingHyphen = withoutLeadingHyphen.endsWith("-")
-    ? withoutLeadingHyphen.slice(0, -1)
-    : withoutLeadingHyphen;
-
-  return withoutTrailingHyphen || "todo";
-}
-
-/** Build a filename from its component parts. */
-export function buildFileName(
-  id: string,
-  status: TodoStatus,
-  priority: TodoPriority,
-  description: string,
-): string {
-  const safeDescription = sanitizeDescription(description);
-  return `${id}-${status}-${priority}-${safeDescription}.md`;
-}
-
 function unquote(value: string): string {
   const trimmed = value.trim();
   if (trimmed.startsWith('"') && trimmed.endsWith('"')) {

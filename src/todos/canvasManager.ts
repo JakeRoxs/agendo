@@ -30,11 +30,13 @@ const CANVAS_FILES = [
   "extension.mjs",
   "server.mjs",
   "settings.mjs",
+  "statusLifecycle.js",
   "todos.mjs",
   "page.mjs",
   "markdown.mjs",
   "assets/page.css",
   "assets/page.js",
+  "assets/settings.js",
 ];
 
 /** Files shipped by earlier canvas versions that must not linger after an update. */

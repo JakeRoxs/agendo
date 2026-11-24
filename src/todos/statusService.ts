@@ -10,34 +10,24 @@ import {
   type TodoPriority,
   type TodoStatus,
 } from "./todoModel";
+import { isReadyBlocked, planTransition, TERMINAL_STATUSES } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 import type { TodoRepository } from "./todoRepository";
-
-const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[\s\S]*?(?:\r?\n>.*)*\r?\n?/m;
 
 /**
  * Executes status/priority transitions: rewrites frontmatter, renames the file
  * (keeping the filename token in sync), moves it between folders, and manages
  * the contextual cancelled banner.
+ *
+ * The content, filename, and target-folder planning is delegated to the shared
+ * {@link planTransition} lifecycle core so the VS Code adapter and the standalone
+ * canvas/MCP adapter make identical decisions. This adapter supplies the file
+ * system (`writeAndMove`) and the scanner-aware folder base.
  */
 export class StatusService {
   constructor(
     private readonly config: ConfigService,
     private readonly repository?: TodoRepository,
   ) {}
-
-  /** Target subfolder ("" = root) for a given status. */
-  private folderForStatus(status: TodoStatus): string {
-    switch (status) {
-      case "backlogged":
-        return this.config.backloggedFolder;
-      case "completed":
-        return this.config.completedFolder;
-      case "cancelled":
-        return this.config.cancelledFolder;
-      default:
-        return "";
-    }
-  }
 
   /** Change a todo's status, moving/renaming the file and updating its body. */
   async setStatus(todo: Todo, newStatus: TodoStatus): Promise<vscode.Uri | undefined> {
@@ -48,12 +38,17 @@ export class StatusService {
     if (newStatus === "ready" && todo.dependencies.length > 0) {
       const allTodos = this.repository?.getTodos() ?? [];
       const todosById = new Map(allTodos.map((candidate) => [candidate.id, candidate]));
-      const incompleteIds = this.repository?.getDependencyGraph().blockedBy.get(todo.id) ?? [];
-      if (incompleteIds.length > 0) {
-        const incomplete = incompleteIds.map((id) => {
-          const dependency = todosById.get(id);
-          return `${id} (${dependency?.status ?? "missing"})`;
-        });
+      if (isReadyBlocked(todo.dependencies, allTodos.map((t) => ({ id: t.id, status: t.status })))) {
+        const terminalSet = new Set<TodoStatus>(TERMINAL_STATUSES);
+        const incomplete = todo.dependencies
+          .map((id) => {
+            const dependency = todosById.get(id);
+            if (!dependency || !terminalSet.has(dependency.status)) {
+              return `${id} (${dependency?.status ?? "missing"})`;
+            }
+            return null;
+          })
+          .filter(Boolean);
         const answer = await vscode.window.showWarningMessage(
           `Todo ${todo.id} has incomplete dependencies: ${incomplete.join(", ")}. Set to ready anyway?`,
           "Set anyway",
@@ -65,24 +60,34 @@ export class StatusService {
       }
     }
 
-    let content = await readText(todo.uri);
+    const content = await readText(todo.uri);
 
-    content = this.rewriteFrontmatterField(content, "status", newStatus);
-
-    if (newStatus === "cancelled") {
-      content = this.ensureTag(content, "cancelled");
-      content = this.insertCancelledBanner(content, todo);
-    } else if (todo.status === "cancelled") {
-      // Reopening: strip the cancelled banner.
-      content = content.replace(CANCELLED_BANNER_RE, "");
+    // Delegate frontmatter, cancelled tag/banner, filename, and target folder to
+    // the shared lifecycle core. The adapter prepends the scanner source base so
+    // code-scanning todos stay in their own lifecycle folders.
+    const plan = planTransition({
+      content,
+      id: todo.id,
+      status: todo.status,
+      priority: todo.priority,
+      description: todo.description,
+      newStatus,
+      folders: {
+        backlogged: this.config.backloggedFolder,
+        completed: this.config.completedFolder,
+        cancelled: this.config.cancelledFolder,
+      },
+      todo,
+    });
+    if (!plan) {
+      return undefined;
     }
 
-    const targetFolder = [codeScanningBase(todo.folder), this.folderForStatus(newStatus)]
+    const targetFolder = [codeScanningBase(todo.folder), plan.targetFolder]
       .filter(Boolean)
       .join("/");
-    const newName = buildFileName(todo.id, newStatus, todo.priority, todo.description);
 
-    return this.writeAndMove(todo, content, targetFolder, newName);
+    return this.writeAndMove(todo, plan.newContent, targetFolder, plan.fileName);
   }
 
   /** Change a todo's priority, renaming the file and updating frontmatter. */
@@ -200,7 +205,7 @@ export class StatusService {
     });
   }
 
-  /** Replace a scalar frontmatter field, inserting it if missing. */
+  /** Replace a scalar frontmatter field, inserting it if missing. Used by priority/group updates. */
   private rewriteFrontmatterField(content: string, key: string, value: string): string {
     const { data } = splitFrontmatter(content);
     if (!data) {
@@ -216,51 +221,6 @@ export class StatusService {
     // Field missing: append to the frontmatter block.
     const newData = `${data}\n${key}: ${value}`;
     return content.replace(data, newData);
-  }
-
-  /** Ensure a tag is present in the frontmatter `tags` list. */
-  private ensureTag(content: string, tag: string): string {
-    const { data } = splitFrontmatter(content);
-    if (!data) {
-      return content;
-    }
-    const tagsRe = /^tags\s*:\s*\[(.*)\]\s*$/m;
-    const match = tagsRe.exec(data);
-    if (match) {
-      const existing = match[1]
-        .split(",")
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0);
-      if (existing.some((t) => t.replace(/["']/g, "") === tag)) {
-        return content;
-      }
-      existing.push(tag);
-      const newData = data.replace(tagsRe, `tags: [${existing.join(", ")}]`);
-      return content.replace(data, newData);
-    }
-    // No flow-style tags list found; leave body untouched to avoid corrupting
-    // block-style lists.
-    return content;
-  }
-
-  /** Insert the contextual cancelled banner directly under the `# title`. */
-  private insertCancelledBanner(content: string, todo: Todo): string {
-    if (CANCELLED_BANNER_RE.test(content)) {
-      return content;
-    }
-    const supersede = todo.supersededBy ? ` / SUPERSEDED by [${todo.supersededBy}]` : "";
-    const banner = `> **CANCELLED${supersede}**`;
-    const lines = content.split("\n");
-    const headingIndex = lines.findIndex((line) => line.startsWith("# "));
-    if (headingIndex >= 0) {
-      const before = lines.slice(0, headingIndex + 1).join("\n");
-      const after = lines.slice(headingIndex + 1).join("\n");
-      const afterSection = after ? `\n\n${after}` : "";
-
-      return `${before}\n\n${banner}${afterSection}`;
-    }
-
-    return `${banner}\n\n${content}`;
   }
 
   /** Delete a todo file from disk. */

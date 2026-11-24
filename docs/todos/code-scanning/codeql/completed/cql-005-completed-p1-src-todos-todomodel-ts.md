@@ -9,8 +9,8 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/todos/todoModel.ts"
-scan_refreshed_at: "2026-10-27T16:34:59.276Z"
-scan_review_required: false
+scan_refreshed_at: "2026-11-23T23:15:34.700Z"
+scan_review_required: true
 ---
 
 # src/todos/todoModel.ts
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T16:34:59.276Z
+**Retrieved:** 2026-11-23T23:15:34.700Z
 
 **Branch:** Default branch
 
@@ -49,7 +49,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 2](<https://github.com/JakeRoxs/agendo/security/code-scanning/2>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/todos/todoModel.ts","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"1","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":122,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/1","resolved":true,"returned":true},{"id":"2","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":180,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/2","resolved":true,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/todos/todoModel.ts","version":1,"retrievedAt":"2026-11-23T23:15:34.700Z","findings":[{"id":"1","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":122,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/1","resolved":true,"returned":true},{"id":"2","rule":"js/incomplete-sanitization","severity":"high","message":"This replaces only the first occurrence of \"\\r\".","path":"src/todos/todoModel.ts","line":180,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/2","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -64,8 +64,9 @@ Review these scanner findings and verify any fix before completing this todo.
 
 
 
+
 - [x] Review each finding and address or document its disposition
-- [ ] Verify changes with tests and a new scan
+- [x] Verify changes with tests and a new scan
 - [x] Add regression tests for both global carriage-return replacements in `src/test/todoModel.test.ts`
 
 ## Findings
@@ -80,19 +81,21 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ## Resume Context
 
-**Current state:** Both existing fixes are covered by passing regression tests; final integrated compile, lint, and 404 extension tests pass. Imported findings are explicitly resolved, but no new scan of this test revision has run.
+**Current state:** Both existing fixes are covered by passing regression tests; final integrated compile, lint, and 404 extension tests pass. The current GitHub CodeQL scan is clean.
 
-**Next step:** Confirm a fresh CodeQL analysis of the tested revision before completing the todo.
+**Next step:** None; the current GitHub CodeQL scan is clean.
 
 ## Work Log
 
 
-### 2026-10-27 - Auto-completed by scanner import
+### 2026-11-23 - Reopened pending verification
 
 **By:** Kilo
 
 **Actions:**
-- All scanner findings for this todo are resolved; auto-completed by import.
+- Reopened after review: imported evidence says the original alerts are resolved, but a fresh scan of the changed revision has not been run as required by the acceptance criteria.
+- The newly reported GitHub dependency alerts are separate from these CodeQL findings and are being handled independently.
+- User confirmed the current GitHub CodeQL scan is clean; marked scan verification complete.
 ### 2026-10-27 - Verify existing fix and add regression coverage
 
 - Preserved the existing production implementation and imported scanner evidence

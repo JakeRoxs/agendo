@@ -20,12 +20,17 @@ Includes Agendo skill **1.7.0**
 
 - MCP server bundles are copied to stable extension global storage and refreshed on activation, so generated client configuration does not depend on a versioned extension-install path
 - Generated MCP configurations use runtime workspace and host discovery instead of embedding temporary socket paths or host identifiers
+- VS Code, canvas, and MCP status transitions share one lifecycle core for canonical status values, readiness checks, and synchronized filename/frontmatter/folder updates
+- Update Hono and the development test-toolchain overrides to patched releases of `glob` and `minimatch`, clearing the reported dependency advisories
 
 ### Fixed
 
 - Terminate MCP diagnostics requests with the newline required by the extension bridge's JSONL protocol
 - Return diagnostics in standard MCP text content and structured content so clients can display tool results
 - Preserve diagnostic-level severity filtering, totals, truncation, and workspace-relative paths across the MCP bridge
+- Align the MCP `set_status` schema with the canonical `completed` status, avoiding the former `complete`/`completed` validation mismatch
+- Preserve cancellation metadata and line endings during lifecycle changes, reject malformed-frontmatter transitions safely, and block ambiguous or unresolved ready dependencies
+- Include the settings client and shared lifecycle runtime in installed canvas files
 
 ### Upgrade notes
 

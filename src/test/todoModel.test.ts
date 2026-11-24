@@ -1061,6 +1061,129 @@ suite("todoModel", () => {
     );
   });
 
+  test("status service strips the cancelled banner when reopening to pending", async () => {
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-reopen-tests-")),
+    );
+    await vscode.workspace.fs.createDirectory(rootUri);
+    const originalUri = vscode.Uri.joinPath(rootUri, "060-cancelled-p2-do-the-thing.md");
+    const initialContent = [
+      "---",
+      "status: cancelled",
+      "priority: p2",
+      "tags: [alpha, cancelled]",
+      "---",
+      "",
+      "# Do The Thing",
+      "",
+      "> **CANCELLED**",
+      "",
+      "Body.",
+    ].join("\n");
+    await vscode.workspace.fs.writeFile(originalUri, Buffer.from(initialContent, "utf8"));
+
+    const todo: Todo = {
+      id: "060",
+      status: "cancelled",
+      priority: "p2",
+      title: "Do The Thing",
+      description: "do-the-thing",
+      tags: ["alpha", "cancelled"],
+      dependencies: [],
+      key: undefined,
+      children: [],
+      epic: false,
+      folder: "cancelled",
+      fileName: "060-cancelled-p2-do-the-thing.md",
+      uri: originalUri,
+      frontmatter: { status: "cancelled", priority: "p2", tags: ["alpha", "cancelled"] },
+    };
+
+    const config = {
+      getRootUri: () => rootUri,
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
+      cancelledFolder: "cancelled",
+    } as never;
+    const service = new StatusService(config);
+
+    const reopenedUri = await service.setStatus(todo, "pending");
+    assert.ok(reopenedUri);
+
+    assert.strictEqual(
+      reopenedUri.fsPath,
+      path.join(rootUri.fsPath, "060-pending-p2-do-the-thing.md"),
+    );
+    const reopenedData = Buffer.from(await vscode.workspace.fs.readFile(reopenedUri)).toString(
+      "utf8",
+    );
+    assert.match(reopenedData, /status: pending/);
+    assert.doesNotMatch(reopenedData, /> \*\*CANCELLED\*\*/);
+    assert.match(reopenedData, /# Do The Thing/);
+    assert.match(reopenedData, /Body\./);
+  });
+
+  test("status service moves completed todo to the completed folder and updates frontmatter", async () => {
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-complete-tests-")),
+    );
+    await vscode.workspace.fs.createDirectory(rootUri);
+    const originalUri = vscode.Uri.joinPath(rootUri, "060-ready-p2-do-the-thing.md");
+    const initialContent = [
+      "---",
+      "status: ready",
+      "priority: p2",
+      "tags: [alpha]",
+      "---",
+      "",
+      "# Do The Thing",
+      "",
+      "Body.",
+    ].join("\n");
+    await vscode.workspace.fs.writeFile(originalUri, Buffer.from(initialContent, "utf8"));
+
+    const todo: Todo = {
+      id: "060",
+      status: "ready",
+      priority: "p2",
+      title: "Do The Thing",
+      description: "do-the-thing",
+      tags: ["alpha"],
+      dependencies: [],
+      key: undefined,
+      children: [],
+      epic: false,
+      folder: "",
+      fileName: "060-ready-p2-do-the-thing.md",
+      uri: originalUri,
+      frontmatter: { status: "ready", priority: "p2", tags: ["alpha"] },
+    };
+
+    const config = {
+      getRootUri: () => rootUri,
+      backloggedFolder: "backlog",
+      completedFolder: "completed",
+      cancelledFolder: "cancelled",
+    } as never;
+    const service = new StatusService(config);
+
+    const completedUri = await service.setStatus(todo, "completed");
+    assert.ok(completedUri);
+
+    assert.strictEqual(
+      completedUri.fsPath,
+      path.join(rootUri.fsPath, "completed", "060-completed-p2-do-the-thing.md"),
+    );
+    const completedData = Buffer.from(await vscode.workspace.fs.readFile(completedUri)).toString(
+      "utf8",
+    );
+    assert.match(completedData, /status: completed/);
+    assert.match(completedData, /tags: \[alpha\]/);
+    assert.doesNotMatch(completedData, /> \*\*CANCELLED\*\*/);
+    assert.match(completedData, /# Do The Thing/);
+    assert.match(completedData, /Body\./);
+  });
+
   test("status service warns before ready when a dependency is missing", async () => {
     const todo: Todo = {
       id: "060",
@@ -2329,12 +2452,14 @@ suite("todoModel", () => {
         "extension.mjs",
         "server.mjs",
         "settings.mjs",
+        "statusLifecycle.js",
         "todos.mjs",
         "page.mjs",
         "markdown.mjs",
         "errors.mjs",
         "assets/page.css",
         "assets/page.js",
+        "assets/settings.js",
       ]) {
         await fs.writeFile(
           path.join(canvasFixture, name),

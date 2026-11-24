@@ -1,15 +1,20 @@
 import { CanvasError } from './errors.mjs';
+import {
+  FILENAME_RE,
+  isReadyBlocked,
+  isValidStatus,
+  planTransition,
+  PRIORITIES,
+  STATUSES,
+  TERMINAL_STATUSES,
+} from './statusLifecycle.js';
 import { existsSync, mkdirSync, openSync, closeSync, fchmodSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, parse, resolve } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 
 const TODO_DIRS = ['docs/todos', 'todos'];
-const FILENAME_RE = /^((?:(?:cql|sq)-)?\d{3,})-(pending|in-progress|ready|backlogged|completed|cancelled)-(p[123])-.*\.md$/;
 const CRITERION_RE = /^(\s*-\s*\[)([ xX])(\]\s*)(.+)$/;
 const TODO_ID_RE = /^(?:(?:cql|sq)-)?\d{3,}$/;
-// Both satisfy a dependency; a cancelled blocker will never be delivered, so the UI flags it.
-const SATISFYING_STATUSES = new Set(['completed', 'cancelled']);
-
 export function assertTodoId(todoId) {
   if (typeof todoId !== 'string' || !TODO_ID_RE.test(todoId)) {
     throw new CanvasError('invalid_todo_id', 'todoId must be an Agendo ID, for example "033" or "cql-001"');
@@ -178,7 +183,7 @@ export function getRelations(todoId, workspaceRoot) {
     const ambiguous = !!dep.ambiguous;
     return {
       id, title, status, priority,
-      satisfied: !ambiguous && SATISFYING_STATUSES.has(status),
+      satisfied: !ambiguous && TERMINAL_STATUSES.includes(status),
       ambiguous,
       circular: dep.dependencies.includes(todoId)
     };
@@ -187,7 +192,7 @@ export function getRelations(todoId, workspaceRoot) {
   const dependents = [...all.values()]
     .filter(t => t.dependencies.includes(todoId))
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map(({ id, title, status, priority }) => ({ id, title, status, priority, active: !SATISFYING_STATUSES.has(status) && status !== 'backlogged' }));
+    .map(({ id, title, status, priority }) => ({ id, title, status, priority, active: !TERMINAL_STATUSES.includes(status) && status !== 'backlogged' }));
 
   return {
     blocked: dependencies.some(d => !d.satisfied),
@@ -554,10 +559,6 @@ export function setCriterionMet(todoId, index, met, workspaceRoot) {
   };
 }
 
-export const STATUSES = ['pending', 'in-progress', 'ready', 'backlogged', 'completed', 'cancelled'];
-export const PRIORITIES = ['p1', 'p2', 'p3'];
-const CANCELLED_BANNER_RE = /^>\s*\*\*CANCELLED[^\n]*\n?(?:\r?\n)?/m;
-
 // Rewrite one flow-style frontmatter field, or add it when missing.
 function setFrontmatterField(lines, key, value) {
   const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
@@ -569,76 +570,92 @@ function setFrontmatterField(lines, key, value) {
   else lines.splice(end, 0, `${key}: ${value}`);
 }
 
-function addCancelledTag(lines) {
-  const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
-  const index = lines.findIndex((line, i) => i > 0 && i < end && /^tags\s*:/.test(line));
-  const existing = parseFrontmatter(lines.join('\n')).frontmatter.tags;
-  const tags = Array.isArray(existing) ? existing : existing ? [existing] : [];
-  if (!tags.includes('cancelled')) tags.push('cancelled');
-  const field = `[${tags.map(yamlScalar).join(', ')}]`;
-  if (index === -1) setFrontmatterField(lines, 'tags', field);
-  else {
-    let next = index + 1;
-    while (next < end && /^\s+-\s+/.test(lines[next])) next++;
-    lines.splice(index, next - index, `tags: ${field}`);
-  }
-}
-
 /**
- * Change a todo's status the way the extension does: update the frontmatter mirror, add or strip the
- * cancelled banner, rename the file and move it into the status's folder, all in one rename.
+ * Change a todo's status through the shared lifecycle core.
+ *
+ * Validates and locates the file, parses its filename contract, derives the todo
+ * record and dependency statuses, applies the shared ready gate through
+ * `isReadyBlocked`, then delegates the content/tag/banner/filename/folder
+ * computation to the pure `planTransition` core. The Node file-system transaction
+ * (temp write + rename + move) is retained here in the canvas adapter.
  */
 export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   assertTodoId(todoId);
-  if (!STATUSES.includes(newStatus)) {
+  if (!isValidStatus(newStatus)) {
     throw new CanvasError('invalid_input', `status must be one of: ${STATUSES.join(', ')}`);
   }
   const filePath = findTodoFile(todoId, workspaceRoot);
   if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
   const name = basename(filePath);
-  const [, , oldStatus, priority] = name.match(FILENAME_RE) ?? [];
+  const nameMatch = name.match(FILENAME_RE);
+  if (!nameMatch) {
+    throw new CanvasError('invalid_input', `Todo ${todoId} has an invalid filename`);
+  }
+  const [, id, oldStatus, priority, description] = nameMatch;
   if (oldStatus === newStatus) return { success: true, message: `Already ${newStatus}`, changed: false };
 
+  const content = readFileSync(filePath, 'utf-8');
+
+  // Derive the todo record and dependency statuses for the shared ready gate.
+  const todo = loadTodo(todoId, workspaceRoot);
+  const all = listTodoSummaries(workspaceRoot);
+  const allTodos = [...all.values()].map((t) => ({ id: t.id, status: t.status }));
+
   if (newStatus === 'ready') {
-    const relations = getRelations(todoId, workspaceRoot);
-    if (relations.blocked) {
-      const blockedBy = relations.dependencies.filter(d => !d.satisfied).map(d => d.id).join(', ');
+    // Shared ready gate plus duplicate-ID ambiguity: an ambiguous dependency
+    // (multiple files for one ID) is unsatisfied even when one copy is terminal.
+    const blocked = isReadyBlocked(todo.dependencies, allTodos) ||
+      todo.dependencies.some((depId) => all.get(depId)?.ambiguous);
+    if (blocked) {
+      const blockedBy = todo.dependencies.filter((depId) => {
+        const dep = all.get(depId);
+        return !dep || !TERMINAL_STATUSES.includes(dep.status) || dep.ambiguous;
+      }).join(', ');
       throw new CanvasError('invalid_input', `Cannot set to ready: unresolved dependencies ${blockedBy}`);
     }
   }
 
-  const content = readFileSync(filePath, 'utf-8');
-  const eol = content.includes('\r\n') ? '\r\n' : '\n';
-  let lines = content.split(/\r?\n/);
-  if (lines[0].trim() === '---') {
-    setFrontmatterField(lines, 'status', newStatus);
-  } else {
-    lines.unshift('---', `status: ${newStatus}`, '---');
+  // Plan the transition through the shared, pure lifecycle core. This computes
+  // the next frontmatter body, cancelled tag/banner, filename, and target folder.
+  const locations = todoLocations(workspaceRoot);
+  const location = locations.find((l) => l.dirs.includes(dirname(filePath)));
+  const folders = location ? location.folders : {
+    backlogged: 'backlogged',
+    completed: 'completed',
+    cancelled: 'cancelled',
+  };
+
+  let plan;
+  try {
+    plan = planTransition({
+      content,
+      id,
+      status: oldStatus,
+      priority,
+      description,
+      newStatus,
+      folders,
+    });
+  } catch (e) {
+    // The core is pure and throws plain Errors (e.g. malformed frontmatter);
+    // the canvas adapter surfaces them as actionable CanvasErrors.
+    if (e instanceof CanvasError) throw e;
+    throw new CanvasError('invalid_input', `Failed to plan transition: ${e.message}`);
   }
-  if (newStatus === 'cancelled') addCancelledTag(lines);
+  if (!plan) return { success: true, message: `Already ${newStatus}`, changed: false };
 
-  let text = lines.join(eol);
-  if (newStatus === 'cancelled' && !CANCELLED_BANNER_RE.test(text)) {
-    lines = text.split(/\r?\n/);
-    const heading = lines.findIndex(l => l.startsWith('# '));
-    if (heading !== -1) lines.splice(heading + 1, 0, '', '> **CANCELLED**');
-    text = lines.join(eol);
-  } else if (oldStatus === 'cancelled') {
-    text = text.replace(CANCELLED_BANNER_RE, '');
-  }
+  const { newContent, fileName, targetFolder } = plan;
 
-  const location = todoLocations(workspaceRoot).find(l => l.dirs.includes(dirname(filePath)));
-  const targetDir = location.folders[newStatus] ? join(location.base, location.folders[newStatus]) : location.base;
-  const slug = name.replace(/^(?:(?:cql|sq)-)?\d{3,}-[a-z-]+?-p[123]-/, '');
-  const target = join(targetDir, `${todoId}-${newStatus}-${priority}-${slug}`);
+  const targetDir = targetFolder ? join(location.base, targetFolder) : location.base;
 
+  // Atomic temp write + rename + move, mirroring the criteria editor's transaction.
   const temp = join(dirname(filePath), `.${name}.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(temp, text, 'utf-8');
+  writeFileSync(temp, newContent, 'utf-8');
   renameSync(temp, filePath);
   if (!existsSync(targetDir)) mkdirSync(targetDir, { recursive: true });
-  renameSync(filePath, target);
-  return { success: true, message: `Status changed to ${newStatus}`, changed: true, filePath: target };
+  renameSync(filePath, join(targetDir, fileName));
+  return { success: true, message: `Status changed to ${newStatus}`, changed: true, filePath: join(targetDir, fileName) };
 }
 
 export function setTodoPriority(todoId, newPriority, workspaceRoot) {
@@ -718,3 +735,5 @@ export function setTodoGroup(todoId, newGroup, workspaceRoot) {
   renameSync(temp, filePath);
   return { success: true, message: trimmed ? `Group set to ${trimmed}` : 'Group cleared', changed: true, filePath };
 }
+
+export { PRIORITIES, STATUSES };

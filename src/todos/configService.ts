@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { get, Settings } from "../configuration";
 import { out } from "../output";
 import type { BoardReturnTarget } from "./workspaceNavigation";
+import { FILENAME_RE } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 
 /**
  * Default configuration values, mirrored from package.json. The skill falls
@@ -68,8 +69,7 @@ export function viewModeLabel(mode: ViewMode): string {
  * The viewType for VS Code's integrated markdown editor preview.
  */
 const PREVIEW_EDITOR_VIEW_TYPE = "vscode.markdown.preview.editor";
-const TODO_FILE_PATTERN =
-  /^(?:(?:cql|sq)-)?\d{3,}-(pending|in-progress|ready|backlogged|completed|cancelled)-p[123]-[^/]+\.md$/;
+export const TODO_FILE_PATTERN = FILENAME_RE;
 
 /**
  * Bridges VS Code settings and the on-disk `.agendo-config.json` projection that
