@@ -986,7 +986,7 @@ suite("mcpProblems", () => {
         const socket = net.createConnection(endpoint);
         let failed = false;
         let closed = false;
-        socket.on("error", (error) => {
+        socket.on("error", () => {
           if (!failed) {
             failed = true;
             // Connection should be destroyed/closed by the bridge.
@@ -1028,7 +1028,7 @@ suite("mcpProblems", () => {
       assert.strictEqual(result.total, 1);
       assert.strictEqual(result.truncated, true);
       assert.strictEqual(result.diagnostics.length, 0);
-      const body = Buffer.from(JSON.stringify(response2) + "\n");
+      const body = Buffer.from(`${JSON.stringify(response2)}\n`);
       assert.ok(
         Buffer.byteLength(body) <= 1024 * 1024,
         `response body ${body.length} bytes exceeds 1 MiB response cap`,
