@@ -76,7 +76,7 @@ export const TODO_FILE_PATTERN = FILENAME_RE;
  * file is a skill-readable projection of them.
  */
 export class ConfigService {
-  private workspaceState?: vscode.Memento;
+  private readonly workspaceState?: vscode.Memento;
   private activeFolder: vscode.WorkspaceFolder | undefined;
   private readonly explicitRootUri?: vscode.Uri;
   private manualRootUri: vscode.Uri | undefined;

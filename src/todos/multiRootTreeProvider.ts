@@ -35,7 +35,11 @@ const ROOT_COLLAPSE_KEY_PREFIX = "agendo.tree.collapsed.roots";
 function encodeRootId(rootId: string): string {
   let hash = 0;
   for (const char of rootId) {
-    hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+    const next = Math.trunc((hash * 31) + (char.codePointAt(0) ?? 0));
+    // Preserve the signed 32-bit wraparound of the previous `| 0` hash step.
+    hash = next % 0x1_0000_0000;
+    if (hash >= 0x8000_0000) hash -= 0x1_0000_0000;
+    else if (hash < -0x8000_0000) hash += 0x1_0000_0000;
   }
   return `r${Math.abs(hash).toString(36)}`;
 }

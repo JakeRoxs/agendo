@@ -311,7 +311,8 @@ suite("root registry", () => {
     assert.strictEqual(roots.length, 2);
     const labels = roots.map((r) => r.label);
     assert.notStrictEqual(labels[0], labels[1]);
-    assert.ok(labels[0].includes("todos") && labels[1].includes("todos"));
+    assert.ok(labels[0].includes("todos"));
+    assert.ok(labels[1].includes("todos"));
     // Stable ids are unchanged by label disambiguation.
     assert.strictEqual(roots[0].id, "/path/a/docs/todos");
     assert.strictEqual(roots[1].id, "/path/b/docs/todos");

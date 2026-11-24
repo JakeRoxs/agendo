@@ -57,9 +57,15 @@ function canonicalPath(uri: vscode.Uri): string {
   let p = uri.fsPath.replace(/\\/g, "/");
   p = path.posix.normalize(p);
   // Drop trailing slashes so "/root/" and "/root" share one stable id, but
-  // preserve the root path "/".
+  // preserve the root path "/". A single left-to-right scan keeps this
+  // linear; a regex with a trailing `$` anchor and a quantifier can
+  // backtrack super-linearly on long inputs.
   if (p.length > 1) {
-    p = p.replace(/\/+$/, "");
+    let end = p.length;
+    while (end > 0 && p[end - 1] === "/") {
+      end--;
+    }
+    p = p.slice(0, end);
   }
   return p;
 }
@@ -107,6 +113,32 @@ function disambiguateLabels(descriptors: TodoRootDescriptor[]): void {
 }
 
 /**
+ * Parse a persisted manual root record into a `ManualRootRecord`.
+ * Returns `undefined` for malformed records so the caller can skip them.
+ * The parse is fallible: `canonicalPath` throws on non-file URIs, so it is
+ * wrapped in a catch that treats the whole record as ignorable.
+ */
+function parseManualRootRecord(record: unknown): ManualRootRecord | undefined {
+  if (!record || typeof record !== "object") {
+    return undefined;
+  }
+  const uri = (record as { uri?: unknown }).uri;
+  const label = (record as { label?: unknown }).label;
+  if (typeof uri !== "string") {
+    return undefined;
+  }
+  try {
+    const canonical = canonicalPath(vscode.Uri.file(uri));
+    const resolvedLabel =
+      typeof label === "string" ? label : defaultLabel(vscode.Uri.file(uri));
+    return { uri: canonical, label: resolvedLabel };
+  } catch {
+    // Malformed persisted record: ignore it.
+    return undefined;
+  }
+}
+
+/**
  * In-memory Memento fallback for legacy hosts and tests that omit
  * workspaceState. The real extension always passes a live workspaceState, so
  * persistence is never silently disabled; this fallback only lets registration
@@ -147,10 +179,10 @@ export class TodoRootRegistry {
   /** Fires when the root set, active root, or tree mode changes. */
   readonly onDidChange = this.onDidChangeEmitter.event;
 
-  private manualRoots = new Map<string, ManualRootRecord>();
+  private readonly manualRoots = new Map<string, ManualRootRecord>();
   private activeRootId: string | undefined;
   private treeMode: TreeMode = "single";
-  private contexts = new Map<string, RootContext>();
+  private readonly contexts = new Map<string, RootContext>();
   /** Callback invoked by every root context's config to open a todo in the canvas. */
   private canvasOpener?: (todoId: string, returnTo: BoardReturnTarget | undefined, workspaceRoot: string, rootMode: "workspace" | "manual") => Promise<boolean>;
 
@@ -190,17 +222,9 @@ export class TodoRootRegistry {
     const raw = this.workspaceState.get(ROOT_REGISTRY_KEY);
     if (Array.isArray(raw)) {
       for (const record of raw as unknown[]) {
-        if (!record || typeof record !== "object") continue;
-        const uri = (record as { uri?: unknown }).uri;
-        const label = (record as { label?: unknown }).label;
-        if (typeof uri !== "string") continue;
-        try {
-          const canonical = canonicalPath(vscode.Uri.file(uri));
-          const resolvedLabel =
-            typeof label === "string" ? label : defaultLabel(vscode.Uri.file(uri));
-          this.manualRoots.set(canonical, { uri: canonical, label: resolvedLabel });
-        } catch {
-          // Malformed persisted record: ignore it.
+        const parsed = parseManualRootRecord(record);
+        if (parsed) {
+          this.manualRoots.set(parsed.uri, parsed);
         }
       }
     }
