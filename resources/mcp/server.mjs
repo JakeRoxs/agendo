@@ -13,6 +13,7 @@ import { z } from 'zod';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { discoverEndpoint } from './discovery.mjs';
+import { STATUSES } from '../canvas/agendo-work-session/statusLifecycle.js';
 import {
   getProblemsHandler,
   getProblemsInputSchema,
@@ -150,18 +151,19 @@ server.registerTool(
   }
 );
 
+export const setStatusInputSchema = {
+  todoId: z.string().describe('Todo ID'),
+  status: z.enum(STATUSES).describe('New status'),
+};
+
+export async function setStatusHandler(args, workspaceRoot) {
+  return setTodoStatus(args.todoId, args.status, workspaceRoot);
+}
+
 server.registerTool(
   'set_status',
-  {
-    description: 'Set the status of a todo',
-    inputSchema: {
-      todoId: z.string().describe('Todo ID'),
-      status: z.enum(['pending', 'in-progress', 'ready', 'backlogged', 'complete', 'cancelled']).describe('New status'),
-    },
-  },
-  async ({ todoId, status }) => {
-    return setTodoStatus(todoId, status, workspaceRoot);
-  }
+  { description: 'Set the status of a todo', inputSchema: setStatusInputSchema },
+  async (args) => setStatusHandler(args, workspaceRoot)
 );
 
 server.registerTool(
@@ -232,6 +234,10 @@ server.registerTool(
   }
 );
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error('Agendo MCP server running');
+// Only serve over stdio when run directly; tests import the handlers without
+// opening a transport.
+if (import.meta.main) {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error('Agendo MCP server running');
+}

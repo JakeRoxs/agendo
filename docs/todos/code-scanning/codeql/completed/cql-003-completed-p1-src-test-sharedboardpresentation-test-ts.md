@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "cql-003"
 tags: [code-scanning, codeql]
@@ -9,8 +9,8 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/test/sharedBoardPresentation.test.ts"
-scan_refreshed_at: "2026-10-27T16:34:59.276Z"
-scan_review_required: true
+scan_refreshed_at: "2026-11-23T23:15:34.700Z"
+scan_review_required: false
 ---
 
 # CodeQL: src/test/sharedBoardPresentation.test.ts
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T16:34:59.276Z
+**Retrieved:** 2026-11-23T23:15:34.700Z
 
 **Branch:** Default branch
 
@@ -59,7 +59,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 9](<https://github.com/JakeRoxs/agendo/security/code-scanning/9>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/sharedBoardPresentation.test.ts","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"5","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/5","resolved":true,"returned":true},{"id":"7","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/7","resolved":true,"returned":true},{"id":"9","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script\\t\\n bar>.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/9","resolved":false,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/sharedBoardPresentation.test.ts","version":1,"retrievedAt":"2026-11-23T23:15:34.700Z","findings":[{"id":"5","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/5","resolved":true,"returned":true},{"id":"7","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/7","resolved":true,"returned":true},{"id":"9","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script\\t\\n bar>.","path":"src/test/sharedBoardPresentation.test.ts","line":41,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/9","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -77,8 +77,9 @@ Review these scanner findings and verify any fix before completing this todo.
 
 
 
+
 - [x] Review each finding and address or document its disposition
-- [ ] Verify changes with tests and a new scan
+- [x] Verify changes with tests and a new scan
 
 ## Related File Work
 
@@ -86,12 +87,21 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ## Resume Context
 
-**Current state:** Replaced the flagged tag-extraction regex with the shared tag scanner. All 414 extension tests pass, including empty scripts and the reported malformed end-tag case. Finding 9 is locally addressed, not remotely confirmed resolved.
+**Current state:** Replaced the flagged tag-extraction regex with the shared tag scanner, verified all 414 extension tests, and confirmed the current GitHub CodeQL scan is clean.
 
-**Next step:** Run a fresh CodeQL analysis of this revision and refresh finding 9 before completing.
+**Next step:** None; the current GitHub CodeQL scan is clean.
 
 ## Work Log
 
+
+### 2026-11-23 - Reopened pending verification
+
+**By:** Kilo
+
+**Actions:**
+- Reopened after review: imported evidence says the original alerts are resolved, but a fresh scan of the changed revision has not been run as required by the acceptance criteria.
+- The newly reported GitHub dependency alerts are separate from these CodeQL findings and are being handled independently.
+- User confirmed the current GitHub CodeQL scan is clean; marked scan verification complete.
 - 2026-10-26: Added `/i` flag to `extractScript` regex at src/test/sharedBoardPresentation.test.ts:41 to match uppercase script tags. Tests pass.
 - 2026-10-26: Updated `extractScript` regex to match `<\/script\s*>` instead of `<\/script>` to handle trailing whitespace in script end tags (alert 7). All 323 tests pass. CodeQL alert 7 will close on next scan run.
 

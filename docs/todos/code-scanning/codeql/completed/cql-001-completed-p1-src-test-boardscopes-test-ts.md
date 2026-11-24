@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p1
 issue_id: "cql-001"
 tags: [code-scanning, codeql]
@@ -9,8 +9,8 @@ scan_source: codeql
 scan_scope: "JakeRoxs/agendo"
 scan_grouping: file
 scan_target: "src/test/boardScopes.test.ts"
-scan_refreshed_at: "2026-10-27T16:34:59.276Z"
-scan_review_required: true
+scan_refreshed_at: "2026-11-23T23:15:34.700Z"
+scan_review_required: false
 ---
 
 # CodeQL: src/test/boardScopes.test.ts
@@ -20,7 +20,7 @@ Review these scanner findings and verify any fix before completing this todo.
 <!-- agendo:scan-evidence:start -->
 ## Scanner Evidence
 
-**Retrieved:** 2026-10-27T16:34:59.276Z
+**Retrieved:** 2026-11-23T23:15:34.700Z
 
 **Branch:** Default branch
 
@@ -59,7 +59,7 @@ Review these scanner findings and verify any fix before completing this todo.
 [View finding 8](<https://github.com/JakeRoxs/agendo/security/code-scanning/8>)
 
 <!-- agendo:scan-snapshot
-{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/boardScopes.test.ts","version":1,"retrievedAt":"2026-10-27T16:34:59.276Z","findings":[{"id":"3","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/boardScopes.test.ts","line":364,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/3","resolved":true,"returned":true},{"id":"4","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/4","resolved":true,"returned":true},{"id":"8","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script\\t\\n bar>.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/8","resolved":false,"returned":true}],"rules":[]}
+{"source":"codeql","scope":"JakeRoxs/agendo","grouping":"file","target":"src/test/boardScopes.test.ts","version":1,"retrievedAt":"2026-11-23T23:15:34.700Z","findings":[{"id":"3","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match upper case \u003cSCRIPT> tags.","path":"src/test/boardScopes.test.ts","line":364,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/3","resolved":true,"returned":true},{"id":"4","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script >.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/4","resolved":true,"returned":true},{"id":"8","rule":"js/bad-tag-filter","severity":"high","message":"This regular expression does not match script end tags like \u003c/script\\t\\n bar>.","path":"src/test/boardScopes.test.ts","line":38,"url":"https://github.com/JakeRoxs/agendo/security/code-scanning/8","resolved":true,"returned":true}],"rules":[]}
 -->
 <!-- agendo:scan-evidence:end -->
 
@@ -77,8 +77,9 @@ Review these scanner findings and verify any fix before completing this todo.
 
 
 
+
 - [x] Review each finding and address or document its disposition
-- [ ] Verify changes with tests and a new scan
+- [x] Verify changes with tests and a new scan
 
 ## Related File Work
 
@@ -86,12 +87,21 @@ Review these scanner findings and verify any fix before completing this todo.
 
 ## Resume Context
 
-**Current state:** Replaced the flagged tag-extraction regex with a shared tag scanner and verified all 414 extension tests. Finding 8 is locally addressed, not remotely confirmed resolved.
+**Current state:** Replaced the flagged tag-extraction regex with a shared tag scanner, verified all 414 extension tests, and confirmed the current GitHub CodeQL scan is clean.
 
-**Next step:** Run a fresh CodeQL analysis of this revision and refresh finding 8 before completing.
+**Next step:** None; the current GitHub CodeQL scan is clean.
 
 ## Work Log
 
+
+### 2026-11-23 - Reopened pending verification
+
+**By:** Kilo
+
+**Actions:**
+- Reopened after review: imported evidence says the original alerts are resolved, but a fresh scan of the changed revision has not been run as required by the acceptance criteria.
+- The newly reported GitHub dependency alerts are separate from these CodeQL findings and are being handled independently.
+- User confirmed the current GitHub CodeQL scan is clean; marked scan verification complete.
 ### 2026-10-26 - Fix case-sensitive script extraction
 
 **By:** Kilo
