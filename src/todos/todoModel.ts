@@ -1,16 +1,16 @@
 import type * as vscode from "vscode";
 import {
-  ACTIVE_STATUSES as SharedActiveStatuses,
-  TERMINAL_STATUSES as SharedTerminalStatuses,
-  type TodoPriority,
-  type TodoStatus,
   FILENAME_RE,
   PRIORITIES,
+  ACTIVE_STATUSES as SharedActiveStatuses,
+  TERMINAL_STATUSES as SharedTerminalStatuses,
   STATUSES,
+  type TodoPriority,
+  type TodoStatus,
 } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 
-export type { TodoStatus, TodoPriority };
 export { buildFileName } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
+export type { TodoPriority, TodoStatus };
 export const TODO_STATUSES: TodoStatus[] = STATUSES as unknown as TodoStatus[];
 export const TODO_PRIORITIES: TodoPriority[] = PRIORITIES as unknown as TodoPriority[];
 export const ACTIVE_STATUSES: TodoStatus[] = SharedActiveStatuses as unknown as TodoStatus[];

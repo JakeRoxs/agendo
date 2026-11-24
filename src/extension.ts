@@ -1,10 +1,14 @@
 import { basename } from "node:path";
 import * as vscode from "vscode";
 import { BusyIndicator } from "./busyIndicator";
-import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import type { CommandServices } from "./commandRegistration";
+import { registerCommands, updateFilterContexts } from "./commandRegistration";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
+import { DiagnosticsService } from "./mcp/diagnosticsService";
+import { installMcpServer } from "./mcp/installServer";
+import { IpcBridge } from "./mcp/ipcBridge";
+import { workspaceDiscoveryDirectory } from "./mcp/workspaceDiscovery";
 import { out, outputChannel } from "./output";
 import { BoardViewProvider } from "./todos/boardViewProvider";
 import { createCanvasHostActions } from "./todos/canvasHostActions";
@@ -13,18 +17,14 @@ import { CanvasViewer } from "./todos/canvasViewer";
 import { ConfigService } from "./todos/configService";
 import { FilterService } from "./todos/filterService";
 import { LinkService } from "./todos/linkService";
+import { SettingsService } from "./todos/settingsService";
 import { SkillManager } from "./todos/skillManager";
 import { SkillStatusTreeProvider } from "./todos/skillStatusTreeProvider";
 import { StatusService } from "./todos/statusService";
-import { SettingsService } from "./todos/settingsService";
 import { findTodoCollisions } from "./todos/todoCollisions";
 import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
-import { DiagnosticsService } from "./mcp/diagnosticsService";
-import { installMcpServer } from "./mcp/installServer";
-import { IpcBridge } from "./mcp/ipcBridge";
-import { workspaceDiscoveryDirectory } from "./mcp/workspaceDiscovery";
 
 export async function activate(context: vscode.ExtensionContext) {
   out`${Settings.Identifier} activated`;
@@ -258,7 +258,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // Expose the local diagnostics IPC endpoint to MCP configuration commands.
   // Register the bridge's endpoint under every local workspace folder (and the
   // saved workspace file as an alias) so the MCP server can route by CWD.
-  const localFolders = vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
+  const localFolders =
+    vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
   const discoveryDirectories = localFolders
     .map((folder) => workspaceDiscoveryDirectory(context, folder.uri))
     .filter((directory): directory is string => Boolean(directory));

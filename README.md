@@ -25,6 +25,7 @@ be pre-release builds. In VS Code, open **Extensions**, select **...**, choose *
 VSIX...**, and select the downloaded file.
 
 To start using Agendo:
+
 1. Open **Agendo** from the Activity Bar
 2. Keep the default todo root, `docs/todos`, or choose another root in Settings
 3. Select **Create Todo...**, enter a short description, choose a priority, and optionally add an
@@ -51,12 +52,14 @@ Examples:
 ```
 
 The naming convention includes:
+
 - `issue_id` — zero-padded, sequential, and unique
 - `status` — `pending`, `in-progress`, `ready`, `backlogged`, `completed`, or `cancelled`
 - `priority` — `p1`, `p2`, or `p3`
 - `description` — kebab-case text
 
 Lifecycle semantics:
+
 - `pending` needs triage or has not started
 - `in-progress` is actively being worked on
 - `ready` is likely done but still needs confirmation that it works
@@ -99,23 +102,23 @@ tracking keys are displayed and searchable when present.
 
 ## Configuration
 
-| Setting                                    | Default      | Description                                                                           |
-| ------------------------------------------ | ------------ | ------------------------------------------------------------------------------------- |
-| `agendo.root`                              | `docs/todos` | Workspace-relative todo root                                                          |
-| `agendo.defaultPriority`                   | `p3`         | Default priority for new todos                                                        |
-| `agendo.completedFolder`                   | `completed`  | Folder for completed todos                                                            |
-| `agendo.cancelledFolder`                   | `cancelled`  | Folder for cancelled todos                                                            |
-| `agendo.backloggedFolder`                  | `backlogged` | Folder for backlogged todos                                                           |
-| `agendo.viewMode`                          | `default`    | Open todos using VS Code default behavior, editor, preview, preview editor, or canvas |
-| `agendo.groupBy`                           | `status`     | Group the regular tree by status, priority, group, or not at all                      |
-| `agendo.sortByDate`                        | `false`      | Sort regular todos by modification date                                               |
-| `agendo.showDependencyNodes`               | `false`      | Nest blocked todos under their blockers                                               |
-| `agendo.gitignoreTodos`                    | `true`       | Ignore todo files except Agendo configuration                                         |
+| Setting                                    | Default      | Description                                                                               |
+| ------------------------------------------ | ------------ | ----------------------------------------------------------------------------------------- |
+| `agendo.root`                              | `docs/todos` | Workspace-relative todo root                                                              |
+| `agendo.defaultPriority`                   | `p3`         | Default priority for new todos                                                            |
+| `agendo.completedFolder`                   | `completed`  | Folder for completed todos                                                                |
+| `agendo.cancelledFolder`                   | `cancelled`  | Folder for cancelled todos                                                                |
+| `agendo.backloggedFolder`                  | `backlogged` | Folder for backlogged todos                                                               |
+| `agendo.viewMode`                          | `default`    | Open todos using VS Code default behavior, editor, preview, preview editor, or canvas     |
+| `agendo.groupBy`                           | `status`     | Group the regular tree by status, priority, group, or not at all                          |
+| `agendo.sortByDate`                        | `false`      | Sort regular todos by modification date                                                   |
+| `agendo.showDependencyNodes`               | `false`      | Nest blocked todos under their blockers                                                   |
+| `agendo.gitignoreTodos`                    | `true`       | Ignore todo files except Agendo configuration                                             |
 | `agendo.skillUpdateCheck`                  | `true`       | Notify about bundled skill updates or canvas updates that could not install automatically |
-| `agendo.codeScanning.enabled`              | `false`      | Enable manual CodeQL and SonarQube imports                                            |
-| `agendo.codeScanning.sortByDate`           | `false`      | Sort scanning todos by modification date                                              |
-| `agendo.codeScanning.sonarqube.url`        | empty        | SonarQube server URL                                                                  |
-| `agendo.codeScanning.sonarqube.projectKey` | empty        | SonarQube project key                                                                 |
+| `agendo.codeScanning.enabled`              | `false`      | Enable manual CodeQL and SonarQube imports                                                |
+| `agendo.codeScanning.sortByDate`           | `false`      | Sort scanning todos by modification date                                                  |
+| `agendo.codeScanning.sonarqube.url`        | empty        | SonarQube server URL                                                                      |
+| `agendo.codeScanning.sonarqube.projectKey` | empty        | SonarQube project key                                                                     |
 
 The default parked-work folder is now `backlogged/`, matching the `backlogged` status. Existing
 `backlog/` folders are not renamed automatically: rename them to `backlogged/` after checking for

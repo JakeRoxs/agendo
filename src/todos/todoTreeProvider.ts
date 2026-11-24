@@ -451,9 +451,7 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     );
     const sourceGroup = node.source === "codeql" ? "CodeQL" : "SonarQube";
     const grouped = inStatus.filter((t) => t.group && (!node.source || t.group !== sourceGroup));
-    const ungrouped = inStatus.filter(
-      (t) => !t.group || (node.source && t.group === sourceGroup),
-    );
+    const ungrouped = inStatus.filter((t) => !t.group || (node.source && t.group === sourceGroup));
 
     if (grouped.length > 0) {
       return this.groupNodes(node.status, grouped, ungrouped, node.source);

@@ -274,7 +274,12 @@ suite("CanvasManager local status", () => {
     const runtimeFiles = fs
       .readdirSync(bundledDir)
       .filter((name) => /\.(mjs|html|json)$/.test(name));
-    for (const relative of [...runtimeFiles, "assets/page.css", "assets/page.js", "assets/settings.js"]) {
+    for (const relative of [
+      ...runtimeFiles,
+      "assets/page.css",
+      "assets/page.js",
+      "assets/settings.js",
+    ]) {
       assert.ok(
         fs.existsSync(path.join(dir, relative)),
         `${relative} was not copied on first install`,

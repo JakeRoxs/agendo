@@ -5,16 +5,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { out } from "../output";
-import { publishEndpoint } from "./workspaceDiscovery";
 import type {
   DiagnosticsService,
   GetProblemsParams,
   GetProblemsResult,
 } from "./diagnosticsService";
-import {
-  McpError,
-  ProblemErrorCode,
-} from "./diagnosticsService";
+import { McpError, ProblemErrorCode } from "./diagnosticsService";
+import { publishEndpoint } from "./workspaceDiscovery";
 
 const MAX_FRAME = 64 * 1024; // 64 KiB, aligned with the MCP client's outbound request cap
 const MAX_RESPONSE = 1024 * 1024; // 1 MiB, aligned with the MCP client's inbound response cap
@@ -136,9 +133,10 @@ export class IpcBridge implements vscode.Disposable {
   }
 
   private isEnabled(): boolean {
-    return isLocalDesktopHost() && vscode.workspace
-      .getConfiguration("agendo")
-      .get("mcp.problems.enabled", true);
+    return (
+      isLocalDesktopHost() &&
+      vscode.workspace.getConfiguration("agendo").get("mcp.problems.enabled", true)
+    );
   }
 
   private async update(): Promise<void> {
@@ -183,7 +181,12 @@ export class IpcBridge implements vscode.Disposable {
       await new Promise<void>((resolve, reject) => {
         server.once("close", resolve);
         server.on("error", (error) => {
-          reject(new McpError(ProblemErrorCode.INTERNAL, `Failed to listen on IPC endpoint: ${error.message}`));
+          reject(
+            new McpError(
+              ProblemErrorCode.INTERNAL,
+              `Failed to listen on IPC endpoint: ${error.message}`,
+            ),
+          );
         });
         server.listen({ path: this.endpoint }, resolve);
       });
@@ -297,7 +300,7 @@ export class IpcBridge implements vscode.Disposable {
         return;
       }
       while (true) {
-        const index = buffer.indexOf(0x0A); // newline byte
+        const index = buffer.indexOf(0x0a); // newline byte
         if (index === -1) {
           break;
         }
@@ -363,10 +366,7 @@ export class IpcBridge implements vscode.Disposable {
     const valid = new Set(["error", "warning", "information", "hint"]);
     for (const item of severity) {
       if (typeof item !== "string" || !valid.has(item)) {
-        throw new McpError(
-          ProblemErrorCode.INVALID_PARAMS,
-          `Invalid severity: ${String(item)}.`,
-        );
+        throw new McpError(ProblemErrorCode.INVALID_PARAMS, `Invalid severity: ${String(item)}.`);
       }
     }
   }
@@ -383,9 +383,11 @@ export class IpcBridge implements vscode.Disposable {
   /** Bound the serialized response to the 1 MiB frame by truncating diagnostics
    * when the result is large. `total` stays the count of all matching
    * diagnostics; `truncated` is true whenever any diagnostics are dropped. */
-  private boundResponse(
-    response: { id: unknown; ok: boolean; result?: GetProblemsResult },
-  ): { id: unknown; ok: boolean; result?: GetProblemsResult } {
+  private boundResponse(response: { id: unknown; ok: boolean; result?: GetProblemsResult }): {
+    id: unknown;
+    ok: boolean;
+    result?: GetProblemsResult;
+  } {
     if (!response.ok || !response.result) {
       return response;
     }

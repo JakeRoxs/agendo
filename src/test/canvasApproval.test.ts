@@ -87,7 +87,8 @@ suite("Native canvas approval lifetime", () => {
     const directory = path.join(root, "docs", "todos");
     fs.mkdirSync(directory, { recursive: true });
     const file = path.join(directory, "001-pending-p2-first.md");
-    const content = "---\nstatus: pending\npriority: p2\n---\n# First\n\n## Acceptance Criteria\n\n- [ ] Done\n";
+    const content =
+      "---\nstatus: pending\npriority: p2\n---\n# First\n\n## Acceptance Criteria\n\n- [ ] Done\n";
     fs.writeFileSync(file, content);
     const viewer = new CanvasViewer(vscode.Uri.file(path.resolve(__dirname, "../..")), {
       assertWritable: async () => {},
@@ -116,7 +117,11 @@ suite("Native canvas approval lifetime", () => {
       assert.strictEqual(entry.approval.getPolicy().mode, "manual");
       assert.strictEqual(fs.readFileSync(file, "utf8"), content);
       await viewer.open(root, "001");
-      assert.strictEqual(state.entry, entry, "reopening preserves the review store, not auto authorization");
+      assert.strictEqual(
+        state.entry,
+        entry,
+        "reopening preserves the review store, not auto authorization",
+      );
       assert.strictEqual(entry.approval.getPolicy().mode, "manual");
       const stopped = new Promise<void>((resolve) => entry.server.once("close", resolve));
       viewer.dispose();

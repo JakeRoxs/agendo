@@ -62,7 +62,7 @@ suite("McpConfig commands", () => {
 
     const services: any = {};
     const context: any = {
-      ...await makeContext("1.0.0", "// MCP server bundle"),
+      ...(await makeContext("1.0.0", "// MCP server bundle")),
       subscriptions: [],
     };
     registerCommands(context, services);
@@ -101,8 +101,11 @@ suite("McpConfig commands", () => {
   });
 
   test("ShowKiloMcpConfig emits generic Kilo shape without workspace or host PID", async () => {
-    const { captured, openedDocs, shownDocs, infoMessages, warnings, stablePath } = await setupCommands();
-    const showKiloMcpConfig = captured.find((c) => c.command === Command.ShowKiloMcpConfig)?.callback;
+    const { captured, openedDocs, shownDocs, infoMessages, warnings, stablePath } =
+      await setupCommands();
+    const showKiloMcpConfig = captured.find(
+      (c) => c.command === Command.ShowKiloMcpConfig,
+    )?.callback;
     assert.ok(showKiloMcpConfig, "ShowKiloMcpConfig callback should be registered");
     await showKiloMcpConfig();
 
@@ -157,11 +160,18 @@ suite("McpConfig commands", () => {
   test("a local folder can use VS Code's user-data storage URI for discovery", () => {
     const storage = vscode.Uri.file(directory);
     mock(vscode.workspace, "workspaceFile", undefined);
-    mock(vscode.workspace, "workspaceFolders", [{ uri: vscode.Uri.file(join(directory, "project")) }]);
-    const fileDirectory = workspaceDiscoveryDirectory({ globalStorageUri: storage } as vscode.ExtensionContext);
+    mock(vscode.workspace, "workspaceFolders", [
+      { uri: vscode.Uri.file(join(directory, "project")) },
+    ]);
+    const fileDirectory = workspaceDiscoveryDirectory({
+      globalStorageUri: storage,
+    } as vscode.ExtensionContext);
     assert.ok(fileDirectory);
-    assert.strictEqual(workspaceDiscoveryDirectory({
-      globalStorageUri: storage.with({ scheme: "vscode-userdata" }),
-    } as vscode.ExtensionContext), fileDirectory);
+    assert.strictEqual(
+      workspaceDiscoveryDirectory({
+        globalStorageUri: storage.with({ scheme: "vscode-userdata" }),
+      } as vscode.ExtensionContext),
+      fileDirectory,
+    );
   });
 });

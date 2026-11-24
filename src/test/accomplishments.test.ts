@@ -272,10 +272,16 @@ suite("Accomplishments Service", () => {
       makeTodo("002", "completed", now),
     ];
     const packet = buildAccomplishmentsPacket(todos, {});
-    assert.deepStrictEqual(packet.included.map((t) => t.id), ["001", "002", "003"]);
+    assert.deepStrictEqual(
+      packet.included.map((t) => t.id),
+      ["001", "002", "003"],
+    );
     // Re-running yields identical order.
     const packet2 = buildAccomplishmentsPacket(todos, {});
-    assert.deepStrictEqual(packet2.included.map((t) => t.id), ["001", "002", "003"]);
+    assert.deepStrictEqual(
+      packet2.included.map((t) => t.id),
+      ["001", "002", "003"],
+    );
   });
 
   test("applies size limit and reports omitted count for large selections", () => {

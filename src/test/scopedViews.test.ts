@@ -182,11 +182,20 @@ suite("separate todo and code-scanning views", () => {
   test("source filters handle regular todos, multiple sources, and empty selection", async () => {
     const filter = new FilterService(memoryState());
     await filter.set({ sources: ["sonarqube"] });
-    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [false, false, true]);
+    assert.deepStrictEqual(
+      todos.map((todo) => filter.matches(todo)),
+      [false, false, true],
+    );
     await filter.set({ sources: ["codeql", "sonarqube"] });
-    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [false, true, true]);
+    assert.deepStrictEqual(
+      todos.map((todo) => filter.matches(todo)),
+      [false, true, true],
+    );
     await filter.set({ sources: [] });
-    assert.deepStrictEqual(todos.map((todo) => filter.matches(todo)), [true, true, true]);
+    assert.deepStrictEqual(
+      todos.map((todo) => filter.matches(todo)),
+      [true, true, true],
+    );
   });
 
   test("cross-source blockers do not hide scanner todos in dependency mode", () => {

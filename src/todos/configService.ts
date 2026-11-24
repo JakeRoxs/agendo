@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
+import { FILENAME_RE } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 import { get, Settings } from "../configuration";
 import { out } from "../output";
 import type { BoardReturnTarget } from "./workspaceNavigation";
-import { FILENAME_RE } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 
 /**
  * Default configuration values, mirrored from package.json. The skill falls

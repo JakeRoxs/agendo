@@ -85,8 +85,7 @@ export async function sonarQubeDefaults(
   const token = (sonarQubeUrl ? env.SONARQUBE_TOKEN : env.SONAR_TOKEN)?.trim() || "";
   return {
     server,
-    project:
-      env.SONAR_PROJECT_KEY?.trim() || readProjectKey(properties),
+    project: env.SONAR_PROJECT_KEY?.trim() || readProjectKey(properties),
     token: server ? token : "",
   };
 }
@@ -912,7 +911,8 @@ async function processImportGroup(
   }));
 
   /** All findings for this todo are resolved by the scanner. */
-  const allResolved = snapshot.findings.length > 0 && snapshot.findings.every((f) => f.resolved === true);
+  const allResolved =
+    snapshot.findings.length > 0 && snapshot.findings.every((f) => f.resolved === true);
   const autoComplete = todo && todo.status !== "completed" && allResolved;
 
   if (todo && before !== undefined) {
@@ -1231,12 +1231,11 @@ export async function importScanningFindings(
     completedFolder: config.completedFolder,
   };
   for (const [key, alerts] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
-    const { write, changes, nextId: nextIdAfter } = await processImportGroup(
-      context,
-      key,
-      alerts,
-      nextId,
-    );
+    const {
+      write,
+      changes,
+      nextId: nextIdAfter,
+    } = await processImportGroup(context, key, alerts, nextId);
     nextId = nextIdAfter;
     writes.push(write);
     accumulateImportResult(result, write, changes);
