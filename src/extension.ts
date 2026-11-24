@@ -114,7 +114,8 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(canvasViewer);
   config.setCanvasOpener(async (uri, returnTo) => {
     const todoId = /^((?:(?:cql|sq)-)?\d{3,})-/.exec(basename(uri.fsPath))?.[1];
-    const root = config.getRootUri()?.fsPath;
+    const workspaceFolder = vscode.workspace.getWorkspaceFolder(uri) ?? config.getWorkspaceFolder();
+    const root = workspaceFolder?.uri.fsPath;
     if (!todoId || !root) {
       return false;
     }
@@ -295,8 +296,6 @@ export async function activate(context: vscode.ExtensionContext) {
     diagnostics: new DiagnosticsService(),
     discoveryDirectories,
   });
-  context.subscriptions.push(problemsBridge);
-
   // Reconcile the active workspace folder, todo repository, and live MCP
   // discovery registrations whenever the workspace folder set changes
   // (add/remove/reorder). The config service restores the persisted selection
@@ -304,6 +303,7 @@ export async function activate(context: vscode.ExtensionContext) {
   // the new active root; the bridge republishes each folder's endpoint record
   // without tearing down the IPC endpoint.
   context.subscriptions.push(
+    problemsBridge,
     vscode.workspace.onDidChangeWorkspaceFolders(async () => {
       config.refreshActiveFolder();
       await repository.rebindRoot();

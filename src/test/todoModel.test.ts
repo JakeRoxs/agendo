@@ -2276,6 +2276,7 @@ suite("todoModel", () => {
     );
 
     const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+    const originalGetWorkspaceFolder = vscode.workspace.getWorkspaceFolder;
     const originalCreateTreeView = vscode.window.createTreeView;
     const originalRegisterCommand = vscode.commands.registerCommand;
     const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
@@ -2311,6 +2312,13 @@ suite("todoModel", () => {
 
     Object.defineProperty(vscode.workspace, "workspaceFolders", {
       value: [{ uri: workspaceRoot, name: "workspace", index: 0 }],
+      configurable: true,
+    });
+    Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+      value: (uri: vscode.Uri) =>
+        uri.fsPath.startsWith(`${workspaceRoot.fsPath}${path.sep}`)
+          ? { uri: workspaceRoot, name: "workspace", index: 0 }
+          : undefined,
       configurable: true,
     });
     Object.defineProperty(vscode.window, "createTreeView", {
@@ -2508,6 +2516,7 @@ suite("todoModel", () => {
 
       const canvasViewer = context.subscriptions[0] as unknown as {
         actions: { handleSettingsAction(payload: unknown): Promise<unknown> };
+        open(workspaceRoot: string, target: string): Promise<void>;
       };
       for (const action of ["check-source", "install"]) {
         for (const component of ["skill", "canvas"]) {
@@ -2521,6 +2530,32 @@ suite("todoModel", () => {
           ]);
         }
       }
+
+      let canvasWorkspaceRoot: string | undefined;
+      canvasViewer.open = async (root) => {
+        canvasWorkspaceRoot = root;
+      };
+      await registrations.get(Command.OpenCanvas)?.({
+        kind: "todo",
+        todo: {
+          id: "050",
+          status: "ready",
+          priority: "p3",
+          title: "Grouped",
+          description: "grouped",
+          tags: [],
+          dependencies: ["999"],
+          group: "auth",
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "050-ready-p3-grouped.md",
+          uri: vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md"),
+          frontmatter: { status: "ready", priority: "p3", group: "auth", dependencies: ["999"] },
+        },
+      });
+      assert.strictEqual(canvasWorkspaceRoot, workspaceRoot.fsPath);
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({
@@ -2698,6 +2733,10 @@ suite("todoModel", () => {
     } finally {
       Object.defineProperty(vscode.workspace, "workspaceFolders", {
         value: originalWorkspaceFolders,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+        value: originalGetWorkspaceFolder,
         configurable: true,
       });
       Object.defineProperty(vscode.window, "createTreeView", {
