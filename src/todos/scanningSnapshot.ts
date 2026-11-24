@@ -35,7 +35,10 @@ export function scanningIdentity(provenance: ScanningProvenance): string {
   if (branch === undefined) {
     identity = grouping === "rule" ? [source, scope, target] : [source, scope, grouping, target];
   } else {
-    identity = grouping === "rule" ? [source, scope, branch, target] : [source, scope, branch, grouping, target];
+    identity =
+      grouping === "rule"
+        ? [source, scope, branch, target]
+        : [source, scope, branch, grouping, target];
   }
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }

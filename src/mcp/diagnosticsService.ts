@@ -74,7 +74,10 @@ export const ProblemErrorCode = {
 
 /** Stability-coded error surfaced through the IPC wire. */
 export class McpError extends Error {
-  constructor(public readonly code: string, message: string) {
+  constructor(
+    public readonly code: string,
+    message: string,
+  ) {
     super(message);
     this.name = code;
   }
@@ -179,10 +182,7 @@ function validateSeverity(value: unknown): void {
   const valid = new Set(["error", "warning", "information", "hint"]);
   for (const severity of value) {
     if (typeof severity !== "string" || !valid.has(severity)) {
-      throw new McpError(
-        ProblemErrorCode.INVALID_PARAMS,
-        `Invalid severity: ${String(severity)}.`,
-      );
+      throw new McpError(ProblemErrorCode.INVALID_PARAMS, `Invalid severity: ${String(severity)}.`);
     }
   }
 }
@@ -310,7 +310,11 @@ export class DiagnosticsService {
     validateLimit(p.limit);
   }
 
-  private toProblemDiagnostic(folderUri: vscode.Uri, uri: vscode.Uri, diagnostic: vscode.Diagnostic): ProblemDiagnostic {
+  private toProblemDiagnostic(
+    folderUri: vscode.Uri,
+    uri: vscode.Uri,
+    diagnostic: vscode.Diagnostic,
+  ): ProblemDiagnostic {
     return {
       path: relativePath(folderUri, uri),
       message: diagnostic.message,

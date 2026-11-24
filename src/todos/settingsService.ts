@@ -1,18 +1,18 @@
 import * as vscode from "vscode";
 import { Command } from "../commands";
 import { Settings } from "../configuration";
+import type { BoardViewProvider } from "./boardViewProvider";
+import { validateSonarUrl } from "./codeScanningService";
 import {
   type ConfigService,
   DEFAULT_TODOS_CONFIG,
   isViewMode,
   type ViewMode,
 } from "./configService";
+import type { SkillStatusTreeProvider } from "./skillStatusTreeProvider";
 import { TODO_STATUSES, type TodoStatus } from "./todoModel";
-import type { BoardViewProvider } from "./boardViewProvider";
-import { validateSonarUrl } from "./codeScanningService";
 import type { TodoRepository } from "./todoRepository";
 import type { TodoTreeProvider } from "./todoTreeProvider";
-import type { SkillStatusTreeProvider } from "./skillStatusTreeProvider";
 
 const GROUP_BY_MODES = new Set<string>(["status", "priority", "group", "none"]);
 const DEFAULT_PRIORITIES = new Set<string>(["p1", "p2", "p3"]);
@@ -474,7 +474,9 @@ export class SettingsService {
     const value = this.requireRelativePath(payload, key);
     // The shared canvas loader reads lifecycle folders as a single subfolder name.
     if (!/^[\w.-]+$/.test(value)) {
-      throw new Error("Use a single folder name containing letters, numbers, underscores, dots, or hyphens.");
+      throw new Error(
+        "Use a single folder name containing letters, numbers, underscores, dots, or hyphens.",
+      );
     }
     return value;
   }

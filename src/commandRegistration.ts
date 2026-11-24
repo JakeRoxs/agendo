@@ -2,7 +2,11 @@ import * as vscode from "vscode";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
-import { buildAccomplishmentsPacket, type AccomplishmentsFilter } from "./todos/accomplishmentsService";
+import { installMcpServer } from "./mcp/installServer";
+import {
+  type AccomplishmentsFilter,
+  buildAccomplishmentsPacket,
+} from "./todos/accomplishmentsService";
 import type { BoardViewProvider } from "./todos/boardViewProvider";
 import type { CanvasManager } from "./todos/canvasManager";
 import type { CanvasViewer } from "./todos/canvasViewer";
@@ -14,10 +18,10 @@ import {
   fetchSonarQubeCli,
   fetchSonarQubeCliBranches,
   importScanningFindings,
+  type ScanningFinding,
   sonarQubeCliServer,
   sonarQubeDefaults,
   sonarQubeEnvironmentToken,
-  type ScanningFinding,
   validateSonarUrl,
 } from "./todos/codeScanningService";
 import { compareVersions, versionRelationship } from "./todos/componentVersions";
@@ -59,7 +63,6 @@ import {
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
 import { boardReturnTarget } from "./todos/workspaceNavigation";
-import { installMcpServer } from "./mcp/installServer";
 
 export interface CommandServices {
   config: ConfigService;
@@ -207,7 +210,9 @@ export function registerCommands(
     try {
       return await installMcpServer(context);
     } catch (error) {
-      void vscode.window.showErrorMessage(`Could not prepare the Agendo MCP server: ${String(error)}`);
+      void vscode.window.showErrorMessage(
+        `Could not prepare the Agendo MCP server: ${String(error)}`,
+      );
       return undefined;
     }
   }
@@ -694,7 +699,14 @@ async function refreshSonarTodo(
           `SonarQube target ${scan.scope} (${scan.branch || "default branch"}) does not match todo ${todo.id} (${provenance.scope}, ${provenance.branch || "default branch"}).`,
         );
       }
-      await importAndReportScanningFindings(services, todo, scan, provenance, "sonarqube", "SonarQube");
+      await importAndReportScanningFindings(
+        services,
+        todo,
+        scan,
+        provenance,
+        "sonarqube",
+        "SonarQube",
+      );
     },
   );
 }

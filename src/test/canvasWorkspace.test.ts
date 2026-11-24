@@ -5,11 +5,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
-import { ConfigService } from "../todos/configService";
 import { CanvasViewer } from "../todos/canvasViewer";
-import type { WorkspaceView } from "../todos/workspaceNavigation";
+import { ConfigService } from "../todos/configService";
 import { StatusService } from "../todos/statusService";
 import { parseTodo } from "../todos/todoModel";
+import type { WorkspaceView } from "../todos/workspaceNavigation";
 import { boardReturnTarget } from "../todos/workspaceNavigation";
 
 const importModule = new Function("url", "return import(url)") as (url: string) => Promise<any>;

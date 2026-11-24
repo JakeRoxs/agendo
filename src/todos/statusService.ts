@@ -1,4 +1,9 @@
 import * as vscode from "vscode";
+import {
+  isReadyBlocked,
+  planTransition,
+  TERMINAL_STATUSES,
+} from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 import { out } from "../output";
 import type { ConfigService } from "./configService";
 import { readText } from "./fileSystem";
@@ -10,7 +15,6 @@ import {
   type TodoPriority,
   type TodoStatus,
 } from "./todoModel";
-import { isReadyBlocked, planTransition, TERMINAL_STATUSES } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 import type { TodoRepository } from "./todoRepository";
 
 /**
@@ -38,7 +42,12 @@ export class StatusService {
     if (newStatus === "ready" && todo.dependencies.length > 0) {
       const allTodos = this.repository?.getTodos() ?? [];
       const todosById = new Map(allTodos.map((candidate) => [candidate.id, candidate]));
-      if (isReadyBlocked(todo.dependencies, allTodos.map((t) => ({ id: t.id, status: t.status })))) {
+      if (
+        isReadyBlocked(
+          todo.dependencies,
+          allTodos.map((t) => ({ id: t.id, status: t.status })),
+        )
+      ) {
         const terminalSet = new Set<TodoStatus>(TERMINAL_STATUSES);
         const incomplete = todo.dependencies
           .map((id) => {

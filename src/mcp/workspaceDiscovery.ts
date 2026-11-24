@@ -26,7 +26,8 @@ export function workspaceDiscoveryDirectory(
 ): string | undefined {
   const storage = context.globalStorageUri;
   // Desktop VS Code can expose on-disk profile storage as vscode-userdata.
-  if (!storage || (storage.scheme !== "file" && storage.scheme !== "vscode-userdata")) return undefined;
+  if (!storage || (storage.scheme !== "file" && storage.scheme !== "vscode-userdata"))
+    return undefined;
   if (!isAbsolute(storage.fsPath)) return undefined;
   let workspace: vscode.Uri | undefined;
   if (workspaceUri) {
@@ -34,7 +35,9 @@ export function workspaceDiscoveryDirectory(
   } else if (vscode.workspace.workspaceFile?.scheme === "file") {
     workspace = vscode.workspace.workspaceFile;
   } else {
-    workspace = vscode.workspace.workspaceFolders?.find((folder) => folder.uri.scheme === "file")?.uri;
+    workspace = vscode.workspace.workspaceFolders?.find(
+      (folder) => folder.uri.scheme === "file",
+    )?.uri;
   }
   if (!workspace) return undefined;
   const key = workspaceIdentity(workspace.fsPath);
@@ -51,10 +54,18 @@ function writeRegistration(directory: string, filename: string, content: string)
   }
 }
 
-export function publishEndpoint(directory: string, endpoint: string, workspacePath?: string): vscode.Disposable {
+export function publishEndpoint(
+  directory: string,
+  endpoint: string,
+  workspacePath?: string,
+): vscode.Disposable {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const filename = `${randomUUID()}.json`;
-  const record = { endpoint, hostPid: process.pid, ...(workspacePath ? { workspace: workspacePath } : {}) };
+  const record = {
+    endpoint,
+    hostPid: process.pid,
+    ...(workspacePath ? { workspace: workspacePath } : {}),
+  };
   writeRegistration(directory, filename, JSON.stringify(record));
   return {
     dispose: () => rmSync(join(directory, filename), { force: true }),

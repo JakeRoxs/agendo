@@ -4,12 +4,12 @@ import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 import { Script } from "node:vm";
 import * as vscode from "vscode";
-import { extractScript as extractScriptFromHtml } from "./extractScript";
 import { BoardViewProvider } from "../todos/boardViewProvider";
 import { FilterService } from "../todos/filterService";
 import type { StatusService } from "../todos/statusService";
 import { buildFileName, parseTodo, type Todo } from "../todos/todoModel";
 import type { TodoRepository } from "../todos/todoRepository";
+import { extractScript as extractScriptFromHtml } from "./extractScript";
 
 function memoryState(): vscode.Memento {
   const values = new Map<string, unknown>();
@@ -192,7 +192,10 @@ suite("shared board presentation", () => {
       assert.ok(script.includes("columnElement.parentElement.children"));
       assert.match(capturedHtml, /<style>[\s\S]*\.board\s*\{[^}]*display:\s*grid/);
       assert.match(capturedHtml, /\.canvas-toolbar\s*\{[^}]*display:\s*flex/);
-      assert.ok(!capturedHtml.includes('href="/page.css"'), "Native styles must not use HTTP paths");
+      assert.ok(
+        !capturedHtml.includes('href="/page.css"'),
+        "Native styles must not use HTTP paths",
+      );
       assert.ok(!capturedHtml.includes("__AGENDO_BOARD_"), "Native placeholders must be resolved");
     } finally {
       board.dispose();
@@ -648,10 +651,20 @@ suite("shared board presentation", () => {
       assert.ok(httpHtml.includes(feature), `HTTP HTML missing shared feature: ${feature}`);
     }
 
-    const sharedCss = readFileSync(path.join(path.dirname(BOARD_HTML_PATH), "assets/page.css"), "utf8");
-    assert.ok(nativeHtml.includes(sharedCss), "Native board must embed the HTTP board's stylesheet");
+    const sharedCss = readFileSync(
+      path.join(path.dirname(BOARD_HTML_PATH), "assets/page.css"),
+      "utf8",
+    );
+    assert.ok(
+      nativeHtml.includes(sharedCss),
+      "Native board must embed the HTTP board's stylesheet",
+    );
     assert.match(httpHtml, /<link[^>]+href="\/page\.css"/);
-    for (const selector of [".board.source-sections", "accent-priority-p1", "accent-status-completed"]) {
+    for (const selector of [
+      ".board.source-sections",
+      "accent-priority-p1",
+      "accent-status-completed",
+    ]) {
       assert.ok(sharedCss.includes(selector), `Shared stylesheet missing feature: ${selector}`);
     }
 

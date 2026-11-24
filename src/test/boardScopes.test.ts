@@ -1,13 +1,13 @@
 import * as assert from "node:assert";
 import { Script } from "node:vm";
 import * as vscode from "vscode";
-import { extractScript } from "./extractScript";
 import { Command } from "../commands";
 import { BoardViewProvider, buildBoardSnapshot } from "../todos/boardViewProvider";
 import { FilterService } from "../todos/filterService";
 import type { StatusService } from "../todos/statusService";
 import { buildFileName, parseTodo, type Todo } from "../todos/todoModel";
 import type { TodoRepository } from "../todos/todoRepository";
+import { extractScript } from "./extractScript";
 
 function memoryState(): vscode.Memento {
   const values = new Map<string, unknown>();

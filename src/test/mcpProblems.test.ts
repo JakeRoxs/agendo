@@ -4,8 +4,8 @@ import * as net from "node:net";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
-import { DiagnosticsService, ProblemErrorCode } from "../mcp/diagnosticsService";
 import type { GetProblemsParams, GetProblemsResult } from "../mcp/diagnosticsService";
+import { DiagnosticsService, ProblemErrorCode } from "../mcp/diagnosticsService";
 import { IpcBridge, windowsNamedPipe } from "../mcp/ipcBridge";
 
 function makeUri(path: string): vscode.Uri {
@@ -126,45 +126,53 @@ function assertConnectionFails(endpoint: string): Promise<void> {
 function requestResponse(
   socket: net.Socket,
   request: unknown,
-): Promise<{ id: unknown; ok: boolean; result?: unknown; error?: { code: string; message: string } }> {
-  return new Promise<{ id: unknown; ok: boolean; result?: unknown; error?: { code: string; message: string } }>(
-    (resolve, reject) => {
-      let buffer = "";
-      const handler = (data: Buffer) => {
-        buffer += data.toString("utf8");
-        const index = buffer.indexOf("\n");
-        if (index !== -1) {
-          socket.removeListener("data", handler);
-          resolve(
-            JSON.parse(buffer.slice(0, index)) as {
-              id: unknown;
-              ok: boolean;
-              result?: unknown;
-              error?: { code: string; message: string };
-            },
-          );
-        }
-      };
-      socket.on("data", handler);
-      socket.write(`${JSON.stringify(request)}\n`);
-      socket.on("close", () => {
+): Promise<{
+  id: unknown;
+  ok: boolean;
+  result?: unknown;
+  error?: { code: string; message: string };
+}> {
+  return new Promise<{
+    id: unknown;
+    ok: boolean;
+    result?: unknown;
+    error?: { code: string; message: string };
+  }>((resolve, reject) => {
+    let buffer = "";
+    const handler = (data: Buffer) => {
+      buffer += data.toString("utf8");
+      const index = buffer.indexOf("\n");
+      if (index !== -1) {
         socket.removeListener("data", handler);
-        if (buffer) {
-          resolve(
-            JSON.parse(buffer) as {
-              id: unknown;
-              ok: boolean;
-              result?: unknown;
-              error?: { code: string; message: string };
-            },
-          );
-        } else {
-          reject(new Error("no response"));
-        }
-      });
-      socket.on("error", reject);
-    },
-  );
+        resolve(
+          JSON.parse(buffer.slice(0, index)) as {
+            id: unknown;
+            ok: boolean;
+            result?: unknown;
+            error?: { code: string; message: string };
+          },
+        );
+      }
+    };
+    socket.on("data", handler);
+    socket.write(`${JSON.stringify(request)}\n`);
+    socket.on("close", () => {
+      socket.removeListener("data", handler);
+      if (buffer) {
+        resolve(
+          JSON.parse(buffer) as {
+            id: unknown;
+            ok: boolean;
+            result?: unknown;
+            error?: { code: string; message: string };
+          },
+        );
+      } else {
+        reject(new Error("no response"));
+      }
+    });
+    socket.on("error", reject);
+  });
 }
 
 suite("mcpProblems", () => {
@@ -172,8 +180,14 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "x", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/b.ts"), [makeDiagnostic(makeUri("/ws/b.ts"), "y", vscode.DiagnosticSeverity.Warning)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "x", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/b.ts"),
+          [makeDiagnostic(makeUri("/ws/b.ts"), "y", vscode.DiagnosticSeverity.Warning)],
+        ],
       ]),
     ];
     try {
@@ -203,7 +217,10 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/sub/c.ts"), [makeDiagnostic(makeUri("/ws/sub/c.ts"), "c", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/sub/c.ts"),
+          [makeDiagnostic(makeUri("/ws/sub/c.ts"), "c", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -222,9 +239,18 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "a", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/sub/c.ts"), [makeDiagnostic(makeUri("/ws/sub/c.ts"), "c", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/b.ts"), [makeDiagnostic(makeUri("/ws/b.ts"), "b", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "a", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/sub/c.ts"),
+          [makeDiagnostic(makeUri("/ws/sub/c.ts"), "c", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/b.ts"),
+          [makeDiagnostic(makeUri("/ws/b.ts"), "b", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -249,16 +275,27 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "err", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/b.ts"), [makeDiagnostic(makeUri("/ws/b.ts"), "war", vscode.DiagnosticSeverity.Warning)]],
-        [makeUri("/ws/c.ts"), [makeDiagnostic(makeUri("/ws/c.ts"), "inf", vscode.DiagnosticSeverity.Information)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "err", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/b.ts"),
+          [makeDiagnostic(makeUri("/ws/b.ts"), "war", vscode.DiagnosticSeverity.Warning)],
+        ],
+        [
+          makeUri("/ws/c.ts"),
+          [makeDiagnostic(makeUri("/ws/c.ts"), "inf", vscode.DiagnosticSeverity.Information)],
+        ],
       ]),
     ];
     try {
       const service = new DiagnosticsService();
       const result = await service.getProblems({ severity: ["error", "warning"] });
       assert.strictEqual(result.total, 2);
-      assert.ok(result.diagnostics.every((d) => d.severity === "error" || d.severity === "warning"));
+      assert.ok(
+        result.diagnostics.every((d) => d.severity === "error" || d.severity === "warning"),
+      );
     } finally {
       for (const r of restore) {
         r();
@@ -270,9 +307,18 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "d", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/b.ts"), [makeDiagnostic(makeUri("/ws/b.ts"), "d", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/c.ts"), [makeDiagnostic(makeUri("/ws/c.ts"), "d", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "d", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/b.ts"),
+          [makeDiagnostic(makeUri("/ws/b.ts"), "d", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/c.ts"),
+          [makeDiagnostic(makeUri("/ws/c.ts"), "d", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -296,11 +342,17 @@ suite("mcpProblems", () => {
     try {
       const service = new DiagnosticsService();
       await assert.rejects(service.getProblems({ limit: 0 }), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+        );
         return true;
       });
       await assert.rejects(service.getProblems({ limit: 501 }), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+        );
         return true;
       });
     } finally {
@@ -321,7 +373,10 @@ suite("mcpProblems", () => {
     try {
       const service = new DiagnosticsService();
       await assert.rejects(service.getProblems({}), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
+        );
         return true;
       });
     } finally {
@@ -338,7 +393,10 @@ suite("mcpProblems", () => {
         { uri: makeUri("/ws2"), name: "ws2", index: 1 },
       ]),
       mockGetDiagnostics([
-        [makeUri("/ws2/a.ts"), [makeDiagnostic(makeUri("/ws2/a.ts"), "x", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws2/a.ts"),
+          [makeDiagnostic(makeUri("/ws2/a.ts"), "x", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -364,7 +422,10 @@ suite("mcpProblems", () => {
     try {
       const service = new DiagnosticsService();
       await assert.rejects(service.getProblems({ workspaceFolder: "nope" }), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND,
+        );
         return true;
       });
     } finally {
@@ -382,11 +443,17 @@ suite("mcpProblems", () => {
     try {
       const service = new DiagnosticsService();
       await assert.rejects(service.getProblems({ path: "../../etc/passwd" }), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.PATH_TRAVERSAL);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.PATH_TRAVERSAL,
+        );
         return true;
       });
       await assert.rejects(service.getProblems({ path: "/absolute/foo" }), (error) => {
-        assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.PATH_TRAVERSAL);
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.PATH_TRAVERSAL,
+        );
         return true;
       });
     } finally {
@@ -400,8 +467,14 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "inside", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/outside/x.ts"), [makeDiagnostic(makeUri("/outside/x.ts"), "outside", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "inside", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/outside/x.ts"),
+          [makeDiagnostic(makeUri("/outside/x.ts"), "outside", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -420,7 +493,18 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "msg", vscode.DiagnosticSeverity.Error, "typescript", 123)]],
+        [
+          makeUri("/ws/a.ts"),
+          [
+            makeDiagnostic(
+              makeUri("/ws/a.ts"),
+              "msg",
+              vscode.DiagnosticSeverity.Error,
+              "typescript",
+              123,
+            ),
+          ],
+        ],
       ]),
     ];
     try {
@@ -474,9 +558,18 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "d1", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "d2", vscode.DiagnosticSeverity.Error)]],
-        [makeUri("/ws/b.ts"), [makeDiagnostic(makeUri("/ws/b.ts"), "d3", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "d1", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "d2", vscode.DiagnosticSeverity.Error)],
+        ],
+        [
+          makeUri("/ws/b.ts"),
+          [makeDiagnostic(makeUri("/ws/b.ts"), "d3", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     try {
@@ -507,42 +600,60 @@ suite("mcpProblems", () => {
       await assert.rejects(
         service.getProblems({ path: 1 } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
       await assert.rejects(
         service.getProblems({ workspaceFolder: 1 } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
       await assert.rejects(
         service.getProblems({ severity: ["bogus"] } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
       await assert.rejects(
         service.getProblems({ severity: "error" } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
       await assert.rejects(
         service.getProblems({ limit: 1.5 } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
       await assert.rejects(
         service.getProblems({ limit: "2" } as unknown as GetProblemsParams),
         (error) => {
-          assert.ok(error instanceof Error && (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS);
+          assert.ok(
+            error instanceof Error &&
+              (error as { code?: string }).code === ProblemErrorCode.INVALID_PARAMS,
+          );
           return true;
         },
       );
@@ -585,13 +696,13 @@ suite("mcpProblems", () => {
         configurable: true,
       });
       try {
-      const service = new DiagnosticsService();
-      bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
-      if (!bridge) {
-        throw new Error("bridge not created");
-      }
-      const endpoint = bridge.getEndpoint();
-      await waitForListening(endpoint);
+        const service = new DiagnosticsService();
+        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service });
+        if (!bridge) {
+          throw new Error("bridge not created");
+        }
+        const endpoint = bridge.getEndpoint();
+        await waitForListening(endpoint);
 
         // Opt-out: the bridge must stop listening but keep the config listener
         // alive so it can be re-enabled.
@@ -673,7 +784,11 @@ suite("mcpProblems", () => {
       });
       try {
         const service = new DiagnosticsService();
-        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectories: [discoveryDirectory] });
+        bridge = await IpcBridge.create({
+          context: mockContext,
+          diagnostics: service,
+          discoveryDirectories: [discoveryDirectory],
+        });
         if (!bridge) {
           throw new Error("bridge not created");
         }
@@ -682,7 +797,10 @@ suite("mcpProblems", () => {
         const registrations = fs.readdirSync(discoveryDirectory);
         assert.strictEqual(registrations.length, 1);
         const recordPath = path.join(discoveryDirectory, registrations[0]);
-        assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), { endpoint, hostPid: process.pid });
+        assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), {
+          endpoint,
+          hostPid: process.pid,
+        });
 
         // The private temp directory is only meaningful on Unix; Windows uses
         // an OS named pipe with no per-window temp directory.
@@ -757,7 +875,7 @@ suite("mcpProblems", () => {
       const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
       const originalGetConfiguration = vscode.workspace.getConfiguration;
       const configListeners: Array<(event: never) => void> = [];
-      let problemsEnabled = true;
+      const problemsEnabled = true;
       Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
         value: (listener: (event: never) => void) => {
           configListeners.push(listener);
@@ -774,7 +892,11 @@ suite("mcpProblems", () => {
       });
       try {
         const service = new DiagnosticsService();
-        bridge = await IpcBridge.create({ context: mockContext, diagnostics: service, discoveryDirectories });
+        bridge = await IpcBridge.create({
+          context: mockContext,
+          diagnostics: service,
+          discoveryDirectories,
+        });
         if (!bridge) {
           throw new Error("bridge not created");
         }
@@ -786,7 +908,10 @@ suite("mcpProblems", () => {
           const registrations = fs.readdirSync(directory);
           assert.strictEqual(registrations.length, 1);
           const recordPath = path.join(directory, registrations[0]);
-          assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), { endpoint, hostPid: process.pid });
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), {
+            endpoint,
+            hostPid: process.pid,
+          });
         }
 
         // Terminal disposal cleans up registrations in every directory.
@@ -849,16 +974,19 @@ suite("mcpProblems", () => {
       await waitForListening(endpoint);
 
       // Oversized request frame (> 64 KiB) is rejected promptly.
-      const oversizeRequest = JSON.stringify({
-        id: 1,
-        method: "get_problems",
-        params: {},
-      }) + "x".repeat(70000) + "\n";
+      const oversizeRequest =
+        JSON.stringify({
+          id: 1,
+          method: "get_problems",
+          params: {},
+        }) +
+        "x".repeat(70000) +
+        "\n";
       await new Promise<void>((resolve, reject) => {
         const socket = net.createConnection(endpoint);
         let failed = false;
         let closed = false;
-        socket.on("error", (error) => {
+        socket.on("error", () => {
           if (!failed) {
             failed = true;
             // Connection should be destroyed/closed by the bridge.
@@ -900,7 +1028,7 @@ suite("mcpProblems", () => {
       assert.strictEqual(result.total, 1);
       assert.strictEqual(result.truncated, true);
       assert.strictEqual(result.diagnostics.length, 0);
-      const body = Buffer.from(JSON.stringify(response2) + "\n");
+      const body = Buffer.from(`${JSON.stringify(response2)}\n`);
       assert.ok(
         Buffer.byteLength(body) <= 1024 * 1024,
         `response body ${body.length} bytes exceeds 1 MiB response cap`,
@@ -919,7 +1047,10 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([
-        [makeUri("/ws/a.ts"), [makeDiagnostic(makeUri("/ws/a.ts"), "problem", vscode.DiagnosticSeverity.Error)]],
+        [
+          makeUri("/ws/a.ts"),
+          [makeDiagnostic(makeUri("/ws/a.ts"), "problem", vscode.DiagnosticSeverity.Error)],
+        ],
       ]),
     ];
     let bridge: IpcBridge | undefined;

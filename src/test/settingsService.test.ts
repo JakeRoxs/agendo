@@ -1,12 +1,12 @@
 import * as assert from "node:assert";
 import * as vscode from "vscode";
-import { SettingsService } from "../todos/settingsService";
 import { Command } from "../commands";
 import type { BoardViewProvider } from "../todos/boardViewProvider";
 import type { ConfigService } from "../todos/configService";
+import { SettingsService } from "../todos/settingsService";
+import type { SkillStatusTreeProvider } from "../todos/skillStatusTreeProvider";
 import type { TodoRepository } from "../todos/todoRepository";
 import type { TodoTreeProvider } from "../todos/todoTreeProvider";
-import type { SkillStatusTreeProvider } from "../todos/skillStatusTreeProvider";
 
 type BoardProviderFake = BoardViewProvider & {
   getHiddenStatusesCalls: Array<{ scope: string; statuses: string[] }>;
@@ -29,7 +29,7 @@ function boardProviderFake(scope: "todos" | "code-scanning"): BoardProviderFake 
       return true;
     },
     refresh: () => {},
-    getSnapshot: () => ({} as any),
+    getSnapshot: () => ({}) as any,
     handleCanvasMessage: async () => {},
     open: () => {},
     dispose: () => {},
@@ -226,9 +226,20 @@ suite("settings service", () => {
   });
 
   test("lifecycle folder settings must remain readable by the shared canvas loader", async () => {
-    for (const action of ["set-backlogged-folder", "set-cancelled-folder", "set-completed-folder"]) {
+    for (const action of [
+      "set-backlogged-folder",
+      "set-cancelled-folder",
+      "set-completed-folder",
+    ]) {
       const { service, setCalls } = makeService();
-      for (const value of ["nested/folder", "folder with spaces", "../outside", ".", "..", "C:\\temp"]) {
+      for (const value of [
+        "nested/folder",
+        "folder with spaces",
+        "../outside",
+        ".",
+        "..",
+        "C:\\temp",
+      ]) {
         await assert.rejects(service.handleSettingsAction({ action, value }));
       }
       assert.strictEqual(setCalls.length, 0);
@@ -240,7 +251,11 @@ suite("settings service", () => {
   test("source preferences reject credential-bearing or ambiguous URLs before writing", async () => {
     const { service, setCalls } = makeService();
     for (const action of ["set-skill-update-source", "set-canvas-update-source"]) {
-      for (const value of ["https://user:password@example.com/source", "https://example.com/source?key=value", "https://example.com/source#fragment"]) {
+      for (const value of [
+        "https://user:password@example.com/source",
+        "https://example.com/source?key=value",
+        "https://example.com/source#fragment",
+      ]) {
         await assert.rejects(service.handleSettingsAction({ action, value }));
       }
     }
@@ -327,13 +342,17 @@ suite("settings service", () => {
   test("open-board executes CodeScanningOpenBoard for code-scanning scope", async () => {
     const { service, executeCommandCalls } = makeService();
     await service.handleSettingsAction({ action: "open-board", scope: "code-scanning" });
-    assert.deepStrictEqual(executeCommandCalls, [{ command: Command.CodeScanningOpenBoard, args: [] }]);
+    assert.deepStrictEqual(executeCommandCalls, [
+      { command: Command.CodeScanningOpenBoard, args: [] },
+    ]);
   });
 
   test("open-tree executes extension view command", async () => {
     const { service, executeCommandCalls } = makeService();
     await service.handleSettingsAction({ action: "open-tree" });
-    assert.deepStrictEqual(executeCommandCalls, [{ command: "workbench.view.extension.agendo", args: [] }]);
+    assert.deepStrictEqual(executeCommandCalls, [
+      { command: "workbench.view.extension.agendo", args: [] },
+    ]);
   });
 
   test("check-source/install executes ManageSkill/ManageCanvas and validates component", async () => {
@@ -351,7 +370,9 @@ suite("settings service", () => {
       { command: Command.ManageSkill, args: [] },
       { command: Command.ManageCanvas, args: [] },
     ]);
-    await assert.rejects(service.handleSettingsAction({ action: "check-source", component: "bogus" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "check-source", component: "bogus" }),
+    );
     assert.strictEqual(executeCommandCalls.length, 2);
   });
 
@@ -386,7 +407,9 @@ suite("settings service", () => {
 
   test("set-sort-by-date requires boolean, not string", async () => {
     const { service, setCalls } = makeService();
-    await assert.rejects(service.handleSettingsAction({ action: "set-sort-by-date", value: "true" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-sort-by-date", value: "true" }),
+    );
     assert.strictEqual(setCalls.length, 0);
 
     await service.handleSettingsAction({ action: "set-sort-by-date", value: true });
@@ -395,10 +418,12 @@ suite("settings service", () => {
 
   test("set-code-scanning-sort-by-date requires boolean", async () => {
     const { service, setCalls } = makeService();
-    await assert.rejects(service.handleSettingsAction({
-      action: "set-code-scanning-sort-by-date",
-      value: 1,
-    }));
+    await assert.rejects(
+      service.handleSettingsAction({
+        action: "set-code-scanning-sort-by-date",
+        value: 1,
+      }),
+    );
     assert.strictEqual(setCalls.length, 0);
   });
 
@@ -438,7 +463,9 @@ suite("settings service", () => {
 
   test("set-default-priority validates enum and writes global", async () => {
     const { service, setDefaultCalls } = makeService();
-    await assert.rejects(service.handleSettingsAction({ action: "set-default-priority", value: "p4" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-default-priority", value: "p4" }),
+    );
     assert.strictEqual(setDefaultCalls.length, 0);
 
     await service.handleSettingsAction({ action: "set-default-priority", value: "p1" });
@@ -447,7 +474,9 @@ suite("settings service", () => {
 
   test("set-default-preview validates enum and writes global", async () => {
     const { service, setDefaultCalls } = makeService();
-    await assert.rejects(service.handleSettingsAction({ action: "set-default-preview", value: "bogus" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-default-preview", value: "bogus" }),
+    );
     assert.strictEqual(setDefaultCalls.length, 0);
 
     await service.handleSettingsAction({ action: "set-default-preview", value: "editor" });
@@ -456,24 +485,30 @@ suite("settings service", () => {
 
   test("set-board-status-visibility isolates scopes and validates", async () => {
     const { service, board, scanning } = makeService();
-    await assert.rejects(service.handleSettingsAction({
-      action: "set-board-status-visibility",
-      value: true,
-      scope: "bogus",
-      status: "pending",
-    }));
-    await assert.rejects(service.handleSettingsAction({
-      action: "set-board-status-visibility",
-      value: true,
-      scope: "todos",
-      status: "bogus",
-    }));
-    await assert.rejects(service.handleSettingsAction({
-      action: "set-board-status-visibility",
-      value: "yes",
-      scope: "todos",
-      status: "pending",
-    }));
+    await assert.rejects(
+      service.handleSettingsAction({
+        action: "set-board-status-visibility",
+        value: true,
+        scope: "bogus",
+        status: "pending",
+      }),
+    );
+    await assert.rejects(
+      service.handleSettingsAction({
+        action: "set-board-status-visibility",
+        value: true,
+        scope: "todos",
+        status: "bogus",
+      }),
+    );
+    await assert.rejects(
+      service.handleSettingsAction({
+        action: "set-board-status-visibility",
+        value: "yes",
+        scope: "todos",
+        status: "pending",
+      }),
+    );
 
     await service.handleSettingsAction({
       action: "set-board-status-visibility",
@@ -578,7 +613,9 @@ suite("settings service", () => {
       { key: "criteriaChanges.enabled", value: true },
       { key: "criteriaChanges.enabled", value: true },
     ]);
-    await assert.rejects(service.handleSettingsAction({ action: "set-criteria-changes-enabled", value: "yes" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-criteria-changes-enabled", value: "yes" }),
+    );
     assert.strictEqual(setCalls.length, 2);
   });
 
@@ -587,27 +624,41 @@ suite("settings service", () => {
     await service.handleSettingsAction({ action: "set-sonarqube-url", value: "" });
     assert.deepStrictEqual(setCalls, [{ key: "codeScanning.sonarqube.url", value: "" }]);
 
-    await service.handleSettingsAction({ action: "set-sonarqube-url", value: "https://sonar.example.com" });
+    await service.handleSettingsAction({
+      action: "set-sonarqube-url",
+      value: "https://sonar.example.com",
+    });
     assert.deepStrictEqual(setCalls, [
       { key: "codeScanning.sonarqube.url", value: "" },
       { key: "codeScanning.sonarqube.url", value: "https://sonar.example.com" },
     ]);
 
-    await assert.rejects(service.handleSettingsAction({ action: "set-sonarqube-url", value: "http://evil.com" }));
-    await assert.rejects(service.handleSettingsAction({ action: "set-sonarqube-url", value: "https://evil.com?x=1" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-sonarqube-url", value: "http://evil.com" }),
+    );
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-sonarqube-url", value: "https://evil.com?x=1" }),
+    );
     // no writes on rejection
     assert.strictEqual(setCalls.length, 2);
   });
 
   test("set-sonarqube-project-key writes workspace setting", async () => {
     const { service, setCalls } = makeService();
-    await service.handleSettingsAction({ action: "set-sonarqube-project-key", value: "my-project" });
-    assert.deepStrictEqual(setCalls, [{ key: "codeScanning.sonarqube.projectKey", value: "my-project" }]);
+    await service.handleSettingsAction({
+      action: "set-sonarqube-project-key",
+      value: "my-project",
+    });
+    assert.deepStrictEqual(setCalls, [
+      { key: "codeScanning.sonarqube.projectKey", value: "my-project" },
+    ]);
   });
 
   test("set-skill-update-check requires boolean", async () => {
     const { service, setCalls } = makeService();
-    await assert.rejects(service.handleSettingsAction({ action: "set-skill-update-check", value: "yes" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-skill-update-check", value: "yes" }),
+    );
     assert.strictEqual(setCalls.length, 0);
 
     await service.handleSettingsAction({ action: "set-skill-update-check", value: false });
@@ -619,22 +670,34 @@ suite("settings service", () => {
     await service.handleSettingsAction({ action: "set-skill-update-source", value: "" });
     assert.deepStrictEqual(setCalls, [{ key: "skillUpdateSource", value: "" }]);
 
-    await service.handleSettingsAction({ action: "set-skill-update-source", value: "https://raw.githubusercontent.com/x/y" });
+    await service.handleSettingsAction({
+      action: "set-skill-update-source",
+      value: "https://raw.githubusercontent.com/x/y",
+    });
     assert.deepStrictEqual(setCalls, [
       { key: "skillUpdateSource", value: "" },
       { key: "skillUpdateSource", value: "https://raw.githubusercontent.com/x/y" },
     ]);
 
-    await assert.rejects(service.handleSettingsAction({ action: "set-skill-update-source", value: "http://evil.com" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-skill-update-source", value: "http://evil.com" }),
+    );
     assert.strictEqual(setCalls.length, 2);
   });
 
   test("set-canvas-update-source requires HTTPS URL or empty", async () => {
     const { service, setCalls } = makeService();
-    await service.handleSettingsAction({ action: "set-canvas-update-source", value: "https://raw.githubusercontent.com/x/y" });
-    assert.deepStrictEqual(setCalls, [{ key: "canvasUpdateSource", value: "https://raw.githubusercontent.com/x/y" }]);
+    await service.handleSettingsAction({
+      action: "set-canvas-update-source",
+      value: "https://raw.githubusercontent.com/x/y",
+    });
+    assert.deepStrictEqual(setCalls, [
+      { key: "canvasUpdateSource", value: "https://raw.githubusercontent.com/x/y" },
+    ]);
 
-    await assert.rejects(service.handleSettingsAction({ action: "set-canvas-update-source", value: "ftp://evil.com" }));
+    await assert.rejects(
+      service.handleSettingsAction({ action: "set-canvas-update-source", value: "ftp://evil.com" }),
+    );
     assert.strictEqual(setCalls.length, 1);
   });
 });

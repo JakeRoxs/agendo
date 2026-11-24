@@ -177,6 +177,10 @@ jobs:
 
       - name: Publish GitHub Release
         shell: bash
+        env:
+          # Authoritative display title, semver-validated against the tag by the
+          # "Verify tag matches extension version" step (steps.package).
+          VERSION: ${{ steps.package.outputs.version }}
         run: |
           PRERELEASE_FLAG=""
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.prerelease }}" == "true" ]]; then
@@ -188,7 +192,9 @@ jobs:
           if gh release view "$release_tag" >/dev/null 2>&1; then
             gh release upload "$release_tag" "${{ steps.package.outputs.vsix }}" --clobber
             if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-              gh release edit "$release_tag" --prerelease="${{ inputs.prerelease }}"
+              gh release edit "$release_tag" --title "Agendo $VERSION" --prerelease="${{ inputs.prerelease }}"
+            else
+              gh release edit "$release_tag" --title "Agendo $VERSION"
             fi
           else
             notes_path="${{ steps.notes.outputs.notes_path }}"
@@ -201,7 +207,7 @@ jobs:
             gh release create "$release_tag" \
               "${{ steps.package.outputs.vsix }}#Agendo ${{ steps.package.outputs.version }} VSIX" \
               --verify-tag \
-              --title "Agendo $release_tag" \
+              --title "Agendo $VERSION" \
               $NOTES_FLAG \
               $PRERELEASE_FLAG
           fi

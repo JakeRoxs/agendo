@@ -69,7 +69,7 @@ export function buildTodoDigest(todos: readonly Todo[], graph: DependencyGraph):
     byStatus.set(todo.status, bucket);
   }
 
-  const statusOrder = ['in-progress', 'ready', 'pending', 'backlogged', 'completed', 'cancelled'];
+  const statusOrder = ["in-progress", "ready", "pending", "backlogged", "completed", "cancelled"];
 
   const resumeLines: string[] = [];
   for (const status of statusOrder) {

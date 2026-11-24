@@ -12,8 +12,8 @@ import {
   fetchCodeQLBranches,
   fetchSonarQube,
   fetchSonarQubeBranches,
-  fetchSonarQubeCliBranches,
   fetchSonarQubeCli,
+  fetchSonarQubeCliBranches,
   importScanningFindings,
   type ScanningFinding,
   scanningPriority,
@@ -1974,7 +1974,10 @@ suite("native code scanning", () => {
       repository,
       "codeql",
       "owner/repo",
-      [{ ...finding, message: "Updated evidence" }, { ...finding, id: "43", rule: "js/second" }],
+      [
+        { ...finding, message: "Updated evidence" },
+        { ...finding, id: "43", rule: "js/second" },
+      ],
       "finding",
     );
     assert.strictEqual(changed.created, 0);
@@ -2069,26 +2072,12 @@ suite("native code scanning", () => {
     assert.match(content, /<!-- agendo:scan-evidence:end -->/);
     assert.match(content, /scan_refreshed_at:/);
     // The pending file should have been moved; no pending version remains.
-    assert.ok(
-      !repository
-        .getTodos()
-        .some((t) => t.id === todo.id && t.status !== "completed"),
-    );
+    assert.ok(!repository.getTodos().some((t) => t.id === todo.id && t.status !== "completed"));
   });
 
   test("keeps scanner todo status when some findings are resolved and some remain open", async () => {
-    const findings = [
-      finding,
-      { ...finding, id: "43", rule: "js/second", path: "src/example.ts" },
-    ];
-    await importScanningFindings(
-      config,
-      repository,
-      "codeql",
-      "owner/repo",
-      findings,
-      "file",
-    );
+    const findings = [finding, { ...finding, id: "43", rule: "js/second", path: "src/example.ts" }];
+    await importScanningFindings(config, repository, "codeql", "owner/repo", findings, "file");
     assert.strictEqual(repository.getTodos().length, 1);
     const todo = repository.getTodos()[0];
     assert.strictEqual(todo.status, "pending");
@@ -2099,7 +2088,10 @@ suite("native code scanning", () => {
       repository,
       "codeql",
       "owner/repo",
-      [{ ...finding, resolved: true }, { ...finding, id: "43", rule: "js/second" }],
+      [
+        { ...finding, resolved: true },
+        { ...finding, id: "43", rule: "js/second" },
+      ],
       "file",
     );
     assert.strictEqual(result.autoCompleted, 0);
