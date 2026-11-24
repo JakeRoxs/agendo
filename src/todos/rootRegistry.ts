@@ -5,6 +5,7 @@ import { ConfigService } from "./configService";
 import { TodoRepository } from "./todoRepository";
 import type { Todo } from "./todoModel";
 import type { BoardReturnTarget } from "./workspaceNavigation";
+import { InMemoryMemento } from "./inMemoryMemento";
 
 /** Keys used to persist root registry state per workspace in Memento. */
 export const ROOT_REGISTRY_KEY = "agendo.manualRoots";
@@ -135,26 +136,6 @@ function parseManualRootRecord(record: unknown): ManualRootRecord | undefined {
   } catch {
     // Malformed persisted record: ignore it.
     return undefined;
-  }
-}
-
-/**
- * In-memory Memento fallback for legacy hosts and tests that omit
- * workspaceState. The real extension always passes a live workspaceState, so
- * persistence is never silently disabled; this fallback only lets registration
- * paths run without a persistence backend.
- */
-class InMemoryMemento implements vscode.Memento {
-  private readonly store = new Map<string, unknown>();
-  keys(): readonly string[] {
-    return Array.from(this.store.keys());
-  }
-  get<T>(key: string): T | undefined {
-    return this.store.get(key) as T | undefined;
-  }
-  update(key: string, value: unknown): Promise<void> {
-    this.store.set(key, value);
-    return Promise.resolve();
   }
 }
 

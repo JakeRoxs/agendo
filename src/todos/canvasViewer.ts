@@ -15,21 +15,7 @@ import { buildTodoDigest } from "./digestService";
 import { matchesTodoScope } from "./todoModel";
 import type { TodoRootRegistry } from "./rootRegistry";
 import type { BoardReturnTarget, WorkspaceView } from "./workspaceNavigation";
-
-/** In-memory Memento fallback for tests that omit workspaceState. */
-class InMemoryMemento implements vscode.Memento {
-  private readonly store = new Map<string, unknown>();
-  keys(): readonly string[] {
-    return Array.from(this.store.keys());
-  }
-  get<T>(key: string): T | undefined {
-    return this.store.get(key) as T | undefined;
-  }
-  update(key: string, value: unknown): Promise<void> {
-    this.store.set(key, value);
-    return Promise.resolve();
-  }
-}
+import { InMemoryMemento } from "./inMemoryMemento";
 
 const CANVAS_NAME = "agendo-work-session";
 
