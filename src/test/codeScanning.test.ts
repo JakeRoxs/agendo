@@ -825,9 +825,10 @@ suite("native code scanning", () => {
     assert.match(await readText(projectTodo.uri), /Line: not reported/);
   });
 
-  test("import picker defaults to files, forwards each grouping, and cancels before fetching", async () => {
+  test("scanner selection is per invocation, forwards groupings, and cancellation does not fetch or persist", async () => {
     const service =
       require("../todos/codeScanningService") as typeof import("../todos/codeScanningService");
+    const configuration = require("../configuration") as typeof import("../configuration");
     const restore: Array<() => void> = [];
     const mock = (target: object, key: string, value: unknown) => {
       const descriptor = Object.getOwnPropertyDescriptor(target, key);
@@ -841,8 +842,10 @@ suite("native code scanning", () => {
     const chosen: string[] = [];
     const chosenBranches: Array<string | undefined> = [];
     const errors: string[] = [];
+    const settingWrites: Array<{ key: unknown; value: unknown }> = [];
     let index: number | undefined = 0;
     let branchIndex = 0;
+    let cancelSourcePicker = false;
     let fetches = 0;
     try {
       mock(vscode.workspace, "isTrusted", true);
@@ -850,11 +853,14 @@ suite("native code scanning", () => {
         callbacks.set(id, callback);
         return new vscode.Disposable(() => {});
       });
+      mock(configuration, "set", async (key: unknown, value: unknown) => {
+        settingWrites.push({ key, value });
+      });
       mock(
         vscode.window,
         "showQuickPick",
         async (items: Array<{ source?: string; grouping?: string; branch?: string }>) => {
-          if (items[0].source) return items[0];
+          if (items[0].source) return cancelSourcePicker ? undefined : items[0];
           if ("branch" in items[0]) return items[branchIndex];
           assert.deepStrictEqual(
             items.map((item) => item.grouping),
@@ -904,7 +910,7 @@ suite("native code scanning", () => {
       registerCommands(
         { subscriptions } as never,
         {
-          config: { getWorkspaceFolder: () => ({ uri: root }), codeScanningEnabled: true },
+          config: { getWorkspaceFolder: () => ({ uri: root }) },
           repository: { refresh: async () => {} },
         } as never,
       );
@@ -921,6 +927,11 @@ suite("native code scanning", () => {
       await command();
       assert.strictEqual(fetches, 3);
       assert.deepStrictEqual(errors, []);
+
+      cancelSourcePicker = true;
+      await command();
+      assert.strictEqual(fetches, 3);
+      assert.deepStrictEqual(settingWrites, []);
     } finally {
       for (const undo of restore.reverse()) undo();
       for (const subscription of subscriptions) subscription.dispose();

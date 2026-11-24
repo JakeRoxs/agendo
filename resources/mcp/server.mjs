@@ -12,7 +12,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverEndpoint } from './discovery.mjs';
+import { discoverEndpoint, collectWorkspaceRegistrations, resolveRootForCall as resolveRootFromRegistrations } from './discovery.mjs';
 import { STATUSES } from '../canvas/agendo-work-session/statusLifecycle.js';
 import {
   getProblemsHandler,
@@ -43,7 +43,34 @@ const discoveryDirectory = option('--workspace-discovery');
 
 const registryRoot = discoveryDirectory ?? registrationRoot;
 
-const workspaceRoot = resolveWorkspaceRoot(process.cwd());
+// Parse KILO_PARENT_PID once; the server inherits it from the launching
+// window. Invalid values are treated as no host PID (generic client mode) so
+// MCP tools are not broken by a misconfigured environment variable.
+function parseKiloParentPid(value = process.env.KILO_PARENT_PID) {
+  if (value === undefined || value === '') return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const pid = Number(value);
+  if (!Number.isSafeInteger(pid) || pid <= 1) return undefined;
+  return pid;
+}
+
+const hostPid = parseKiloParentPid();
+
+/**
+ * Resolve the todo root for one MCP invocation. Reads the workspace-folder
+ * discovery records, applies the optional `workspaceFolder` binding, and falls
+ * back to the standalone CWD root when no editor registration applies. Returns
+ * the resolved root, its mode (`workspace` or `manual`), and the selector used.
+ */
+async function resolveRootForCall(args) {
+  const { workspaceFolder } = args;
+  const registrations = await collectWorkspaceRegistrations(registryRoot, hostPid);
+  const resolved = resolveRootFromRegistrations(registrations, { workspaceFolder, cwd: process.cwd() });
+  if (resolved === undefined) {
+    return { workspaceRoot: resolveWorkspaceRoot(process.cwd()), rootMode: 'workspace', workspaceFolder: undefined };
+  }
+  return resolved;
+}
 
 async function diagnosticsEndpoint() {
   if (endpoint !== undefined) return endpoint;
@@ -53,14 +80,11 @@ async function diagnosticsEndpoint() {
   const kiloParentPid = process.env.KILO_PARENT_PID;
   let hostPid;
   if (kiloParentPid !== undefined && kiloParentPid !== '') {
-    if (!/^\d+$/.test(kiloParentPid)) {
+    const parsed = parseKiloParentPid(kiloParentPid);
+    if (parsed === undefined) {
       throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
     }
-    const pid = Number(kiloParentPid);
-    if (!Number.isSafeInteger(pid) || pid <= 1) {
-      throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
-    }
-    hostPid = pid;
+    hostPid = parsed;
   }
 
   // The server's CWD is the workspace root for Kilo (Instance.directory); for
@@ -82,140 +106,199 @@ function option(name) {
   return undefined;
 }
 
+/**
+ * Register an MCP tool that resolves a todo root from the call arguments and
+ * then delegates to a root-aware handler. The handler receives
+ * `(args, workspaceRoot, rootMode)` and returns the tool result.
+ */
+function registerRootTool(server, name, options, handler) {
+  server.registerTool(
+    name,
+    { description: options.description, inputSchema: options.inputSchema },
+    async (args) => {
+      const { workspaceRoot, rootMode } = await resolveRootForCall(args);
+      return handler(args, workspaceRoot, rootMode);
+    }
+  );
+}
+
+// Handler factories: each receives (args, workspaceRoot, rootMode) and returns
+// the MCP tool result. Kept small and focused on a single concern.
+
+function getTodoContextHandler(args, workspaceRoot, rootMode) {
+  const todo = loadTodo(args.todoId, workspaceRoot, rootMode);
+  const relations = getRelations(args.todoId, workspaceRoot, rootMode);
+  return {
+    id: todo.id,
+    title: todo.title,
+    status: todo.status,
+    priority: todo.priority,
+    group: todo.group,
+    description: todo.description,
+    criteria: todo.criteria,
+    dependencies: relations.dependencies,
+    blockedBy: relations.blocked,
+    dependents: relations.dependents,
+    workLog: todo.workLog.slice(0, 5),
+    resumeContext: todo.resumeContext,
+    scannerEvidence: todo.scannerEvidence,
+    triage: todo.triage,
+    scan: todo.scan,
+    validation: todo.validation,
+  };
+}
+
+function listGroupsHandler(workspaceRoot, rootMode) {
+  const groups = listGroups(workspaceRoot, rootMode);
+  return groups.map((g) => ({
+    name: g,
+    memberCount: loadGroupTodos(g, workspaceRoot, rootMode).length,
+  }));
+}
+
+function listGroupMembersHandler(args, workspaceRoot, rootMode) {
+  const members = loadGroupTodos(args.groupName, workspaceRoot, rootMode);
+  return members.map((m) => ({
+    id: m.id,
+    title: m.title,
+    status: m.status,
+    priority: m.priority,
+  }));
+}
+
+function getDependenciesHandler(args, workspaceRoot, rootMode) {
+  return getRelations(args.todoId, workspaceRoot, rootMode);
+}
+
+function setPriorityHandler(args, workspaceRoot, rootMode) {
+  return setTodoPriority(args.todoId, args.priority, workspaceRoot, rootMode);
+}
+
+function setGroupHandler(args, workspaceRoot, rootMode) {
+  return setTodoGroup(args.todoId, args.group, workspaceRoot, rootMode);
+}
+
+function toggleCriterionHandler(args, workspaceRoot, rootMode) {
+  return setCriterionMet(args.todoId, args.criterionIndex, args.met, workspaceRoot, rootMode);
+}
+
+function getTodoFileHandler(args, workspaceRoot, rootMode) {
+  const filePath = findTodoFile(args.todoId, workspaceRoot, rootMode);
+  return filePath ? { path: filePath } : { error: 'Todo not found' };
+}
+
 const server = new McpServer({
   name: 'agendo',
   version: '0.3.0',
 });
 
-server.registerTool(
-  'get_todo_context',
+registerRootTool(server, 'get_todo_context',
   {
-    description: 'Get full context for a todo including criteria, dependencies, work log, and scanner evidence',
-    inputSchema: { todoId: z.string().describe('Todo ID, e.g. "001" or "sq-123"') },
+    description: 'Get full context for a todo including criteria, dependencies, work log, and scanner evidence. `workspaceFolder` selects a registered todo root (a workspace folder or a manually added root) by name or path.',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID, e.g. "001" or "sq-123"'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
+    },
   },
-  async ({ todoId }) => {
-    const todo = loadTodo(todoId, workspaceRoot);
-    const relations = getRelations(todoId, workspaceRoot);
-    return {
-      id: todo.id,
-      title: todo.title,
-      status: todo.status,
-      priority: todo.priority,
-      group: todo.group,
-      description: todo.description,
-      criteria: todo.criteria,
-      dependencies: relations.dependencies,
-      blockedBy: relations.blocked,
-      dependents: relations.dependents,
-      workLog: todo.workLog.slice(0, 5),
-      resumeContext: todo.resumeContext,
-      scannerEvidence: todo.scannerEvidence,
-      triage: todo.triage,
-      scan: todo.scan,
-      validation: todo.validation,
-    };
-  }
+  getTodoContextHandler
 );
 
-server.registerTool(
-  'list_groups',
-  { description: 'List all todo groups with member counts', inputSchema: {} },
-  async () => {
-    const groups = listGroups(workspaceRoot);
-    return groups.map(g => ({
-      name: g,
-      memberCount: loadGroupTodos(g, workspaceRoot).length,
-    }));
-  }
+registerRootTool(server, 'list_groups',
+  {
+    description: 'List all todo groups with member counts. `workspaceFolder` selects a registered todo root by name or path.',
+    inputSchema: {
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
+    },
+  },
+  listGroupsHandler
 );
 
-server.registerTool(
-  'list_group_members',
-  { description: 'List all todos in a group', inputSchema: { groupName: z.string().describe('Group name') } },
-  async ({ groupName }) => {
-    const members = loadGroupTodos(groupName, workspaceRoot);
-    return members.map(m => ({
-      id: m.id,
-      title: m.title,
-      status: m.status,
-      priority: m.priority,
-    }));
-  }
+registerRootTool(server, 'list_group_members',
+  {
+    description: 'List all todos in a group. `workspaceFolder` selects a registered todo root by name or path.',
+    inputSchema: {
+      groupName: z.string().describe('Group name'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
+    },
+  },
+  listGroupMembersHandler
 );
 
-server.registerTool(
-  'get_dependencies',
-  { description: 'Get what blocks a todo and what it blocks', inputSchema: { todoId: z.string().describe('Todo ID') } },
-  async ({ todoId }) => {
-    return getRelations(todoId, workspaceRoot);
-  }
+registerRootTool(server, 'get_dependencies',
+  {
+    description: 'Get what blocks a todo and what it blocks. `workspaceFolder` selects a registered todo root by name or path.',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
+    },
+  },
+  getDependenciesHandler
 );
 
 export const setStatusInputSchema = {
   todoId: z.string().describe('Todo ID'),
   status: z.enum(STATUSES).describe('New status'),
+  workspaceFolder: z.string().optional().describe('Workspace folder name or path'),
 };
 
-export async function setStatusHandler(args, workspaceRoot) {
-  return setTodoStatus(args.todoId, args.status, workspaceRoot);
+export async function setStatusHandler(args, workspaceRoot, rootMode = "workspace") {
+  return setTodoStatus(args.todoId, args.status, workspaceRoot, rootMode);
 }
 
-server.registerTool(
-  'set_status',
-  { description: 'Set the status of a todo', inputSchema: setStatusInputSchema },
-  async (args) => setStatusHandler(args, workspaceRoot)
+registerRootTool(server, 'set_status',
+  {
+    description: 'Set the status of a todo. `workspaceFolder` selects a registered todo root by name or path.',
+    inputSchema: setStatusInputSchema,
+  },
+  (args, workspaceRoot, rootMode) => setStatusHandler(args, workspaceRoot, rootMode)
 );
 
-server.registerTool(
-  'set_priority',
+registerRootTool(server, 'set_priority',
   {
-    description: 'Set the priority of a todo',
+    description: 'Set the priority of a todo. `workspaceFolder` selects a registered todo root by name or path.',
     inputSchema: {
       todoId: z.string().describe('Todo ID'),
       priority: z.enum(['p1', 'p2', 'p3']).describe('New priority'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
     },
   },
-  async ({ todoId, priority }) => {
-    return setTodoPriority(todoId, priority, workspaceRoot);
-  }
+  setPriorityHandler
 );
 
-server.registerTool(
-  'set_group',
+registerRootTool(server, 'set_group',
   {
-    description: 'Set or clear the group of a todo',
+    description: 'Set or clear the group of a todo. `workspaceFolder` selects a registered todo root by name or path.',
     inputSchema: {
       todoId: z.string().describe('Todo ID'),
       group: z.string().describe('Group name (empty string to clear)'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
     },
   },
-  async ({ todoId, group }) => {
-    return setTodoGroup(todoId, group, workspaceRoot);
-  }
+  setGroupHandler
 );
 
-server.registerTool(
-  'toggle_criterion',
+registerRootTool(server, 'toggle_criterion',
   {
-    description: 'Mark an acceptance criterion as met or unmet',
+    description: 'Mark an acceptance criterion as met or unmet. `workspaceFolder` selects a registered todo root by name or path.',
     inputSchema: {
       todoId: z.string().describe('Todo ID'),
       criterionIndex: z.number().int().min(0).describe('Criterion index (0-based)'),
       met: z.boolean().describe('Whether the criterion is met'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
     },
   },
-  async ({ todoId, criterionIndex, met }) => {
-    return setCriterionMet(todoId, criterionIndex, met, workspaceRoot);
-  }
+  toggleCriterionHandler
 );
 
-server.registerTool(
-  'get_todo_file',
-  { description: 'Get the filesystem path of a todo file', inputSchema: { todoId: z.string().describe('Todo ID') } },
-  async ({ todoId }) => {
-    const filePath = findTodoFile(todoId, workspaceRoot);
-    return filePath ? { path: filePath } : { error: 'Todo not found' };
-  }
+registerRootTool(server, 'get_todo_file',
+  {
+    description: 'Get the filesystem path of a todo. `workspaceFolder` selects a registered todo root by name or path.',
+    inputSchema: {
+      todoId: z.string().describe('Todo ID'),
+      workspaceFolder: z.string().optional().describe('Registered todo root name or path'),
+    },
+  },
+  getTodoFileHandler
 );
 
 server.registerTool(

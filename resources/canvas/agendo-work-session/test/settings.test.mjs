@@ -20,7 +20,6 @@ describe('renderSettingsPage', () => {
         backloggedFolder: 'backlog',
         cancelledFolder: 'cancelled',
         completedFolder: 'completed',
-        codeScanningEnabled: true,
         sonarQubeUrl: 'https://sonar.example.com',
         sonarQubeProjectKey: 'proj:key',
       },

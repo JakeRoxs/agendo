@@ -159,6 +159,8 @@ export function getTreeNodeKey(node: TreeNode | { id?: string } | undefined): st
 export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   private collisionSnapshot?: readonly Todo[];
   private readonly collisionsByUri = new Map<string, TodoCollision>();
+  private readonly repositoryDisposable: vscode.Disposable;
+  private readonly busyDisposable: vscode.Disposable | undefined;
 
   private collisionFor(todo: Todo): TodoCollision | undefined {
     const snapshot = this.repository.getTodos();
@@ -186,8 +188,43 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     private readonly busy?: BusyIndicator,
     private readonly scope: TodoViewScope = "todos",
   ) {
-    this.repository.onDidChange(() => this.refresh());
-    this.busy?.onChange(() => this.refresh());
+    this.repositoryDisposable = this.repository.onDidChange(() => this.refresh());
+    this.busyDisposable = this.busy?.onChange(() => this.refresh());
+  }
+
+  /** Release subscriptions held by this provider. */
+  dispose(): void {
+    this.repositoryDisposable.dispose();
+    this.busyDisposable?.dispose();
+    this.onDidChangeTreeDataEmitter.dispose();
+  }
+
+  /** Collapse the node with the given canonical key and refresh the view. */
+  collapse(nodeKey: string): void {
+    this.treeState.collapse(nodeKey);
+    this.refresh();
+  }
+
+  /** Expand the node with the given canonical key and refresh the view. */
+  expand(nodeKey: string): void {
+    this.treeState.expand(nodeKey);
+    this.refresh();
+  }
+
+  /** Collapse the given tree node by its canonical key. */
+  collapseNode(node: TreeNode): void {
+    const key = getTreeNodeKey(node);
+    if (key) {
+      this.collapse(key);
+    }
+  }
+
+  /** Expand the given tree node by its canonical key. */
+  expandNode(node: TreeNode): void {
+    const key = getTreeNodeKey(node);
+    if (key) {
+      this.expand(key);
+    }
   }
 
   setLoading(loading: boolean): void {

@@ -1,5 +1,5 @@
 ---
-status: complete
+status: completed
 priority: p2
 issue_id: "002"
 tags: [github, publishing, release, agendo]

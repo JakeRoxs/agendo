@@ -243,6 +243,37 @@ suite("Shared workspace host boundary", () => {
     }
   });
 
+  test("open passes the workspace root and root mode to the canvas server", async () => {
+    const viewer = new CanvasViewer(vscode.Uri.file(root));
+    const server = { url: "http://127.0.0.1:12345/" };
+    const captured: [string, string][] = [];
+    const internals = viewer as unknown as {
+      module: { navigate: (entry: unknown, target: unknown, returnTo: unknown) => void };
+      ensureServer: (workspaceRoot: string, rootMode: string, actions: unknown) => Promise<typeof server>;
+      show: (url: string) => void;
+    };
+    internals.ensureServer = async (workspaceRoot, rootMode) => {
+      captured.push([workspaceRoot, rootMode]);
+      return server;
+    };
+    internals.module = { navigate: () => {} };
+    internals.show = () => {};
+    const original = Object.getOwnPropertyDescriptor(vscode.env, "asExternalUri");
+    Object.defineProperty(vscode.env, "asExternalUri", {
+      configurable: true,
+      value: async (uri: vscode.Uri) => uri,
+    });
+    try {
+      await viewer.open("/tmp/manual-root", "001", undefined, "manual");
+      assert.deepStrictEqual(captured, [["/tmp/manual-root", "manual"]]);
+      await viewer.open("/path/a", "002", undefined, "workspace");
+      assert.deepStrictEqual(captured, [["/tmp/manual-root", "manual"], ["/path/a", "workspace"]]);
+    } finally {
+      if (original) Object.defineProperty(vscode.env, "asExternalUri", original);
+      viewer.dispose();
+    }
+  });
+
   test("native group updates preserve special characters and create missing frontmatter", async () => {
     fs.writeFileSync(todoFile(), "# First\n");
     const uri = vscode.Uri.file(todoFile());

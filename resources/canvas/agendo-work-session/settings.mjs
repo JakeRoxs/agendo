@@ -66,7 +66,6 @@ export function renderSettingsPage(info) {
         ${textSetting('Backlogged folder', 'set-backlogged-folder', ws.backloggedFolder ?? 'backlogged', 'Single subfolder name under the todos root')}
         ${textSetting('Cancelled folder', 'set-cancelled-folder', ws.cancelledFolder ?? 'cancelled', 'Single subfolder name under the todos root')}
         ${textSetting('Completed folder', 'set-completed-folder', ws.completedFolder ?? 'completed', 'Single subfolder name under the todos root')}
-        ${checkboxSetting('Enable code-scanning imports', 'set-code-scanning-enabled', ws.codeScanningEnabled)}
         <h3>Code-scanning connection</h3>
         <p class="settings-hint">Stored in VS Code workspace settings, not the agent config projection. Tokens remain in VS Code SecretStorage and are never shown here.</p>
         ${textSetting('SonarQube URL', 'set-sonarqube-url', ws.sonarQubeUrl, 'HTTPS server URL; leave empty when not configured')}

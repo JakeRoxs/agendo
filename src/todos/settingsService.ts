@@ -12,7 +12,10 @@ import {
 import type { SkillStatusTreeProvider } from "./skillStatusTreeProvider";
 import { TODO_STATUSES, type TodoStatus } from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
-import type { TodoTreeProvider } from "./todoTreeProvider";
+
+interface RefreshableTreeProvider {
+  refresh(): void;
+}
 
 const GROUP_BY_MODES = new Set<string>(["status", "priority", "group", "none"]);
 const DEFAULT_PRIORITIES = new Set<string>(["p1", "p2", "p3"]);
@@ -48,15 +51,15 @@ function isValidSourceUrl(value: string): boolean {
  */
 export class SettingsService {
   private readonly get: <T>(key: Settings) => T;
-  private readonly set: (key: Settings, value: unknown) => PromiseLike<void>;
+  private readonly set: (key: Settings, value: unknown, folder?: vscode.WorkspaceFolder) => PromiseLike<void>;
   private readonly setDefault: (key: Settings, value: unknown) => PromiseLike<void>;
   private readonly executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
   private readonly config: ConfigService;
   private readonly boardViewProvider: BoardViewProvider;
   private readonly scanningBoardViewProvider: BoardViewProvider;
   private readonly repository: TodoRepository;
-  private readonly treeProvider: TodoTreeProvider;
-  private readonly scanningTreeProvider: TodoTreeProvider;
+  private readonly treeProvider: RefreshableTreeProvider;
+  private readonly scanningTreeProvider: RefreshableTreeProvider;
   private readonly skillStatusTreeProvider: SkillStatusTreeProvider;
   private readonly extensionVersion: string;
   private readonly getSkillStatus: () => Promise<unknown>;
@@ -64,15 +67,15 @@ export class SettingsService {
 
   constructor(context: {
     get: <T>(key: Settings) => T;
-    set: (key: Settings, value: unknown) => PromiseLike<void>;
+    set: (key: Settings, value: unknown, folder?: vscode.WorkspaceFolder) => PromiseLike<void>;
     setDefault: (key: Settings, value: unknown) => PromiseLike<void>;
     executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
     config: ConfigService;
     boardViewProvider: BoardViewProvider;
     scanningBoardViewProvider: BoardViewProvider;
     repository: TodoRepository;
-    treeProvider: TodoTreeProvider;
-    scanningTreeProvider: TodoTreeProvider;
+    treeProvider: RefreshableTreeProvider;
+    scanningTreeProvider: RefreshableTreeProvider;
     skillStatusTreeProvider: SkillStatusTreeProvider;
     extensionVersion: string;
     getSkillStatus: () => Promise<unknown>;
@@ -108,7 +111,6 @@ export class SettingsService {
         backloggedFolder: this.config.backloggedFolder,
         cancelledFolder: this.config.cancelledFolder,
         completedFolder: this.config.completedFolder,
-        codeScanningEnabled: this.get<boolean>(Settings.CodeScanningEnabled),
         sonarQubeUrl: this.get<string>(Settings.SonarQubeUrl),
         sonarQubeProjectKey: this.get<string>(Settings.SonarQubeProjectKey),
       },
@@ -169,7 +171,6 @@ export class SettingsService {
       case "set-backlogged-folder":
       case "set-cancelled-folder":
       case "set-completed-folder":
-      case "set-code-scanning-enabled":
         return this.handleFolderSetting(action, payload);
       case "set-sonarqube-url":
       case "set-sonarqube-project-key":
@@ -298,9 +299,11 @@ export class SettingsService {
   ): Promise<SettingsActionResult> {
     let key: Settings;
     let value: unknown;
+    let folder: vscode.WorkspaceFolder | undefined;
     if (action === "set-root") {
       value = this.requireRelativePath(payload, "value");
       key = Settings.Root;
+      folder = this.config.getWorkspaceFolder();
     } else if (action === "set-gitignored") {
       value = this.requireBoolean(payload, "value");
       key = Settings.GitignoreTodos;
@@ -314,10 +317,9 @@ export class SettingsService {
       value = this.requireFolderName(payload, "value");
       key = Settings.CompletedFolder;
     } else {
-      value = this.requireBoolean(payload, "value");
-      key = Settings.CodeScanningEnabled;
+      throw new Error(`Unknown folder setting: ${action}`);
     }
-    await this.set(key, value);
+    await this.set(key, value, folder);
     await this.refreshConfigProjection();
     await this.repository.refresh();
     return { success: true };
@@ -511,7 +513,6 @@ export interface SettingsInfo {
     backloggedFolder: string;
     cancelledFolder: string;
     completedFolder: string;
-    codeScanningEnabled: boolean;
     sonarQubeUrl: string;
     sonarQubeProjectKey: string;
   };

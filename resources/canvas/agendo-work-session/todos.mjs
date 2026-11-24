@@ -13,8 +13,8 @@ import { basename, dirname, join, parse, resolve } from 'node:path';
 import { createHash, randomBytes } from 'node:crypto';
 
 const TODO_DIRS = ['docs/todos', 'todos'];
-const CRITERION_RE = /^(\s*-\s*\[)([ xX])(\]\s*)(.+)$/;
-const TODO_ID_RE = /^(?:(?:cql|sq)-)?\d{3,}$/;
+const CRITERION_RE = /^(\s*-\s*\[)([ xX])(\])(.+)$/;
+const TODO_ID_RE = /^(?:cql-|sq-)?\d{3,}$/;
 export function assertTodoId(todoId) {
   if (typeof todoId !== 'string' || !TODO_ID_RE.test(todoId)) {
     throw new CanvasError('invalid_todo_id', 'todoId must be an Agendo ID, for example "033" or "cql-001"');
@@ -22,16 +22,44 @@ export function assertTodoId(todoId) {
   return todoId;
 }
 
+function isQuoted(value) {
+  return (value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"));
+}
+
+function parseQuotedValue(trimmed) {
+  try {
+    const decoded = JSON.parse(trimmed);
+    if (typeof decoded === 'string') return decoded;
+  } catch { /* Also accept ordinary YAML quoted strings. */ }
+  return null;
+}
+
 function unquote(value) {
   const trimmed = value.trim();
-  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
-    try {
-      const decoded = JSON.parse(trimmed);
-      if (typeof decoded === 'string') return decoded;
-    } catch { /* Also accept ordinary YAML quoted strings. */ }
+  if (isQuoted(trimmed)) {
+    const decoded = parseQuotedValue(trimmed);
+    return decoded !== null ? decoded : trimmed.slice(1, -1);
   }
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) return trimmed.slice(1, -1);
   return trimmed;
+}
+
+function parseFrontmatterScalar(value) {
+  if (value.startsWith('[') && value.endsWith(']')) {
+    return value.slice(1, -1).split(',').map(unquote).filter(Boolean);
+  }
+  return unquote(value);
+}
+
+function parseFrontmatterListItems(lines, index, end) {
+  const items = [];
+  let consumed = 0;
+  while (index + 1 + consumed < end) {
+    const item = lines[index + 1 + consumed].match(/^\s+-\s+(\S.*)$/);
+    if (!item) break;
+    items.push(unquote(item[1]));
+    consumed++;
+  }
+  return { items, consumed };
 }
 
 function parseFrontmatter(content) {
@@ -42,23 +70,21 @@ function parseFrontmatter(content) {
   if (end === -1) return { frontmatter: {}, body: content };
 
   const frontmatter = {};
+  let skip = 0;
   for (let index = 1; index < end; index++) {
-    const match = lines[index].match(/^(\w+):\s*(.*)$/);
+    if (skip > 0) {
+      skip--;
+      continue;
+    }
+    const match = lines[index].match(/^(\w+):(.*)$/);
     if (!match) continue;
-    let value = match[2].trim();
-    if (!value) {
-      const items = [];
-      while (index + 1 < end) {
-        const item = lines[index + 1].match(/^\s+-\s+(.+)$/);
-        if (!item) break;
-        items.push(unquote(item[1]));
-        index++;
-      }
+    let value;
+    if (match[2].trim() === '') {
+      const { items, consumed } = parseFrontmatterListItems(lines, index, end);
       value = items.length ? items : '';
-    } else if (value.startsWith('[') && value.endsWith(']')) {
-      value = value.slice(1, -1).split(',').map(unquote).filter(Boolean);
+      skip = consumed;
     } else {
-      value = unquote(value);
+      value = parseFrontmatterScalar(match[2].trim());
     }
     frontmatter[match[1]] = value;
   }
@@ -83,7 +109,14 @@ export function resolveWorkspaceRoot(installDir, cwd = process.cwd()) {
 }
 
 function normalizeDependencies(value) {
-  const list = Array.isArray(value) ? value : typeof value === 'string' && value ? [value] : [];
+  let list;
+  if (Array.isArray(value)) {
+    list = value;
+  } else if (typeof value === 'string' && value) {
+    list = [value];
+  } else {
+    list = [];
+  }
   return [...new Set(list.map(String).filter(id => TODO_ID_RE.test(id)))];
 }
 
@@ -99,36 +132,56 @@ function readJson(path) {
 function configuredRoot(workspaceRoot) {
   try {
     const text = readFileSync(join(workspaceRoot, '.vscode', 'settings.json'), 'utf-8');
-    return text.match(/^\s*"agendo\.root"\s*:\s*"([^"]+)"/m)?.[1] ?? null;
+    return text.match(/^"agendo\.root"\s*:\s*"([^"]+)"/m)?.[1] ?? null;
   } catch {
     return null;
   }
 }
 
+/** Resolve the state-folder names from a `.agendo-config.json` projection, falling back to defaults. */
+function folderNames(config) {
+  const name = (value, fallback) => (typeof value === 'string' && /^[\w.-]+$/.test(value) ? value : fallback);
+  return {
+    backlogged: name(config.backloggedFolder, 'backlogged'),
+    completed: name(config.completedFolder, 'completed'),
+    cancelled: name(config.cancelledFolder, 'cancelled'),
+  };
+}
+
 /**
  * Every todos root with its state folders. Like the skill, this honors `agendo.root` and the
  * `.agendo-config.json` inside each root (custom folder names), falling back to the defaults.
+ *
+ * When `rootMode` is `"manual"`, `workspaceRoot` is the todo directory itself (a manually added
+ * root), so todos are read directly from it rather than from a `docs/todos` or `todos` subfolder.
  */
-export function todoLocations(workspaceRoot) {
+export function todoLocations(workspaceRoot, rootMode = "workspace") {
+  if (rootMode === "manual") {
+    // A manually added root is the todo directory itself; read its
+    // `.agendo-config.json` projection and look for todos directly inside it.
+    const config = readJson(join(workspaceRoot, '.agendo-config.json')) ?? {};
+    const folders = folderNames(config);
+    const sourceBases = [workspaceRoot, join(workspaceRoot, 'code-scanning', 'codeql'), join(workspaceRoot, 'code-scanning', 'sonarqube')];
+    return sourceBases.map(sourceBase => ({
+      base: sourceBase,
+      folders,
+      dirs: ['', ...Object.values(folders)].map(sub => join(sourceBase, sub)),
+    }));
+  }
   const custom = configuredRoot(workspaceRoot);
   const roots = [...new Set([...(custom ? [custom] : []), ...TODO_DIRS])];
-  return roots.map(dir => {
+  return roots.flatMap(dir => {
     const base = resolve(workspaceRoot, dir);
     const config = readJson(join(base, '.agendo-config.json')) ?? {};
-    const name = (value, fallback) => (typeof value === 'string' && /^[\w.-]+$/.test(value) ? value : fallback);
-    const folders = {
-      backlogged: name(config.backloggedFolder, 'backlogged'),
-      completed: name(config.completedFolder, 'completed'),
-      cancelled: name(config.cancelledFolder, 'cancelled')
-    };
+    const folders = folderNames(config);
     return [base, join(base, 'code-scanning', 'codeql'), join(base, 'code-scanning', 'sonarqube')]
       .map(sourceBase => ({ base: sourceBase, folders, dirs: ['', ...Object.values(folders)].map(sub => join(sourceBase, sub)) }));
-  }).flat();
+  });
 }
 
-function todoFiles(workspaceRoot) {
+function todoFiles(workspaceRoot, rootMode = "workspace") {
   const files = [];
-  for (const { dirs } of todoLocations(workspaceRoot)) {
+  for (const { dirs } of todoLocations(workspaceRoot, rootMode)) {
     for (const fullPath of dirs) {
       if (!existsSync(fullPath)) continue;
       for (const name of readdirSync(fullPath)) {
@@ -140,14 +193,14 @@ function todoFiles(workspaceRoot) {
 }
 
 // Cheap change marker over every todo file, so the page reloads when a related todo changes or moves.
-export function todoFingerprint(workspaceRoot) {
-  return todoFiles(workspaceRoot).map(f => `${f}:${statSync(f).mtimeMs}`).sort().join('|');
+export function todoFingerprint(workspaceRoot, rootMode = "workspace") {
+  return todoFiles(workspaceRoot, rootMode).map(f => `${f}:${statSync(f).mtimeMs}`).sort((a, b) => a.localeCompare(b)).join('|');
 }
 
-export function listTodoSummaries(workspaceRoot) {
+export function listTodoSummaries(workspaceRoot, rootMode = "workspace") {
   const byId = new Map();
   const dupes = new Set();
-  for (const filePath of todoFiles(workspaceRoot)) {
+  for (const filePath of todoFiles(workspaceRoot, rootMode)) {
     const nameMatch = basename(filePath).match(FILENAME_RE);
     if (byId.has(nameMatch[1])) {
       dupes.add(nameMatch[1]);
@@ -156,7 +209,7 @@ export function listTodoSummaries(workspaceRoot) {
     const { frontmatter, body } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
     byId.set(nameMatch[1], {
       id: nameMatch[1],
-      title: frontmatter.title || body.match(/^#\s+(.+)$/m)?.[1].trim() || `Todo ${nameMatch[1]}`,
+      title: frontmatter.title || body.match(/^#\s+(\S.*)$/m)?.[1].trim() || `Todo ${nameMatch[1]}`,
       status: nameMatch[2],
       priority: nameMatch[3],
       dependencies: normalizeDependencies(frontmatter.dependencies),
@@ -170,9 +223,9 @@ export function listTodoSummaries(workspaceRoot) {
   return byId;
 }
 
-export function getRelations(todoId, workspaceRoot) {
+export function getRelations(todoId, workspaceRoot, rootMode = "workspace") {
   assertTodoId(todoId);
-  const all = listTodoSummaries(workspaceRoot);
+  const all = listTodoSummaries(workspaceRoot, rootMode);
   const self = all.get(todoId);
   if (!self) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
@@ -202,103 +255,116 @@ export function getRelations(todoId, workspaceRoot) {
 }
 
 // List all unique group names from todos in the workspace.
-export function listGroups(workspaceRoot) {
+export function listGroups(workspaceRoot, rootMode = "workspace") {
   const groups = new Set();
-  for (const { dirs } of todoLocations(workspaceRoot)) {
+  for (const { dirs } of todoLocations(workspaceRoot, rootMode)) {
     for (const fullPath of dirs) {
-      if (!existsSync(fullPath)) continue;
-      for (const file of readdirSync(fullPath)) {
-        const nameMatch = file.match(FILENAME_RE);
-        if (!nameMatch) continue;
-        try {
-          const todo = loadTodo(nameMatch[1], workspaceRoot);
-          if (todo.group) groups.add(todo.group);
-        } catch {
-          // Skip files that fail to load
-        }
-      }
+      visitTodoFiles(fullPath, workspaceRoot, rootMode, todo => {
+        if (todo.group) groups.add(todo.group);
+      });
     }
   }
-  return [...groups].sort();
+  return [...groups].sort((a, b) => a.localeCompare(b));
+}
+
+// Visit every loadable todo under a directory, skipping files that fail to load.
+function visitTodoFiles(dir, workspaceRoot, rootMode, visitor) {
+  if (!existsSync(dir)) return;
+  for (const file of readdirSync(dir)) {
+    const nameMatch = file.match(FILENAME_RE);
+    if (!nameMatch) continue;
+    try {
+      visitor(loadTodo(nameMatch[1], workspaceRoot, rootMode));
+    } catch {
+      // Skip files that fail to load
+    }
+  }
 }
 
 // Load all todos that belong to a specific group.
-export function loadGroupTodos(groupName, workspaceRoot) {
+export function loadGroupTodos(groupName, workspaceRoot, rootMode = "workspace") {
   if (typeof groupName !== 'string' || !groupName.trim()) {
     throw new CanvasError('invalid_group', 'groupName must be a non-empty string');
   }
   const members = [];
-  for (const { dirs } of todoLocations(workspaceRoot)) {
+  for (const { dirs } of todoLocations(workspaceRoot, rootMode)) {
     for (const fullPath of dirs) {
-      if (!existsSync(fullPath)) continue;
-      for (const file of readdirSync(fullPath)) {
-        const nameMatch = file.match(FILENAME_RE);
-        if (!nameMatch) continue;
-        const filePath = join(fullPath, file);
-        try {
-          const todo = loadTodo(nameMatch[1], workspaceRoot);
-          if (todo.group === groupName) {
-            members.push(todo);
-          }
-        } catch {
-          // Skip files that fail to load
-        }
-      }
+      visitTodoFiles(fullPath, workspaceRoot, rootMode, todo => {
+        if (todo.group === groupName) members.push(todo);
+      });
     }
   }
-  // Sort by status order, then by ID
-  const statusOrder = { 'in-progress': 0, 'pending': 1, 'ready': 2, 'backlogged': 3, 'completed': 4, 'cancelled': 5 };
-  members.sort((a, b) => {
-    const sa = statusOrder[a.status] ?? 6;
-    const sb = statusOrder[b.status] ?? 6;
-    if (sa !== sb) return sa - sb;
-    return a.id.localeCompare(b.id);
-  });
+  members.sort(compareGroupTodos);
   return members;
 }
 
-export function findTodoFile(todoId, workspaceRoot) {
-  if (!todoId || !TODO_ID_RE.test(todoId)) return null;
-  const matches = [];
-  for (const { dirs } of todoLocations(workspaceRoot)) {
-    for (const fullPath of dirs) {
-      if (!existsSync(fullPath)) continue;
-      for (const f of readdirSync(fullPath)) {
-        if (f.startsWith(`${todoId}-`) && FILENAME_RE.test(f)) {
-          const abs = resolve(join(fullPath, f));
-          if (!matches.some(m => resolve(m) === abs)) matches.push(abs);
-        }
-      }
+function compareGroupTodos(a, b) {
+  const statusOrder = { 'in-progress': 0, 'pending': 1, 'ready': 2, 'backlogged': 3, 'completed': 4, 'cancelled': 5 };
+  const sa = statusOrder[a.status] ?? 6;
+  const sb = statusOrder[b.status] ?? 6;
+  if (sa !== sb) return sa - sb;
+  return a.id.localeCompare(b.id);
+}
+
+function scanDirForTodo(dir, todoId, matches) {
+  if (!existsSync(dir)) return;
+  for (const f of readdirSync(dir)) {
+    if (f.startsWith(`${todoId}-`) && FILENAME_RE.test(f)) {
+      matches.add(resolve(join(dir, f)));
     }
   }
-  if (matches.length === 0) return null;
-  if (matches.length > 1) {
-    throw new CanvasError('invalid_input', `Ambiguous todo ID ${todoId}: ${matches.length} files match`);
+}
+
+export function findTodoFile(todoId, workspaceRoot, rootMode = "workspace") {
+  if (!todoId || !TODO_ID_RE.test(todoId)) return null;
+  const matches = new Set();
+  for (const { dirs } of todoLocations(workspaceRoot, rootMode)) {
+    for (const fullPath of dirs) {
+      scanDirForTodo(fullPath, todoId, matches);
+    }
   }
-  return matches[0];
+  if (matches.size === 0) return null;
+  if (matches.size > 1) {
+    throw new CanvasError('invalid_input', `Ambiguous todo ID ${todoId}: ${matches.size} files match`);
+  }
+  return [...matches][0];
 }
 
 // Locate a "## Heading" section as [start, end) over raw file lines.
+function toggleScanner(line, scanner) {
+  if (line.startsWith('<!-- agendo:scan-evidence:start -->')) return true;
+  if (line.startsWith('<!-- agendo:scan-evidence:end -->')) return false;
+  return scanner;
+}
+
 function findSection(lines, heading) {
   let start = -1;
   let scanner = false;
   let fence = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
-    if (line === '<!-- agendo:scan-evidence:start -->') { scanner = true; continue; }
-    if (line === '<!-- agendo:scan-evidence:end -->') { scanner = false; continue; }
+    scanner = toggleScanner(line, scanner);
     if (scanner) continue;
     const marker = line.match(/^(`{3,}|~{3,})/);
     if (marker) {
-      if (!fence) fence = marker[1];
-      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      fence = updateFence(marker, fence);
       continue;
     }
     if (fence) continue;
-    if (start === -1 && line === `## ${heading}`) start = i;
-    else if (start !== -1 && /^## /.test(lines[i])) return { start, end: i };
+    if (start === -1) {
+      const headingLine = `## ${heading}`;
+      if (line.startsWith(headingLine) && line.length === headingLine.length) start = i;
+    } else if (lines[i].startsWith('## ')) {
+      return { start, end: i };
+    }
   }
   return start === -1 ? null : { start, end: lines.length };
+}
+
+function updateFence(marker, fence) {
+  if (!fence) return marker[1];
+  if (marker[1][0] === fence[0] && marker[1].length >= fence.length) return null;
+  return fence;
 }
 
 function criterionLineIndices(lines) {
@@ -309,68 +375,57 @@ function criterionLineIndices(lines) {
   if (!range) return indices;
   for (let i = range.start + 1; i < range.end; i++) {
     const line = lines[i].trim();
-    if (line === '<!-- agendo:scan-evidence:start -->') { scanner = true; continue; }
-    if (line === '<!-- agendo:scan-evidence:end -->') { scanner = false; continue; }
+    if (line.startsWith('<!-- agendo:scan-evidence:start -->')) { scanner = true; continue; }
+    if (line.startsWith('<!-- agendo:scan-evidence:end -->')) { scanner = false; continue; }
     if (scanner) continue;
     const marker = line.match(/^(`{3,}|~{3,})/);
     if (marker) {
-      if (!fence) fence = marker[1];
-      else if (marker[1][0] === fence[0] && marker[1].length >= fence.length) fence = null;
+      fence = updateFence(marker, fence);
       continue;
     }
+    if (fence) continue;
     if (!fence && CRITERION_RE.test(lines[i])) indices.push(i);
   }
   return indices;
 }
 
-export function loadTodo(todoId, workspaceRoot) {
-  assertTodoId(todoId);
-  const filePath = findTodoFile(todoId, workspaceRoot);
-  if (!filePath) {
-    throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
-  }
+function extractScannerEvidenceFromBlock(scannerBlock) {
+  if (!scannerBlock) return null;
+  return scannerBlock[1]
+    .replace(/<!-- agendo:scan-snapshot\n[\s\S]*?\n-->/g, '')
+    .replace(/^\s*## Scanner Evidence\s*/, '')
+    .trim() || null;
+}
 
-  const { frontmatter, body: rawBody } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
-  const scannerBlock = rawBody.match(/<!-- agendo:scan-evidence:start -->([\s\S]*?)<!-- agendo:scan-evidence:end -->/);
-  const scannerEvidence = scannerBlock?.[1].replace(/<!-- agendo:scan-snapshot\n[\s\S]*?\n-->/g, '').replace(/^\s*## Scanner Evidence\s*/, '').trim() || null;
-  // Scanner explanations may contain headings and example checkboxes, not user-owned sections.
-  const body = scannerBlock ? rawBody.replace(scannerBlock[0], '') : rawBody;
-  const bodyLines = body.split(/\r?\n/);
-  const sectionText = heading => {
-    const range = findSection(bodyLines, heading);
-    return range ? bodyLines.slice(range.start + 1, range.end).join('\n').trim() : null;
-  };
-
-  const criteria = criterionLineIndices(bodyLines).map(index => {
+function parseCriteria(bodyLines) {
+  return criterionLineIndices(bodyLines).map(index => {
     const match = bodyLines[index].match(CRITERION_RE);
     return { met: match[2].toLowerCase() === 'x', text: match[4].trim() };
   });
+}
 
-  // Text under the title before the first section, then the Problem Statement.
-  const titleIndex = bodyLines.findIndex(line => /^#\s+/.test(line));
-  const firstSection = bodyLines.findIndex((line, i) => i > titleIndex && /^##\s+/.test(line));
-  const intro = bodyLines
-    .slice(titleIndex + 1, firstSection === -1 ? bodyLines.length : firstSection)
-    .join('\n')
-    .trim();
-  const description = [intro, sectionText('Problem Statement')].filter(Boolean).join('\n\n');
-
+function parseWorkLog(logText) {
   const workLog = [];
-  const logText = sectionText('Work Log');
-  if (logText) {
-    for (const entry of logText.split(/^### /m).filter(e => e.trim())) {
-      const [date, ...rest] = entry.split(/\r?\n/);
-      workLog.push({ date: date.trim(), content: rest.join('\n').trim() });
-    }
+  if (!logText) return workLog;
+  for (const entry of logText.split(/^### /m).filter(e => e.trim())) {
+    const [date, ...rest] = entry.split(/\r?\n/);
+    workLog.push({ date: date.trim(), content: rest.join('\n').trim() });
   }
+  return workLog;
+}
 
-  // Filename is authoritative for status and priority; frontmatter is only a fallback.
-  const nameMatch = basename(filePath).match(FILENAME_RE);
-  const filenameStatus = nameMatch?.[2];
-  const filenamePriority = nameMatch?.[3];
-  const frontmatterStatus = typeof frontmatter.status === 'string' ? frontmatter.status.toLowerCase() : null;
-  const frontmatterPriority = typeof frontmatter.priority === 'string' ? frontmatter.priority.toLowerCase() : null;
-
+function computeValidation(ctx) {
+  const {
+    filenameStatus,
+    frontmatterStatus,
+    filenamePriority,
+    frontmatterPriority,
+    titleIndex,
+    criteria,
+    bodyLines,
+    workLog,
+    sectionText,
+  } = ctx;
   const validation = [];
   if (filenameStatus && frontmatterStatus && filenameStatus !== frontmatterStatus) {
     validation.push(`status mismatch: filename says "${filenameStatus}" but frontmatter says "${frontmatterStatus}"`);
@@ -397,6 +452,62 @@ export function loadTodo(todoId, workspaceRoot) {
   if (status === 'in-progress' && !sectionText('Resume Context')) {
     validation.push('resume context missing: in-progress todo has no Resume Context section');
   }
+  return validation;
+}
+
+function computeTitle(frontmatter, body, todoId) {
+  return frontmatter.title || body.match(/^#\s+(\S.*)$/m)?.[1].trim() || `Todo ${todoId}`;
+}
+
+export function loadTodo(todoId, workspaceRoot, rootMode = "workspace") {
+  assertTodoId(todoId);
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
+  if (!filePath) {
+    throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
+  }
+
+  const { frontmatter, body: rawBody } = parseFrontmatter(readFileSync(filePath, 'utf-8'));
+  const scannerBlock = rawBody.match(/<!-- agendo:scan-evidence:start -->([\s\S]*?)<!-- agendo:scan-evidence:end -->/);
+  const scannerEvidence = extractScannerEvidenceFromBlock(scannerBlock);
+  // Scanner explanations may contain headings and example checkboxes, not user-owned sections.
+  const body = scannerBlock ? rawBody.replace(scannerBlock[0], '') : rawBody;
+  const bodyLines = body.split(/\r?\n/);
+  const sectionText = heading => {
+    const range = findSection(bodyLines, heading);
+    return range ? bodyLines.slice(range.start + 1, range.end).join('\n').trim() : null;
+  };
+
+  const criteria = parseCriteria(bodyLines);
+
+  // Text under the title before the first section, then the Problem Statement.
+  const titleIndex = bodyLines.findIndex(line => /^#\s+/.test(line));
+  const firstSection = bodyLines.findIndex((line, i) => i > titleIndex && /^##\s+/.test(line));
+  const intro = bodyLines
+    .slice(titleIndex + 1, firstSection === -1 ? bodyLines.length : firstSection)
+    .join('\n')
+    .trim();
+  const description = [intro, sectionText('Problem Statement')].filter(Boolean).join('\n\n');
+
+  const workLog = parseWorkLog(sectionText('Work Log'));
+
+  // Filename is authoritative for status and priority; frontmatter is only a fallback.
+  const nameMatch = basename(filePath).match(FILENAME_RE);
+  const filenameStatus = nameMatch?.[2];
+  const filenamePriority = nameMatch?.[3];
+  const frontmatterStatus = typeof frontmatter.status === 'string' ? frontmatter.status.toLowerCase() : null;
+  const frontmatterPriority = typeof frontmatter.priority === 'string' ? frontmatter.priority.toLowerCase() : null;
+
+  const validation = computeValidation({
+    filenameStatus,
+    frontmatterStatus,
+    filenamePriority,
+    frontmatterPriority,
+    titleIndex,
+    criteria,
+    bodyLines,
+    workLog,
+    sectionText,
+  });
 
   return {
     id: todoId,
@@ -409,7 +520,7 @@ export function loadTodo(todoId, workspaceRoot) {
     triage: ['Findings', 'Proposed Solutions', 'Recommended Action']
       .map(heading => ({ heading, text: sectionText(heading) }))
       .filter(section => section.text),
-    title: frontmatter.title || body.match(/^#\s+(.+)$/m)?.[1].trim() || `Todo ${todoId}`,
+    title: computeTitle(frontmatter, body, todoId),
     status: filenameStatus || frontmatterStatus || 'pending',
     priority: filenamePriority || frontmatterPriority || 'p3',
     dependencies: normalizeDependencies(frontmatter.dependencies),
@@ -427,9 +538,9 @@ export function loadTodo(todoId, workspaceRoot) {
 }
 
 // Revision: exact content hash + resolved path for optimistic concurrency.
-export function getTodoRevision(todoId, workspaceRoot) {
+export function getTodoRevision(todoId, workspaceRoot, rootMode = "workspace") {
   assertTodoId(todoId);
-  const filePath = findTodoFile(todoId, workspaceRoot);
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
   if (!filePath) {
     throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
   }
@@ -443,13 +554,10 @@ export function getTodoRevision(todoId, workspaceRoot) {
 // Shared validated criterion-editing operation. Applies a set of {criterionIndex, met} changes
 // atomically via temp file + rename, with EOL preservation and an optimistic revision recheck
 // performed AFTER temp write and immediately BEFORE rename.
-export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRevision) {
-  assertTodoId(todoId);
+function validateCriterionChanges(changes) {
   if (!Array.isArray(changes) || changes.length === 0) {
     throw new CanvasError('invalid_input', 'changes must be a non-empty array');
   }
-
-  // Detect duplicate criterion indices
   const seen = new Set();
   for (const ch of changes) {
     if (!ch || typeof ch !== 'object' || Array.isArray(ch)) throw new CanvasError('invalid_input', 'Each criterion change must be an object');
@@ -464,29 +572,30 @@ export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRev
       throw new CanvasError('invalid_input', 'met must be a boolean');
     }
   }
+}
 
-  const filePath = findTodoFile(todoId, workspaceRoot);
-  if (!filePath) {
-    throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
-  }
-
-  // Read content and compute baseline revision from the actual bytes
+function readBaselineRevision(filePath) {
   const content = readFileSync(filePath, 'utf-8');
-  const baselineRevision = {
-    content: createHash('sha256').update(content, 'utf-8').digest('hex'),
-    path: filePath
+  return {
+    content,
+    revision: {
+      content: createHash('sha256').update(content, 'utf-8').digest('hex'),
+      path: filePath
+    }
   };
+}
 
-  // Verify expected revision matches both path and content
-  if (expectedRevision) {
-    if (expectedRevision.path !== filePath) {
-      throw new CanvasError('stale_revision', `Todo ${todoId} file has moved`);
-    }
-    if (expectedRevision.content !== baselineRevision.content) {
-      throw new CanvasError('stale_revision', `Todo ${todoId} has changed since revision was captured`);
-    }
+function verifyExpectedRevision(expectedRevision, baselineRevision, filePath, todoId) {
+  if (!expectedRevision) return;
+  if (expectedRevision.path !== filePath) {
+    throw new CanvasError('stale_revision', `Todo ${todoId} file has moved`);
   }
+  if (expectedRevision.content !== baselineRevision.content) {
+    throw new CanvasError('stale_revision', `Todo ${todoId} has changed since revision was captured`);
+  }
+}
 
+function applyChangesToLines(content, changes, filePath) {
   const separators = content.match(/\r?\n/g) ?? [];
   const lines = content.split(/\r?\n/);
   const criterionLines = criterionLineIndices(lines);
@@ -496,13 +605,30 @@ export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRev
     }
   }
   const mode = statSync(filePath).mode & 0o777;
-
-  // Apply changes to the in-memory lines
   for (const ch of changes) {
     const lineIndex = criterionLines[ch.criterionIndex];
     lines[lineIndex] = lines[lineIndex].replace(CRITERION_RE, `$1${ch.met ? 'x' : ' '}$3$4`);
   }
   const nextContent = lines.map((line, index) => line + (separators[index] ?? '')).join('');
+  return { nextContent, lines, criterionLines, mode };
+}
+
+// Shared validated criterion-editing operation. Applies a set of {criterionIndex, met} changes
+// atomically via temp file + rename, with EOL preservation and an optimistic revision recheck
+// performed AFTER temp write and immediately BEFORE rename.
+export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRevision, rootMode = "workspace") {
+  assertTodoId(todoId);
+  validateCriterionChanges(changes);
+
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
+  if (!filePath) {
+    throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
+  }
+
+  const { content, revision: baselineRevision } = readBaselineRevision(filePath);
+  verifyExpectedRevision(expectedRevision, baselineRevision, filePath, todoId);
+
+  const { nextContent, lines, criterionLines, mode } = applyChangesToLines(content, changes, filePath);
   const revision = { content: createHash('sha256').update(nextContent, 'utf-8').digest('hex'), path: filePath };
 
   // Write to a unique crypto-random temp file with exclusive creation (O_EXCL)
@@ -549,8 +675,8 @@ export function applyCriteriaChanges(todoId, changes, workspaceRoot, expectedRev
 
 // Edit only the targeted checkbox line, then replace the file atomically so a
 // concurrent reader or the Agendo file watcher never sees a partial write.
-export function setCriterionMet(todoId, index, met, workspaceRoot) {
-  const result = applyCriteriaChanges(todoId, [{ criterionIndex: index, met }], workspaceRoot, null);
+export function setCriterionMet(todoId, index, met, workspaceRoot, rootMode = "workspace") {
+  const result = applyCriteriaChanges(todoId, [{ criterionIndex: index, met }], workspaceRoot, null, rootMode);
   return {
     success: true,
     message: `Criterion ${index + 1} marked as ${met ? 'met' : 'not met'}`,
@@ -565,26 +691,44 @@ function setFrontmatterField(lines, key, value) {
   if (end === -1) {
     throw new CanvasError('invalid_input', 'Malformed frontmatter: missing closing ---');
   }
-  const index = lines.findIndex((line, i) => i > 0 && i < end && new RegExp(`^${key}\\s*:`).test(line));
+  const index = lines.findIndex((line, i) => i > 0 && i < end && new RegExp(String.raw`^${key}\s*:`).test(line));
   if (index !== -1) lines[index] = `${key}: ${value}`;
   else lines.splice(end, 0, `${key}: ${value}`);
 }
 
-/**
- * Change a todo's status through the shared lifecycle core.
- *
- * Validates and locates the file, parses its filename contract, derives the todo
- * record and dependency statuses, applies the shared ready gate through
- * `isReadyBlocked`, then delegates the content/tag/banner/filename/folder
- * computation to the pure `planTransition` core. The Node file-system transaction
- * (temp write + rename + move) is retained here in the canvas adapter.
- */
-export function setTodoStatus(todoId, newStatus, workspaceRoot) {
+// Resolve the todo location and state folders for a file path.
+function resolveTodoLocation(filePath, workspaceRoot, rootMode) {
+  const locations = todoLocations(workspaceRoot, rootMode);
+  const location = locations.find((l) => l.dirs.includes(dirname(filePath)));
+  const folders = location ? location.folders : {
+    backlogged: 'backlogged',
+    completed: 'completed',
+    cancelled: 'cancelled',
+  };
+  return { location, folders };
+}
+
+// Enforce the shared ready gate: an ambiguous dependency is unsatisfied even
+// when one copy is terminal.
+function enforceReadyGate(todo, all, allTodos, newStatus) {
+  if (newStatus !== 'ready') return;
+  const blocked = isReadyBlocked(todo.dependencies, allTodos) ||
+    todo.dependencies.some((depId) => all.get(depId)?.ambiguous);
+  if (blocked) {
+    const blockedBy = todo.dependencies.filter((depId) => {
+      const dep = all.get(depId);
+      return !dep || !TERMINAL_STATUSES.includes(dep.status) || dep.ambiguous;
+    }).join(', ');
+    throw new CanvasError('invalid_input', `Cannot set to ready: unresolved dependencies ${blockedBy}`);
+  }
+}
+
+export function setTodoStatus(todoId, newStatus, workspaceRoot, rootMode = "workspace") {
   assertTodoId(todoId);
   if (!isValidStatus(newStatus)) {
     throw new CanvasError('invalid_input', `status must be one of: ${STATUSES.join(', ')}`);
   }
-  const filePath = findTodoFile(todoId, workspaceRoot);
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
   if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
   const name = basename(filePath);
@@ -598,33 +742,12 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   const content = readFileSync(filePath, 'utf-8');
 
   // Derive the todo record and dependency statuses for the shared ready gate.
-  const todo = loadTodo(todoId, workspaceRoot);
-  const all = listTodoSummaries(workspaceRoot);
+  const todo = loadTodo(todoId, workspaceRoot, rootMode);
+  const all = listTodoSummaries(workspaceRoot, rootMode);
   const allTodos = [...all.values()].map((t) => ({ id: t.id, status: t.status }));
+  enforceReadyGate(todo, all, allTodos, newStatus);
 
-  if (newStatus === 'ready') {
-    // Shared ready gate plus duplicate-ID ambiguity: an ambiguous dependency
-    // (multiple files for one ID) is unsatisfied even when one copy is terminal.
-    const blocked = isReadyBlocked(todo.dependencies, allTodos) ||
-      todo.dependencies.some((depId) => all.get(depId)?.ambiguous);
-    if (blocked) {
-      const blockedBy = todo.dependencies.filter((depId) => {
-        const dep = all.get(depId);
-        return !dep || !TERMINAL_STATUSES.includes(dep.status) || dep.ambiguous;
-      }).join(', ');
-      throw new CanvasError('invalid_input', `Cannot set to ready: unresolved dependencies ${blockedBy}`);
-    }
-  }
-
-  // Plan the transition through the shared, pure lifecycle core. This computes
-  // the next frontmatter body, cancelled tag/banner, filename, and target folder.
-  const locations = todoLocations(workspaceRoot);
-  const location = locations.find((l) => l.dirs.includes(dirname(filePath)));
-  const folders = location ? location.folders : {
-    backlogged: 'backlogged',
-    completed: 'completed',
-    cancelled: 'cancelled',
-  };
+  const { location, folders } = resolveTodoLocation(filePath, workspaceRoot, rootMode);
 
   let plan;
   try {
@@ -646,7 +769,6 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   if (!plan) return { success: true, message: `Already ${newStatus}`, changed: false };
 
   const { newContent, fileName, targetFolder } = plan;
-
   const targetDir = targetFolder ? join(location.base, targetFolder) : location.base;
 
   // Atomic temp write + rename + move, mirroring the criteria editor's transaction.
@@ -658,12 +780,12 @@ export function setTodoStatus(todoId, newStatus, workspaceRoot) {
   return { success: true, message: `Status changed to ${newStatus}`, changed: true, filePath: join(targetDir, fileName) };
 }
 
-export function setTodoPriority(todoId, newPriority, workspaceRoot) {
+export function setTodoPriority(todoId, newPriority, workspaceRoot, rootMode = "workspace") {
   assertTodoId(todoId);
   if (!PRIORITIES.includes(newPriority)) {
     throw new CanvasError('invalid_input', `priority must be one of: ${PRIORITIES.join(', ')}`);
   }
-  const filePath = findTodoFile(todoId, workspaceRoot);
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
   if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
   const name = basename(filePath);
@@ -695,7 +817,23 @@ function yamlScalar(value) {
   return JSON.stringify(value);
 }
 
-export function setTodoGroup(todoId, newGroup, workspaceRoot) {
+function updateGroupField(lines, trimmed, hasFrontmatter) {
+  if (!trimmed) {
+    if (hasFrontmatter) {
+      const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
+      if (end !== -1) {
+        const groupIndex = lines.findIndex((line, i) => i > 0 && i < end && /^group\s*:/.test(line));
+        if (groupIndex !== -1) lines.splice(groupIndex, 1);
+      }
+    }
+  } else if (hasFrontmatter) {
+    setFrontmatterField(lines, 'group', yamlScalar(trimmed));
+  } else {
+    lines.unshift('---', `group: ${yamlScalar(trimmed)}`, '---');
+  }
+}
+
+export function setTodoGroup(todoId, newGroup, workspaceRoot, rootMode = "workspace") {
   assertTodoId(todoId);
   if (typeof newGroup !== 'string') {
     throw new CanvasError('invalid_input', 'group must be a string');
@@ -707,27 +845,18 @@ export function setTodoGroup(todoId, newGroup, workspaceRoot) {
   if (/[\r\n\0]/.test(newGroup)) {
     throw new CanvasError('invalid_input', 'group must be a single line');
   }
-  const filePath = findTodoFile(todoId, workspaceRoot);
+  const filePath = findTodoFile(todoId, workspaceRoot, rootMode);
   if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
   const content = readFileSync(filePath, 'utf-8');
   const eol = content.includes('\r\n') ? '\r\n' : '\n';
   let lines = content.split(/\r?\n/);
 
-  if (lines[0].trim() === '---' && lines.findIndex((line, i) => i > 0 && line.trim() === '---') === -1) {
+  const hasFrontmatter = lines[0].trim() === '---';
+  if (hasFrontmatter && !lines.some((line, i) => i > 0 && line.trim() === '---')) {
     throw new CanvasError('invalid_input', 'Malformed frontmatter: missing closing ---');
   }
-  if (!trimmed) {
-    if (lines[0].trim() === '---') {
-      const end = lines.findIndex((line, i) => i > 0 && line.trim() === '---');
-      const groupIndex = lines.findIndex((line, i) => i > 0 && i < end && /^group\s*:/.test(line));
-      if (groupIndex !== -1) lines.splice(groupIndex, 1);
-    }
-  } else if (lines[0].trim() === '---') {
-    setFrontmatterField(lines, 'group', yamlScalar(trimmed));
-  } else {
-    lines.unshift('---', `group: ${yamlScalar(trimmed)}`, '---');
-  }
+  updateGroupField(lines, trimmed, hasFrontmatter);
 
   const text = lines.join(eol);
   const temp = join(dirname(filePath), `.${basename(filePath)}.${process.pid}.${Date.now()}.tmp`);

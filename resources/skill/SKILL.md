@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.6.1
+version: 1.9.0
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -56,25 +56,102 @@ asking questions. Read the todos directory and report:
 Keep the summary brief (under 15 lines). Do not ask the user what they want to do; present the
 state and let them follow up with a specific command like `/agendo triage` or `/agendo create`.
 
-## Read `.agendo-config.json` first
+## Select the workspace folder and todos root
 
-Before doing anything else, resolve the todos root and check for `.agendo-config.json` there. The
+Agendo supports two kinds of todo roots, each with an isolated ID sequence, dependency graph,
+groups, filters, and scanner sequences:
+
+- **Workspace-folder root** — derived from the folder-scoped `agendo.root` setting for a VS Code
+  workspace folder (default `docs/todos` relative to that folder).
+- **Manual todo root** — an arbitrary local filesystem directory registered with
+  **Agendo: Add Manual Todo Root**. Its URI is already the todo root; it is not a workspace folder
+  and has no folder-scoped setting.
+
+**Distinguish the three root concepts:**
+
+- **Workspace folder** — the VS Code workspace folder (`vscode.WorkspaceFolder.uri`).
+- **Folder-scoped `agendo.root`** — the workspace-folder-relative todo root configured by
+  `agendo.root` for the selected folder. Resolve it through the host API
+  (`vscode.workspace.getConfiguration` for that folder) when available; otherwise read the selected
+  folder's `.vscode/settings.json`. The resolved root is `agendo.root` relative to that folder,
+  defaulting to `docs/todos`.
+- **Manual todo-root URI** — a registered filesystem directory that is itself the todo root. Read
+  `.agendo-config.json` from that exact URI; it is not a workspace folder.
+
+**Identify the target root before any todo operation.** Establish workspace folder / todo-root
+identity before todo lookup, ID resolution, dependency traversal, imports, status changes, or
+summaries. At session start (and on every MCP call), resolve the todo root from, in order:
+
+1. **File/task context** — a todo file or task explicitly under a root owns that root.
+2. **Active/registered root** — the persisted active root, or the first registered root when none is
+   active.
+3. **Explicit selection** — the user picks a root. In multi-root, never assume the first root; when a
+   bare todo ID is referenced, resolve it against the selected root only. Identical IDs in separate
+   roots are distinct todos and dependencies do not cross roots.
+
+**Tree mode** (`agendo.treeMode`, toggled by **Agendo: Toggle Tree Mode**):
+
+- **Single** — the tree shows the active root's todos directly, with no root container wrapper. The
+  active root is switched with **Agendo: Choose Workspace Folder** (workspace roots) or by selecting
+  a manual root.
+- **Multi** — every registered root is a named, collapsible top-level root node with its own isolated
+  child hierarchy. Roots are never flattened across roots, and bare IDs are never used across roots.
+
+**Manual-root commands:**
+
+- **Agendo: Add Manual Todo Root** — pick a local directory (and optional label); it becomes a
+  registered manual root and is activated.
+- **Agendo: Remove Manual Todo Root** — pick a registered manual root to remove. If it was active, a
+  fallback root is activated; if no roots remain, the manual/active root is cleared.
+- **Agendo: Choose Workspace Folder** — switch the active workspace folder (saved with the
+  workspace).
+- **Agendo: Choose Root** — select the todo directory within the active folder (folder-scoped
+  `agendo.root`). Distinct from choosing the workspace folder.
+- **Agendo: Toggle Tree Mode** — switch between single and multi tree presentation.
+
+**Manual root canvas.** Opening a canvas for a manual root makes that root active, rebinds the
+repository to it, syncs its on-disk config projection/gitignore, and opens the canvas in "manual"
+mode. The duplicate-ID check is scoped to that root's repository.
+
+**Root-local state.** IDs, sequence allocation, groups, dependencies, filters, scanner sequences
+(`cql-` / `sq-`), and assets are root-local. Each root owns an isolated `ConfigService` +
+`TodoRepository`, so duplicate IDs across roots never collide and dependencies do not cross roots.
+Scanner todos retain their source root (`code-scanning/codeql` or
+`code-scanning/sonarqube`) across status changes.
+
+**MCP scoping.** Every MCP todo tool (`get_todo_context`, `list_groups`, `list_group_members`,
+`get_dependencies`, `set_status`, `set_priority`, `set_group`, `toggle_criterion`, `get_todo_file`)
+accepts an optional `workspaceFolder` that selects any registered workspace or manual root by
+label/basename or exact absolute path. When labels collide, use the exact absolute path. When
+multiple roots are registered and the call cannot be disambiguated, the tool rejects the call rather
+than guessing; do not fall back to another root silently. The read-only diagnostics tool
+(`get_problems`) follows the same model.
+
+**Config.** `.agendo-config.json` is per resolved todo root, read from that root only. A manual root
+is a directory URI, not a workspace folder, so it has no folder-scoped `agendo.root`; its root is its
+exact URI. Scanner imports are manual per invocation and are not gated by a persistent enable toggle;
+existing scanner todos remain visible.
+
+Single-root behavior is unchanged: when one folder is open and no manual root is active, tools
+resolve the sole root without a selector.
+
+## Read `.agendo-config.json` from the resolved root
+
+After resolving the workspace folder and todos root (see the previous section), read
+`.agendo-config.json` from that resolved todo root only. The
 [Agendo VS Code extension](https://github.com/JakeRoxs/agendo) writes this file as a projection of
 its settings so this skill can honor the user's chosen configuration.
 
 **Always locate the config with direct filesystem reads, never with workspace search or glob.**
 The todos root is gitignored by default, and search indexes and glob tools exclude ignored
-files. Check candidate locations by reading the file directly (`Read` tool, `cat`,
-`Get-Content`), in this order:
+files. Read the file directly (`Read` tool, `cat`, `Get-Content`) at the resolved root path.
 
-1. `docs/todos/.agendo-config.json` (the default root)
-2. The root named by the workspace's `agendo.root` setting (e.g. in `.vscode/settings.json`) —
-   a custom-root configuration file lives inside that custom root
-3. Any directory that already contains todo files matching `[0-9][0-9][0-9]-*.md` (see the
-   duplicate-root guard in "Creating a New Todo")
-
-Only after a direct read of the default root fails and no custom root is configured may you
-conclude the config is absent.
+The `agendo.root` setting is folder-scoped. For the selected WorkspaceFolder, prefer the host API
+(`vscode.workspace.getConfiguration` for that folder); otherwise read the selected folder's
+`.vscode/settings.json`. The resolved root is `agendo.root` relative to that folder, defaulting to
+`docs/todos`. A manual todo root is a directory URI, not a workspace folder: it has no folder-scoped
+setting, and its root is its exact registered URI. Standalone operation (no VS Code workspace) falls
+back to `docs/todos`.
 
 **The file only exists when something differs from the defaults:** fields equal to their default
 are never written, and the file itself is removed when every setting is default. Apply these
@@ -87,7 +164,6 @@ defaults to any missing key — or to the whole configuration when the file is a
 | `backloggedFolder`   | `backlogged` |
 | `cancelledFolder` | `cancelled`  |
 | `completedFolder`  | `completed`   |
-| `codeScanning`    | `false`      |
 
 The default parked-work folder is `backlogged/`, matching the lifecycle status. An existing
 `backlog/` folder is a custom layout: honor an explicit `backloggedFolder: "backlog"` setting.
@@ -132,9 +208,10 @@ three-digit ID; neither is shell brace expansion.
 ### Optional Code-Scanning Todos
 
 Agendo can import CodeQL and SonarQube findings natively. Existing scanning todos must always be
-included in discovery, even when `codeScanning` is false (that setting enables fetching, not visibility).
-List `{root}/code-scanning/codeql` and `{root}/code-scanning/sonarqube` directly, plus their own
-configured completed, cancelled, and backlog subfolders. Do not assume search tools index them.
+included in discovery; scanner imports are manual per invocation and are not gated by a persistent
+enable toggle. List `{root}/code-scanning/codeql` and `{root}/code-scanning/sonarqube` directly,
+plus their own configured completed, cancelled, and backlog subfolders. Do not assume search tools
+index them.
 
 Each source has an independent sequence: `cql-001-pending-p1-rule-name.md` and
 `sq-001-pending-p2-rule-name.md`. The full prefixed ID is the `issue_id` and dependency key.
@@ -334,14 +411,13 @@ backlogging, reopening, and priority changes. The order of rename and edit does 
    - Active todo files live directly inside `{root}`. List `{root}` and each configured state
      subfolder explicitly so discovery is independent of recursive-glob semantics and search-index
      exclusions.
-    - The next ID is the highest existing leading filename ID across all locations + 1,
-      zero-padded to 3 digits. IDs are global and never reused.
-    - **Duplicate-root guard:** before creating `{root}` or any todo files, if the resolved root
-      does not exist or is empty, scan the workspace for existing todo files elsewhere
-      (e.g. `find . \( -name node_modules -o -name out -o -name coverage -o -name dist \) -prune -o -type f -name '[0-9][0-9][0-9]-*-*.md' -print`).
-      If todo files already exist in a different directory, that directory is almost certainly
-      the real todos root — use it (or confirm with the user) instead of starting a new series.
-      Never start at `001` when higher IDs already exist elsewhere in the workspace.
+   - The next ID is the highest existing leading filename ID within the selected `{root}` + 1,
+     zero-padded to 3 digits. IDs are root-local and never reused within that root; identical IDs
+     in separate roots are valid and distinct todos.
+   - **Duplicate-root guard:** before creating `{root}` or any todo files, if the resolved root
+     does not exist or is empty, confirm with the user whether to start a new series in that root.
+     Do not scan sibling workspace folders for existing todo IDs or treat another folder's root as
+     the real root; dependencies do not cross roots.
    - GNU/Linux Bash: `find "{root}" -maxdepth 2 -type f -name '[0-9][0-9][0-9]-*.md' -printf '%f\n' | cut -d- -f1 | sort -n | tail -1 | awk '{printf "%03d", $1+1}'`
     - PowerShell: `$files = @(); Get-ChildItem "{root}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; Get-ChildItem "{backlog}", "{completed}", "{cancelled}" -Filter '*.md' -ErrorAction SilentlyContinue | ForEach-Object { $files += $_ }; ($files | ForEach-Object { if ($_.Name -match '^(\d{3})-') { [int]$Matches[1] } } | Measure-Object -Maximum).Maximum + 1 | ForEach-Object { '{0:D3}' -f $_ }`
 2. Copy the template from the skill directory: `cp "{skill_dir}/assets/todo-template.md" "{root}/{NEXT_ID}-pending-{priority}-{description}.md"`

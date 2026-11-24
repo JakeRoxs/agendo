@@ -46,6 +46,57 @@ import {
 import { TodoRepository } from "../todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider } from "../todos/todoTreeProvider";
 import { TreeStateService } from "../todos/treeStateService";
+import { TodoRootRegistry } from "../todos/rootRegistry";
+
+function makeFolder(name: string, fsPath: string): vscode.WorkspaceFolder {
+  return { name, uri: vscode.Uri.file(fsPath), index: 0 } as unknown as vscode.WorkspaceFolder;
+}
+
+function makeMemento(): vscode.Memento {
+  const store: Record<string, unknown> = {};
+  return {
+    get: <T>(key: string) => store[key] as T | undefined,
+    update: async (_key: string, value: unknown) => {
+      store[_key] = value;
+    },
+  } as unknown as vscode.Memento;
+}
+
+function mockWorkspaceFolders(folders: vscode.WorkspaceFolder[]): () => void {
+  const original = vscode.workspace.workspaceFolders;
+  Object.defineProperty(vscode.workspace, "workspaceFolders", {
+    value: folders,
+    configurable: true,
+  });
+  return () => {
+    Object.defineProperty(vscode.workspace, "workspaceFolders", {
+      value: original,
+      configurable: true,
+    });
+  };
+}
+
+function mockGetConfiguration(config: {
+  get: (key: string) => unknown;
+  update: (key: string, value: unknown) => PromiseLike<void>;
+  inspect: (key: string) => {
+    workspaceFolderValue?: unknown;
+    workspaceValue?: unknown;
+    globalValue?: unknown;
+  } | undefined;
+}): () => void {
+  const original = vscode.workspace.getConfiguration;
+  Object.defineProperty(vscode.workspace, "getConfiguration", {
+    value: () => config as unknown as vscode.WorkspaceConfiguration,
+    configurable: true,
+  });
+  return () => {
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: original,
+      configurable: true,
+    });
+  };
+}
 
 suite("todoModel", () => {
   test("isTodoFileName matches the naming contract", () => {
@@ -1232,6 +1283,511 @@ suite("todoModel", () => {
     }
   });
 
+  test("right-click TreeItem status commands resolve the selected todo by resourceUri", async () => {
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-treeitem-status-")),
+    );
+    await vscode.workspace.fs.createDirectory(rootUri);
+    // The registry's workspace root resolves to rootUri/docs/todos, so the todo
+    // must live there to be discoverable by URI resolution across the roots.
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+
+    const workspaceFolder = makeFolder("workspace", rootUri.fsPath);
+    const restoreFolders = mockWorkspaceFolders([workspaceFolder]);
+    const restoreConfig = mockGetConfiguration({
+      get: () => undefined,
+      update: () => Promise.resolve(),
+      inspect: () => ({ workspaceFolderValue: "docs/todos" }),
+    });
+
+    const memento = makeMemento();
+    const config = new ConfigService(memento);
+    const registry = new TodoRootRegistry(config, memento);
+
+    // Create a todo file and refresh the root context's repository so the todo
+    // is discoverable by URI resolution across the registry's roots.
+    const todoUri = vscode.Uri.joinPath(rootUri, "docs", "todos", "060-ready-p2-do-the-thing.md");
+    await vscode.workspace.fs.writeFile(
+      todoUri,
+      Buffer.from(
+        [
+          "---",
+          "status: ready",
+          "priority: p2",
+          "tags: [alpha]",
+          "---",
+          "",
+          "# Do The Thing",
+          "",
+          "Body.",
+        ].join("\n"),
+        "utf8",
+      ),
+    );
+    const contexts = registry.getContexts();
+    for (const ctx of contexts) {
+      await ctx.repository.refresh();
+    }
+
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const originalRegisterCommand = vscode.commands.registerCommand;
+    Object.defineProperty(vscode.commands, "registerCommand", {
+      value: (command: string, callback: (...args: any[]) => any) => {
+        registrations.set(command, callback);
+        return { dispose() {} };
+      },
+      configurable: true,
+    });
+    const originalShowErrorMessage = vscode.window.showErrorMessage;
+    const errorMessages: string[] = [];
+    Object.defineProperty(vscode.window, "showErrorMessage", {
+      value: async (message: string) => {
+        errorMessages.push(message);
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      const context = {
+        extension: { packageJSON: { version: "0.3.0" } },
+        workspaceState: memento,
+        extensionUri: vscode.Uri.file(
+          path.join(os.tmpdir(), "agendo-extension-tests", "extension"),
+        ),
+        subscriptions: [] as vscode.Disposable[],
+      };
+      registerCommands(context as never, {
+        config,
+        repository: contexts[0].repository,
+        filter: { matches: () => true, current: {} } as never,
+        treeState: new TreeStateService(
+          { get: () => [], update: async () => undefined } as never,
+        ),
+        status: { setStatus: async () => undefined } as never,
+        links: { warnOnBrokenReferences: async () => undefined } as never,
+        skill: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvas: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvasViewer: { open: async () => undefined } as never,
+        busy: {
+          run: async (_label: string, operation: () => Promise<unknown>, _contextKey?: string, _todoId?: string) => {
+            return await operation();
+          },
+        } as never,
+        treeProvider: { refresh: async () => undefined } as never,
+        boardViewProvider: { refresh: async () => undefined } as never,
+        refreshSkillStatus: () => undefined,
+        rootRegistry: registry,
+      } as never);
+
+      // Every status command resolves the TreeItem to the matching todo and
+      // routes the transition to the owning root's StatusService.
+      for (const [index, targetStatus] of TODO_STATUSES.entries()) {
+        const handler = registrations.get(`agendo.setStatus.${targetStatus}`);
+        assert.ok(handler, `missing registration agendo.setStatus.${targetStatus}`);
+
+        // Use a unique ID for each iteration so prior terminal-status files do
+        // not trigger the repository's duplicate-ID safety guard.
+        const todoId = String(60 + index).padStart(3, "0");
+        const fileName = `${todoId}-ready-p2-do-the-thing.md`;
+        const iterTodoUri = vscode.Uri.joinPath(rootUri, "docs", "todos", fileName);
+        await vscode.workspace.fs.writeFile(
+          iterTodoUri,
+          Buffer.from(
+            [
+              "---",
+              "status: ready",
+              "priority: p2",
+              "tags: [alpha]",
+              "---",
+              "",
+              "# Do The Thing",
+              "",
+              "Body.",
+            ].join("\n"),
+            "utf8",
+          ),
+        );
+        await contexts[0].repository.refresh();
+
+        const treeItem = new vscode.TreeItem("060 · Do The Thing", vscode.TreeItemCollapsibleState.None);
+        treeItem.resourceUri = iterTodoUri;
+        treeItem.id = `todo:${iterTodoUri.toString()}`;
+
+        await handler?.(treeItem as never);
+
+        // Verify the file was moved to the target status folder with updated
+        // frontmatter and preserved body. Terminal statuses live in their own
+        // status subfolder; other statuses are renamed in place.
+        const targetFolder = ["backlogged", "completed", "cancelled"].includes(targetStatus) ? targetStatus : "";
+        const expectedUri = vscode.Uri.joinPath(rootUri, "docs", "todos", targetFolder, `${todoId}-${targetStatus}-p2-do-the-thing.md`);
+        const stat = await vscode.workspace.fs.stat(expectedUri);
+        assert.ok(stat, `expected file at ${expectedUri.fsPath} after ${targetStatus}`);
+        const content = Buffer.from(await vscode.workspace.fs.readFile(expectedUri)).toString("utf8");
+        assert.match(content, new RegExp(`status: ${targetStatus}`));
+        // The original `alpha` tag is preserved; terminal/folder statuses may
+        // append their own tag (e.g. `cancelled`), so match the tag prefix.
+        assert.match(content, /tags: \[alpha/);
+        assert.match(content, /# Do The Thing/);
+      }
+
+      // Internal TreeNode command invocation (keyboard / command palette) still works.
+      for (const [index, targetStatus] of TODO_STATUSES.entries()) {
+        const handler = registrations.get(`agendo.setStatus.${targetStatus}`);
+        assert.ok(handler);
+
+        // Use unique IDs to avoid collisions with files moved by prior
+        // terminal-status transitions in this loop.
+        const todoId = String(70 + index).padStart(3, "0");
+        const fileName = `${todoId}-ready-p2-do-the-thing.md`;
+        const iterTodoUri = vscode.Uri.joinPath(rootUri, "docs", "todos", fileName);
+        await vscode.workspace.fs.writeFile(
+          iterTodoUri,
+          Buffer.from(
+            [
+              "---",
+              "status: ready",
+              "priority: p2",
+              "tags: [alpha]",
+              "---",
+              "",
+              "# Do The Thing",
+              "",
+              "Body.",
+            ].join("\n"),
+            "utf8",
+          ),
+        );
+        await contexts[0].repository.refresh();
+
+        const todo: Todo = {
+          id: todoId,
+          status: "ready",
+          priority: "p2",
+          title: "Do The Thing",
+          description: "do-the-thing",
+          tags: ["alpha"],
+          dependencies: [],
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName,
+          uri: iterTodoUri,
+          frontmatter: { status: "ready", priority: "p2", tags: ["alpha"] },
+        };
+
+        await handler?.({ kind: "todo", todo } as never);
+
+        // Verify the file was moved to the target status folder. Terminal
+        // statuses live in their own status subfolder; other statuses are
+        // renamed in place.
+        const targetFolder = ["backlogged", "completed", "cancelled"].includes(targetStatus) ? targetStatus : "";
+        const expectedUri = vscode.Uri.joinPath(rootUri, "docs", "todos", targetFolder, `${todoId}-${targetStatus}-p2-do-the-thing.md`);
+        const stat = await vscode.workspace.fs.stat(expectedUri);
+        assert.ok(stat, `expected file at ${expectedUri.fsPath} after ${targetStatus} (TreeNode)`);
+      }
+
+      // Non-todo tree item (a status group) is safe and does not mutate.
+      const statusNode = new vscode.TreeItem(
+        "Ready (1)",
+        vscode.TreeItemCollapsibleState.Expanded,
+      );
+      statusNode.id = "status:ready";
+      const beforeStatusNode = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const beforeStatusCount = beforeStatusNode.filter(([name]) => name.endsWith(".md")).length;
+      await registrations.get(`agendo.setStatus.ready`)?.(statusNode as never);
+      const afterStatusNode = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const afterStatusCount = afterStatusNode.filter(([name]) => name.endsWith(".md")).length;
+      assert.strictEqual(afterStatusCount, beforeStatusCount, "non-todo item should not create new files");
+
+      // Missing resourceUri and a non-todo id is safe.
+      const bareItem = new vscode.TreeItem("orphan", vscode.TreeItemCollapsibleState.None);
+      const beforeBare = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const beforeBareCount = beforeBare.filter(([name]) => name.endsWith(".md")).length;
+      await registrations.get(`agendo.setStatus.pending`)?.(bareItem as never);
+      const afterBare = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const afterBareCount = afterBare.filter(([name]) => name.endsWith(".md")).length;
+      assert.strictEqual(afterBareCount, beforeBareCount, "bare item should not create new files");
+
+      // Stale URI (no matching todo in the snapshot) is safe.
+      const staleUri = vscode.Uri.file("/tmp/nonexistent-099-ready-p2-x.md");
+      const staleItem = new vscode.TreeItem("stale", vscode.TreeItemCollapsibleState.None);
+      staleItem.resourceUri = staleUri;
+      staleItem.id = `todo:${staleUri.toString()}`;
+      const beforeStale = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const beforeStaleCount = beforeStale.filter(([name]) => name.endsWith(".md")).length;
+      await registrations.get(`agendo.setStatus.completed`)?.(staleItem as never);
+      const afterStale = await vscode.workspace.fs.readDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+      const afterStaleCount = afterStale.filter(([name]) => name.endsWith(".md")).length;
+      assert.strictEqual(afterStaleCount, beforeStaleCount, "stale URI should not create new files");
+
+      assert.strictEqual(
+        errorMessages.length,
+        0,
+        "unexpected error message for safe selection",
+      );
+    } finally {
+      restoreFolders();
+      restoreConfig();
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegisterCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showErrorMessage", {
+        value: originalShowErrorMessage,
+        configurable: true,
+      });
+    }
+  });
+
+  test("right-click status command is safe on ambiguous URI matches", async () => {
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-ambiguous-status-")),
+    );
+    await vscode.workspace.fs.createDirectory(rootUri);
+    const todoUri = vscode.Uri.joinPath(rootUri, "060-ready-p2-x.md");
+    await vscode.workspace.fs.writeFile(
+      todoUri,
+      Buffer.from(
+        [
+          "---",
+          "status: ready",
+          "priority: p2",
+          "---",
+          "",
+          "# Duplicate",
+          "",
+          "Body.",
+        ].join("\n"),
+        "utf8",
+      ),
+    );
+
+    const workspaceFolder = makeFolder("workspace", rootUri.fsPath);
+    const restoreFolders = mockWorkspaceFolders([workspaceFolder]);
+    const restoreConfig = mockGetConfiguration({
+      get: () => undefined,
+      update: () => Promise.resolve(),
+      inspect: () => ({ workspaceFolderValue: "docs/todos" }),
+    });
+
+    const memento = makeMemento();
+    const config = new ConfigService(memento);
+    const registry = new TodoRootRegistry(config, memento);
+    const contexts = registry.getContexts();
+    for (const ctx of contexts) {
+      await ctx.repository.refresh();
+    }
+
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const originalRegisterCommand = vscode.commands.registerCommand;
+    Object.defineProperty(vscode.commands, "registerCommand", {
+      value: (command: string, callback: (...args: any[]) => any) => {
+        registrations.set(command, callback);
+        return { dispose() {} };
+      },
+      configurable: true,
+    });
+    const originalShowWarningMessage = vscode.window.showWarningMessage;
+    const warnings: string[] = [];
+    Object.defineProperty(vscode.window, "showWarningMessage", {
+      value: async (message: string) => {
+        warnings.push(message);
+        return undefined;
+      },
+      configurable: true,
+    });
+
+    try {
+      const context = {
+        extension: { packageJSON: { version: "0.3.0" } },
+        workspaceState: memento,
+        extensionUri: vscode.Uri.file(
+          path.join(os.tmpdir(), "agendo-extension-tests", "extension"),
+        ),
+        subscriptions: [] as vscode.Disposable[],
+      };
+      registerCommands(context as never, {
+        config,
+        repository: contexts[0].repository,
+        filter: { matches: () => true, current: {} } as never,
+        treeState: new TreeStateService(
+          { get: () => [], update: async () => undefined } as never,
+        ),
+        status: { setStatus: async () => undefined } as never,
+        links: { warnOnBrokenReferences: async () => undefined } as never,
+        skill: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvas: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvasViewer: { open: async () => undefined } as never,
+        busy: {
+          run: async (_label: string, operation: () => Promise<unknown>, _contextKey?: string, _todoId?: string) => {
+            return await operation();
+          },
+        } as never,
+        treeProvider: { refresh: async () => undefined } as never,
+        boardViewProvider: { refresh: async () => undefined } as never,
+        refreshSkillStatus: () => undefined,
+        rootRegistry: registry,
+      } as never);
+
+      // A URI that matches no todo in any root is a safe no-op: no status
+      // change and no error message.
+      const staleUri = vscode.Uri.file("/tmp/nonexistent-099-ready-p2-x.md");
+      const staleItem = new vscode.TreeItem("stale", vscode.TreeItemCollapsibleState.None);
+      staleItem.resourceUri = staleUri;
+      staleItem.id = `todo:${staleUri.toString()}`;
+
+      const handler = registrations.get(Command.SetStatusPending);
+      assert.ok(handler);
+      await handler?.(staleItem as never);
+
+      const after = await vscode.workspace.fs.readDirectory(rootUri);
+      const mdFiles = after.filter(([name]) => name.endsWith(".md"));
+      assert.strictEqual(mdFiles.length, 1, "non-matching URI should not create new files");
+      assert.strictEqual(
+        warnings.length,
+        0,
+        "non-matching URI should not produce a warning",
+      );
+    } finally {
+      restoreFolders();
+      restoreConfig();
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegisterCommand,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.window, "showWarningMessage", {
+        value: originalShowWarningMessage,
+        configurable: true,
+      });
+    }
+  });
+
+  test("right-click TreeItem status command moves the todo file end-to-end", async () => {
+    const rootUri = vscode.Uri.file(
+      await fs.mkdtemp(path.join(os.tmpdir(), "agendo-e2e-status-")),
+    );
+    await vscode.workspace.fs.createDirectory(rootUri);
+    // The registry's workspace root resolves to rootUri/docs/todos, so the todo
+    // must live there to be discoverable by URI resolution across the roots.
+    await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(rootUri, "docs", "todos"));
+    const todoUri = vscode.Uri.joinPath(rootUri, "docs", "todos", "060-ready-p2-do-the-thing.md");
+    await vscode.workspace.fs.writeFile(
+      todoUri,
+      Buffer.from(
+        [
+          "---",
+          "status: ready",
+          "priority: p2",
+          "tags: [alpha]",
+          "---",
+          "",
+          "# Do The Thing",
+          "",
+          "Body.",
+        ].join("\n"),
+        "utf8",
+      ),
+    );
+
+    const workspaceFolder = makeFolder("workspace", rootUri.fsPath);
+    const restoreFolders = mockWorkspaceFolders([workspaceFolder]);
+    const restoreConfig = mockGetConfiguration({
+      get: () => undefined,
+      update: () => Promise.resolve(),
+      inspect: () => ({ workspaceFolderValue: "docs/todos" }),
+    });
+
+    const memento = makeMemento();
+    const config = new ConfigService(memento);
+    const registry = new TodoRootRegistry(config, memento);
+    const contexts = registry.getContexts();
+    for (const ctx of contexts) {
+      await ctx.repository.refresh();
+    }
+
+    const registrations = new Map<string, (...args: any[]) => any>();
+    const originalRegisterCommand = vscode.commands.registerCommand;
+    Object.defineProperty(vscode.commands, "registerCommand", {
+      value: (command: string, callback: (...args: any[]) => any) => {
+        registrations.set(command, callback);
+        return { dispose() {} };
+      },
+      configurable: true,
+    });
+
+    try {
+      const context = {
+        extension: { packageJSON: { version: "0.3.0" } },
+        workspaceState: memento,
+        extensionUri: vscode.Uri.file(
+          path.join(os.tmpdir(), "agendo-extension-tests", "extension"),
+        ),
+        subscriptions: [] as vscode.Disposable[],
+      };
+      registerCommands(context as never, {
+        config,
+        repository: contexts[0].repository,
+        filter: { matches: () => true, current: {} } as never,
+        treeState: new TreeStateService(
+          { get: () => [], update: async () => undefined } as never,
+        ),
+        status: { setStatus: async () => undefined } as never,
+        links: { warnOnBrokenReferences: async () => undefined } as never,
+        skill: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvas: { getStatus: async () => ({ installed: false } as never) } as never,
+        canvasViewer: { open: async () => undefined } as never,
+        busy: {
+          run: async (_label: string, operation: () => Promise<unknown>, _contextKey?: string, _todoId?: string) => {
+            return await operation();
+          },
+        } as never,
+        treeProvider: { refresh: async () => undefined } as never,
+        boardViewProvider: { refresh: async () => undefined } as never,
+        refreshSkillStatus: () => undefined,
+        rootRegistry: registry,
+      } as never);
+
+      const treeItem = new vscode.TreeItem(
+        "060 · Do The Thing",
+        vscode.TreeItemCollapsibleState.None,
+      );
+      treeItem.resourceUri = todoUri;
+      treeItem.id = `todo:${todoUri.toString()}`;
+
+      const handler = registrations.get(Command.SetStatusPending);
+      assert.ok(handler);
+      await handler?.(treeItem as never);
+
+      // File moved to the root folder with the pending status and updated
+      // frontmatter; the original file is gone.
+      const expectedUri = vscode.Uri.joinPath(rootUri, "docs", "todos", "060-pending-p2-do-the-thing.md");
+      const stat = await vscode.workspace.fs.stat(expectedUri);
+      assert.ok(stat);
+      const content = Buffer.from(await vscode.workspace.fs.readFile(expectedUri)).toString(
+        "utf8",
+      );
+      assert.match(content, /status: pending/);
+      assert.match(content, /tags: \[alpha\]/);
+      assert.match(content, /# Do The Thing/);
+      let originalExists = true;
+      try {
+        await vscode.workspace.fs.stat(todoUri);
+      } catch {
+        originalExists = false;
+      }
+      assert.strictEqual(originalExists, false);
+    } finally {
+      restoreFolders();
+      restoreConfig();
+      Object.defineProperty(vscode.commands, "registerCommand", {
+        value: originalRegisterCommand,
+        configurable: true,
+      });
+    }
+  });
+
   test("tree state service persists collapsed state and clears all entries", async () => {
     const memory = new Map<string, string[]>();
     const state = {
@@ -2274,8 +2830,16 @@ suite("todoModel", () => {
         "utf8",
       ),
     );
+    await vscode.workspace.fs.writeFile(
+      vscode.Uri.joinPath(todoRoot, "001-pending-p2-login-page.md"),
+      Buffer.from(
+        '---\nstatus: pending\npriority: p2\n---\n# Login page\n',
+        "utf8",
+      ),
+    );
 
     const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+    const originalGetWorkspaceFolder = vscode.workspace.getWorkspaceFolder;
     const originalCreateTreeView = vscode.window.createTreeView;
     const originalRegisterCommand = vscode.commands.registerCommand;
     const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
@@ -2299,10 +2863,11 @@ suite("todoModel", () => {
     let watcherCreationCount = 0;
     const treeViewIds: string[] = [];
     const inputQueue = [
+      "fix the login issue",
+      "auth",
       "add-login-page",
       "my-key",
       "docs/todos",
-      "fix the login issue",
       "alpha",
       undefined,
       "p2",
@@ -2311,6 +2876,13 @@ suite("todoModel", () => {
 
     Object.defineProperty(vscode.workspace, "workspaceFolders", {
       value: [{ uri: workspaceRoot, name: "workspace", index: 0 }],
+      configurable: true,
+    });
+    Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+      value: (uri: vscode.Uri) =>
+        uri.fsPath.startsWith(`${workspaceRoot.fsPath}${path.sep}`)
+          ? { uri: workspaceRoot, name: "workspace", index: 0 }
+          : undefined,
       configurable: true,
     });
     Object.defineProperty(vscode.window, "createTreeView", {
@@ -2395,7 +2967,7 @@ suite("todoModel", () => {
     });
     Object.defineProperty(vscode.workspace, "getConfiguration", {
       value: () => ({
-        get: () => undefined,
+        get: (key: string) => (key === "openInPreview" ? true : undefined),
         update: async () => undefined,
         inspect: () => undefined,
       }),
@@ -2499,7 +3071,9 @@ suite("todoModel", () => {
         ),
         "",
       );
-      assert.strictEqual(watcherCreationCount, 1);
+      // One watcher for the shared repository and one for the root context's
+      // repository (created by the root registry during activation).
+      assert.strictEqual(watcherCreationCount, 2);
       assert.deepStrictEqual(treeViewIds, [
         "agendo.todos",
         "agendo.codeScanning",
@@ -2508,6 +3082,7 @@ suite("todoModel", () => {
 
       const canvasViewer = context.subscriptions[0] as unknown as {
         actions: { handleSettingsAction(payload: unknown): Promise<unknown> };
+        open(workspaceRoot: string, target: string): Promise<void>;
       };
       for (const action of ["check-source", "install"]) {
         for (const component of ["skill", "canvas"]) {
@@ -2521,6 +3096,33 @@ suite("todoModel", () => {
           ]);
         }
       }
+
+      let canvasWorkspaceRoot: string | undefined;
+      canvasViewer.open = async (root) => {
+        canvasWorkspaceRoot = root;
+      };
+      await registrations.get(Command.OpenCanvas)?.({
+        kind: "todo",
+        todo: {
+          id: "050",
+          status: "ready",
+          priority: "p3",
+          title: "Grouped",
+          description: "grouped",
+          tags: [],
+          dependencies: ["999"],
+          group: "auth",
+          key: undefined,
+          children: [],
+          epic: false,
+          folder: "",
+          fileName: "050-ready-p3-grouped.md",
+          uri: vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md"),
+          frontmatter: { status: "ready", priority: "p3", group: "auth", dependencies: ["999"] },
+        },
+      });
+      assert.strictEqual(canvasWorkspaceRoot, workspaceRoot.fsPath);
+      assert.ok(!previewSteps.includes("showTextDocument"), "OpenCanvas should use the canvas viewer");
 
       await registrations.get(Command.Refresh)?.();
       await registrations.get(Command.OpenPreview)?.({
@@ -2616,7 +3218,7 @@ suite("todoModel", () => {
       });
       assert.match(
         await readText(vscode.Uri.joinPath(todoRoot, "050-ready-p3-grouped.md")),
-        /dependencies: \["999"\]/,
+        /dependencies: \["001", "999"\]/,
       );
       await registrations.get(Command.SetGroup)?.({
         kind: "todo",
@@ -2640,14 +3242,17 @@ suite("todoModel", () => {
       });
       await registrations.get(Command.CreateTodo)?.();
       const createdEntries = await vscode.workspace.fs.readDirectory(todoRoot);
-      const createdTodo = createdEntries.find(
-        ([name]) => name.endsWith(".md") && name !== "050-ready-p3-grouped.md",
+      const createdTodos = await Promise.all(
+        createdEntries
+          .filter(([name]) => name.endsWith(".md"))
+          .map(async ([name]) => ({
+            name,
+            content: await readText(vscode.Uri.joinPath(todoRoot, name)),
+          })),
       );
+      const createdTodo = createdTodos.find(({ content }) => content.includes("# Add Login Page\n"));
       assert.ok(createdTodo);
-      assert.match(
-        await readText(vscode.Uri.joinPath(todoRoot, createdTodo[0])),
-        /## Resume Context/,
-      );
+      assert.match(createdTodo.content, /## Resume Context/);
       await registrations.get(Command.ChooseRoot)?.();
       await registrations.get(Command.ToggleGitignore)?.();
       await registrations.get(Command.SetViewMode)?.();
@@ -2674,7 +3279,13 @@ suite("todoModel", () => {
       assert.ok(registrations.has(Command.ExpandNode));
       assert.ok(registrations.has(Command.SetDependency));
       assert.ok(registrations.has(Command.SetGroup));
+      // ChooseRoot is the newly added root-selection command (workspace/manual
+      // root management). It must be registered alongside the other root commands.
+      assert.ok(registrations.has(Command.ChooseRoot));
       assert.deepStrictEqual(previewSteps, []);
+      assert.deepStrictEqual(previewUris.map((uri) => uri.fsPath), [
+        vscode.Uri.file(path.join(todoRoot.fsPath, "001-pending-p2-login-page.md")).fsPath,
+      ]);
       assert.strictEqual(
         executedCommands.filter((command) => command === "markdown.showPreview").length,
         1,
@@ -2698,6 +3309,10 @@ suite("todoModel", () => {
     } finally {
       Object.defineProperty(vscode.workspace, "workspaceFolders", {
         value: originalWorkspaceFolders,
+        configurable: true,
+      });
+      Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+        value: originalGetWorkspaceFolder,
         configurable: true,
       });
       Object.defineProperty(vscode.window, "createTreeView", {

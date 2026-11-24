@@ -50,6 +50,9 @@ export enum Command {
   SetGroup = "agendo.setGroup",
   DeleteTodo = "agendo.deleteTodo",
   ChooseRoot = "agendo.chooseRoot",
+  ChooseWorkspaceFolder = "agendo.chooseWorkspaceFolder",
+  AddManualRoot = "agendo.addManualRoot",
+  RemoveManualRoot = "agendo.removeManualRoot",
   ToggleGitignore = "agendo.toggleGitignore",
   SetDefaultRoot = "agendo.setDefault.root",
   SetDefaultPriority = "agendo.setDefault.priority",
@@ -71,4 +74,5 @@ export enum Command {
   RefreshScanningTodo = "agendo.refreshScanningTodo",
   ShowMcpConfig = "agendo.showMcpConfig",
   ShowKiloMcpConfig = "agendo.showKiloMcpConfig",
+  ToggleTreeMode = "agendo.toggleTreeMode",
 }

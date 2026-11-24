@@ -2,7 +2,23 @@
 
 All notable changes to the Agendo extension are documented here.
 
-## [Unreleased]
+## [0.3.3] - 2026-11-24
+
+Includes Agendo skill **1.9.0** and work-session canvas **0.1.13**
+
+### Added
+
+- Allow manual todo roots and single/multi tree presentation with named, collapsible root sections; each root owns an isolated ID sequence, dependency graph, and tree
+- Support multi-root VS Code workspaces with per-folder todo roots, an active workspace-folder selector, and scoped MCP operations
+- Bundled Agendo skill: document workspace-folder and manual roots, root-first resolution, single/multi tree mode, and MCP `workspaceFolder` scoping over any registered root
+
+### Changed
+
+- Make CodeQL and SonarQube imports per-invocation choices without a persistent code-scanning enable toggle, while retaining source connection defaults
+
+### Fixed
+
+- Resolve todo right-click status commands from the selected tree item so the intended file is updated
 
 ## [0.3.2] - 2026-11-23
 

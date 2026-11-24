@@ -22,7 +22,6 @@ export enum Settings {
   SortByDate = "sortByDate",
   ShowDependencyNodes = "showDependencyNodes",
   GroupBy = "groupBy",
-  CodeScanningEnabled = "codeScanning.enabled",
   CodeScanningSortByDate = "codeScanning.sortByDate",
   SonarQubeUrl = "codeScanning.sonarqube.url",
   SonarQubeProjectKey = "codeScanning.sonarqube.projectKey",
@@ -32,11 +31,20 @@ export enum Settings {
 
 /**
  * Set a configuration value for this extension.
+ *
+ * When `folder` is provided, the value is scoped to that workspace folder
+ * (resource-scoped). Otherwise it is written at the workspace level, preserving
+ * existing behavior.
  */
-export function set(key: Settings, value: any) {
-  return vscode.workspace
-    .getConfiguration(Settings.Identifier)
-    .update(key, value, vscode.ConfigurationTarget.Workspace);
+export function set(key: Settings, value: any, folder?: vscode.WorkspaceFolder) {
+  const config = folder
+    ? vscode.workspace.getConfiguration(Settings.Identifier, folder)
+    : vscode.workspace.getConfiguration(Settings.Identifier);
+  return config.update(
+    key,
+    value,
+    folder ? vscode.ConfigurationTarget.WorkspaceFolder : vscode.ConfigurationTarget.Workspace,
+  );
 }
 
 /**
@@ -51,7 +59,14 @@ export function setDefault(key: Settings, value: any) {
 
 /**
  * Get a configuration value for this extension.
+ *
+ * When `folder` is provided, the value is read from that workspace folder's
+ * resource-scoped configuration. Otherwise it is read at the workspace level,
+ * preserving existing behavior.
  */
-export function get<T>(key: Settings): T {
-  return vscode.workspace.getConfiguration(Settings.Identifier).get<T>(key) as T;
+export function get<T>(key: Settings, folder?: vscode.WorkspaceFolder): T {
+  const config = folder
+    ? vscode.workspace.getConfiguration(Settings.Identifier, folder)
+    : vscode.workspace.getConfiguration(Settings.Identifier);
+  return config.get<T>(key) as T;
 }

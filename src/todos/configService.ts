@@ -29,7 +29,6 @@ export interface TodosConfig {
   backloggedFolder?: string;
   cancelledFolder?: string;
   completedFolder?: string;
-  codeScanning?: boolean;
 }
 
 interface ProjectionOptions {
@@ -77,26 +76,104 @@ export const TODO_FILE_PATTERN = FILENAME_RE;
  * file is a skill-readable projection of them.
  */
 export class ConfigService {
+  private readonly workspaceState?: vscode.Memento;
+  private activeFolder: vscode.WorkspaceFolder | undefined;
+  private readonly explicitRootUri?: vscode.Uri;
+  private manualRootUri: vscode.Uri | undefined;
   private canvasOpener?: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>;
 
-  /** Register the handler for the `canvas` view mode; it returns false when it cannot show the todo. */
-  setCanvasOpener(
-    opener: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>,
-  ): void {
-    this.canvasOpener = opener;
-  }
-
-  /** Show a todo in the work-session canvas, falling back to the source editor when it cannot start. */
-  async openInCanvas(uri: vscode.Uri, returnTo?: BoardReturnTarget): Promise<void> {
-    if (!(await this.canvasOpener?.(uri, returnTo))) {
-      await vscode.window.showTextDocument(uri, { preview: true });
+  /**
+   * Constructs the config service. When `workspaceState` is provided, the
+   * selected workspace folder is persisted so it survives reloads; when the
+   * persisted folder is removed, the service falls back to the first folder.
+   *
+   * When `rootUri` is provided, the service is bound to that exact todo root
+   * URI and `getRootUri()` returns it directly; this is used for per-root
+   * contexts (workspace and manual) without touching the active folder state.
+   */
+  constructor(workspaceState?: vscode.Memento, rootUri?: vscode.Uri) {
+    this.workspaceState = workspaceState;
+    this.explicitRootUri = rootUri;
+    if (!rootUri) {
+      this.refreshActiveFolder();
     }
   }
 
-  /** Workspace-relative root folder for todos. */
+  /** All workspace folders, or an empty array when there is no workspace. */
+  get workspaceFolders(): readonly vscode.WorkspaceFolder[] {
+    return vscode.workspace.workspaceFolders ?? [];
+  }
+
+  /**
+   * Re-evaluate the active workspace folder from the persisted selection and
+   * the current workspace folders. Called by the extension host on
+   * `onDidChangeWorkspaceFolders` so the active folder stays consistent when
+   * folders are added, removed, or reordered.
+   */
+  refreshActiveFolder(): void {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      this.activeFolder = undefined;
+      return;
+    }
+
+    let persistedUri: string | undefined;
+    if (this.workspaceState) {
+      persistedUri = this.workspaceState.get("activeWorkspaceFolder") as string | undefined;
+    }
+
+    if (persistedUri) {
+      const found = folders.find((folder) => folder.uri.toString() === persistedUri);
+      if (found) {
+        this.activeFolder = found;
+        return;
+      }
+      // Persisted folder no longer exists; clear the stale reference.
+      if (this.workspaceState) {
+        this.workspaceState.update("activeWorkspaceFolder", undefined);
+      }
+    }
+
+    this.activeFolder = folders[0];
+  }
+
+  /** The active workspace folder (default: first folder; persisted selection when available). */
+  getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
+    return this.activeFolder;
+  }
+
+  /**
+   * Set the active workspace folder. When `workspaceState` is injected, the
+   * selection is persisted; passing `undefined` clears it. Falls back to the
+   * first folder on the next refresh when the persisted folder is removed.
+   */
+  setWorkspaceFolder(folder: vscode.WorkspaceFolder | undefined): void {
+    this.activeFolder = folder;
+    this.manualRootUri = undefined;
+    if (this.workspaceState) {
+      if (folder) {
+        this.workspaceState.update("activeWorkspaceFolder", folder.uri.toString());
+      } else {
+        this.workspaceState.update("activeWorkspaceFolder", undefined);
+      }
+    }
+  }
+
+  /** Workspace-relative root folder for the active workspace folder. */
   get root(): string {
-    const value = (get<string>(Settings.Root) ?? DEFAULT_TODOS_CONFIG.root).replace(/\\/g, "/");
-    return value.split("/").filter(Boolean).join("/");
+    const folder = this.activeFolder;
+    if (!folder) {
+      return DEFAULT_TODOS_CONFIG.root.replace(/\\/g, "/").split("/").filter(Boolean).join("/");
+    }
+    return this.getRootValue(folder);
+  }
+
+  private getRootValue(folder: vscode.WorkspaceFolder): string {
+    const config = vscode.workspace.getConfiguration(Settings.Identifier, folder);
+    const inspect = config.inspect<string>(Settings.Root);
+    const value =
+      inspect?.workspaceFolderValue ?? inspect?.workspaceValue ?? inspect?.globalValue ?? DEFAULT_TODOS_CONFIG.root;
+    return value.replace(/\\/g, "/").split("/").filter(Boolean).join("/");
   }
 
   get defaultPriority(): "p1" | "p2" | "p3" {
@@ -113,10 +190,6 @@ export class ConfigService {
 
   get backloggedFolder(): string {
     return get<string>(Settings.BackloggedFolder) || DEFAULT_TODOS_CONFIG.backloggedFolder;
-  }
-
-  get codeScanningEnabled(): boolean {
-    return get<boolean>(Settings.CodeScanningEnabled) === true;
   }
 
   /** Existing scanning todos stay visible even when fetching is disabled. */
@@ -144,7 +217,10 @@ export class ConfigService {
    * preview", i.e. let VS Code open it its normal way).
    */
   get viewMode(): ViewMode {
-    const config = vscode.workspace.getConfiguration(Settings.Identifier);
+    const folder = this.activeFolder;
+    const config = folder
+      ? vscode.workspace.getConfiguration(Settings.Identifier, folder)
+      : vscode.workspace.getConfiguration(Settings.Identifier);
     const inspect = config.inspect<ViewMode>(Settings.ViewMode);
     const explicit =
       inspect?.workspaceFolderValue ?? inspect?.workspaceValue ?? inspect?.globalValue;
@@ -152,6 +228,19 @@ export class ConfigService {
       return explicit;
     }
     return this.openInPreview ? "preview" : "default";
+  }
+
+  setCanvasOpener(
+    opener: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>,
+  ): void {
+    this.canvasOpener = opener;
+  }
+
+  async openInCanvas(uri: vscode.Uri, returnTo?: BoardReturnTarget): Promise<void> {
+    const opened = await this.canvasOpener?.(uri, returnTo);
+    if (!opened) {
+      await vscode.window.showTextDocument(uri, { preview: true });
+    }
   }
 
   /**
@@ -186,26 +275,43 @@ export class ConfigService {
     return get<boolean>(Settings.GitignoreTodos) === true;
   }
 
-  /**
-   * Resolve the workspace folder that should contain the todos root. In a
-   * multi-root workspace this is the first folder; single-root workspaces
-   * return their only folder.
-   */
-  getWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
-    const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) {
+  /** Absolute URI of the todos root folder for the active folder (or a given folder). */
+  getRootUri(folder?: vscode.WorkspaceFolder): vscode.Uri | undefined {
+    if (folder) {
+      // A specific folder always resolves to its own folder-scoped root, even
+      // when a manual root is currently active.
+      return vscode.Uri.joinPath(folder.uri, ...this.getRootValue(folder).split("/"));
+    }
+    if (this.manualRootUri) {
+      return this.manualRootUri;
+    }
+    if (this.explicitRootUri) {
+      return this.explicitRootUri;
+    }
+    const targetFolder = this.activeFolder;
+    if (!targetFolder) {
       return undefined;
     }
-    return folders[0];
+    return vscode.Uri.joinPath(targetFolder.uri, ...this.getRootValue(targetFolder).split("/"));
   }
 
-  /** Absolute URI of the todos root folder, or undefined without a workspace. */
-  getRootUri(): vscode.Uri | undefined {
-    const folder = this.getWorkspaceFolder();
-    if (!folder) {
-      return undefined;
-    }
-    return vscode.Uri.joinPath(folder.uri, ...this.root.split("/"));
+  /** The manually selected absolute todo root URI, when a manual root is
+   * active. Overrides the workspace-folder root in {@link getRootUri} when no
+   * folder is supplied. */
+  getManualRoot(): vscode.Uri | undefined {
+    return this.manualRootUri;
+  }
+
+  /** Select a manual (external) todo root as the active root. Clears the
+   * active workspace folder selection. */
+  setManualRoot(uri: vscode.Uri): void {
+    this.manualRootUri = uri;
+  }
+
+  /** Clear the manually selected root so the active workspace folder root is
+   * used again. */
+  clearManualRoot(): void {
+    this.manualRootUri = undefined;
   }
 
   /** Absolute URI of a named subfolder under the root. */
@@ -238,9 +344,6 @@ export class ConfigService {
     }
     if (this.completedFolder !== DEFAULT_TODOS_CONFIG.completedFolder) {
       config.completedFolder = this.completedFolder;
-    }
-    if (this.codeScanningEnabled) {
-      config.codeScanning = true;
     }
     return config;
   }

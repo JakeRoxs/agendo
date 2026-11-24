@@ -3,7 +3,7 @@
   "displayName": "Agendo",
   "icon": "resources/images/agendo-icon.png",
   "description": "Agendo — view, filter, and manage markdown-file-backed todos from an Activity Bar TreeView.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "jakemorgeson",
   "license": "MIT",
   "repository": {
@@ -102,7 +102,7 @@
       },
       {
         "view": "agendo.todos",
-        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)",
+        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Todo Root](command:agendo.chooseRoot)\n[Choose Workspace Folder](command:agendo.chooseWorkspaceFolder)",
         "when": "!agendo.loading && !agendo.filterActive"
       }
     ],
@@ -380,7 +380,22 @@
       },
       {
         "command": "agendo.chooseRoot",
-        "title": "Choose Root Folder...",
+        "title": "Choose Todo Root...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.chooseWorkspaceFolder",
+        "title": "Choose Workspace Folder...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.addManualRoot",
+        "title": "Add Manual Todo Root...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.removeManualRoot",
+        "title": "Remove Manual Todo Root...",
         "category": "Agendo"
       },
       {
@@ -448,6 +463,11 @@
         "title": "Toggle Sort by Date Modified",
         "category": "Agendo",
         "icon": "$(calendar)"
+      },
+      {
+        "command": "agendo.toggleTreeMode",
+        "title": "Toggle Todo Tree Mode",
+        "category": "Agendo"
       },
       {
         "command": "agendo.setGroupBy",
@@ -610,39 +630,49 @@
           "group": "2_config@1"
         },
         {
-          "command": "agendo.setDefault.root",
+          "command": "agendo.chooseWorkspaceFolder",
           "when": "view == agendo.todos",
           "group": "2_config@2"
         },
         {
-          "command": "agendo.setDefault.priority",
+          "command": "agendo.setDefault.root",
           "when": "view == agendo.todos",
           "group": "2_config@3"
         },
         {
-          "command": "agendo.setDefault.preview",
+          "command": "agendo.setDefault.priority",
           "when": "view == agendo.todos",
           "group": "2_config@4"
         },
         {
-          "command": "agendo.toggleGitignore",
+          "command": "agendo.setDefault.preview",
           "when": "view == agendo.todos",
           "group": "2_config@5"
         },
         {
-          "command": "agendo.setViewMode",
+          "command": "agendo.toggleGitignore",
           "when": "view == agendo.todos",
           "group": "2_config@6"
         },
         {
-          "command": "agendo.toggleSortDate",
+          "command": "agendo.setViewMode",
           "when": "view == agendo.todos",
           "group": "2_config@7"
         },
         {
-          "command": "agendo.setGroupBy",
+          "command": "agendo.toggleSortDate",
           "when": "view == agendo.todos",
           "group": "2_config@8"
+        },
+        {
+          "command": "agendo.setGroupBy",
+          "when": "view == agendo.todos",
+          "group": "2_config@9"
+        },
+        {
+          "command": "agendo.toggleTreeMode",
+          "when": "view == agendo.todos",
+          "group": "2_config@10"
         },
         {
           "command": "agendo.refreshComponents",
@@ -707,6 +737,10 @@
         },
         {
           "command": "agendo.openCanvas",
+          "when": "false"
+        },
+        {
+          "command": "agendo.toggleTreeMode",
           "when": "false"
         }
       ],
@@ -823,11 +857,6 @@
           "default": false,
           "description": "Sort code-scanning todos by last modified date independently of the regular Todos view."
         },
-        "agendo.codeScanning.enabled": {
-          "type": "boolean",
-          "default": false,
-          "description": "Enable optional, manually triggered CodeQL and SonarQube imports. Existing scanning todos remain visible when disabled."
-        },
         "agendo.codeScanning.sonarqube.url": {
           "type": "string",
           "default": "",
@@ -916,7 +945,7 @@
         "agendo.skillUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "Notify on activation when the bundled skill is newer or a bundled canvas update could not be installed automatically. The canvas is installed locally on activation when missing, the same version, or older; newer installed versions are preserved. GitHub/source checks remain explicit in Versions and Update Actions."
+          "description": "Notify on activation once per bundled version when the bundled skill is newer than installed. The same notice is suppressed for repeated activations until a newer bundled version ships; dismissal or Review Versions records the reported version. The canvas is installed locally on activation when missing, the same version, or older; newer installed versions are preserved. GitHub/source checks remain explicit in Versions and Update Actions."
         },
         "agendo.sortByDate": {
           "type": "boolean",

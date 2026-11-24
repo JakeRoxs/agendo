@@ -2,9 +2,9 @@
 
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-![Extension Version](https://img.shields.io/badge/extension-0.3.2-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.7.0-orange.svg)
-![Canvas Version](https://img.shields.io/badge/canvas-0.1.11-purple.svg)
+![Extension Version](https://img.shields.io/badge/extension-0.3.3-blue.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.8.0-orange.svg)
+![Canvas Version](https://img.shields.io/badge/canvas-0.1.12-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed engineering work. Todos stay as ordinary
 files in your workspace, while the Activity Bar tree, board, work-session canvas, and optional
@@ -104,7 +104,7 @@ tracking keys are displayed and searchable when present.
 
 | Setting                                    | Default      | Description                                                                               |
 | ------------------------------------------ | ------------ | ----------------------------------------------------------------------------------------- |
-| `agendo.root`                              | `docs/todos` | Workspace-relative todo root                                                              |
+| `agendo.root`                              | `docs/todos` | Workspace-folder-relative todo root                                                       |
 | `agendo.defaultPriority`                   | `p3`         | Default priority for new todos                                                            |
 | `agendo.completedFolder`                   | `completed`  | Folder for completed todos                                                                |
 | `agendo.cancelledFolder`                   | `cancelled`  | Folder for cancelled todos                                                                |
@@ -115,7 +115,6 @@ tracking keys are displayed and searchable when present.
 | `agendo.showDependencyNodes`               | `false`      | Nest blocked todos under their blockers                                                   |
 | `agendo.gitignoreTodos`                    | `true`       | Ignore todo files except Agendo configuration                                             |
 | `agendo.skillUpdateCheck`                  | `true`       | Notify about bundled skill updates or canvas updates that could not install automatically |
-| `agendo.codeScanning.enabled`              | `false`      | Enable manual CodeQL and SonarQube imports                                                |
 | `agendo.codeScanning.sortByDate`           | `false`      | Sort scanning todos by modification date                                                  |
 | `agendo.codeScanning.sonarqube.url`        | empty        | SonarQube server URL                                                                      |
 | `agendo.codeScanning.sonarqube.projectKey` | empty        | SonarQube project key                                                                     |
@@ -125,6 +124,17 @@ The default parked-work folder is now `backlogged/`, matching the `backlogged` s
 conflicts, or explicitly set `agendo.backloggedFolder` to `backlog` to retain the previous layout.
 The same configured folder name applies inside each code-scanning source directory. Custom folder
 settings remain supported.
+
+In a multi-root workspace, each folder can use its own `agendo.root`, and arbitrary local
+directories can be registered as manual todo roots with **Agendo: Add Manual Todo Root**. Each root
+owns an isolated ID sequence, dependency graph, and tree. Agendo shows one active root at a time;
+use **Agendo: Choose Workspace Folder** to switch workspace folders, **Agendo: Choose Root** to
+select the todo directory within the active folder, and **Agendo: Toggle Tree Mode** to switch
+between single (active root only) and multi (named collapsible root nodes) tree presentation. Todo
+IDs are scoped to that root, so the same ID may exist independently in another root. MCP todo tools
+accept a `workspaceFolder` selector that names any registered workspace or manual root by
+label/basename or exact absolute path (use the exact path when labels collide) and reject ambiguous
+calls rather than silently choosing one.
 
 ## Duplicate IDs
 
@@ -166,7 +176,7 @@ update supported status, priority, group, and acceptance-criterion fields.
 
 ## Code Scanning
 
-Code scanning is optional and disabled by default. Run **Agendo: Import Code-Scanning Todos...** from the Command Palette or the **Code Scanning** view. Imports are manual; activation, normal refresh, and opening a canvas do not contact GitHub or SonarQube.
+Code scanning is optional. Run **Agendo: Import Code-Scanning Todos...** from the Command Palette or the **Code Scanning** view. Imports are manual; activation, normal refresh, and opening a canvas do not contact GitHub or SonarQube.
 
 ### Choose source and branch
 
