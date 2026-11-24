@@ -102,7 +102,7 @@
       },
       {
         "view": "agendo.todos",
-        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Root Folder](command:agendo.chooseRoot)\n[Choose Workspace Folder](command:agendo.chooseWorkspaceFolder)",
+        "contents": "No todos found in the configured root folder.\n[Create a Todo](command:agendo.createTodo)\n[Choose Todo Root](command:agendo.chooseRoot)\n[Choose Workspace Folder](command:agendo.chooseWorkspaceFolder)",
         "when": "!agendo.loading && !agendo.filterActive"
       }
     ],
@@ -380,12 +380,22 @@
       },
       {
         "command": "agendo.chooseRoot",
-        "title": "Choose Root Folder...",
+        "title": "Choose Todo Root...",
         "category": "Agendo"
       },
       {
         "command": "agendo.chooseWorkspaceFolder",
         "title": "Choose Workspace Folder...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.addManualRoot",
+        "title": "Add Manual Todo Root...",
+        "category": "Agendo"
+      },
+      {
+        "command": "agendo.removeManualRoot",
+        "title": "Remove Manual Todo Root...",
         "category": "Agendo"
       },
       {
@@ -453,6 +463,11 @@
         "title": "Toggle Sort by Date Modified",
         "category": "Agendo",
         "icon": "$(calendar)"
+      },
+      {
+        "command": "agendo.toggleTreeMode",
+        "title": "Toggle Todo Tree Mode",
+        "category": "Agendo"
       },
       {
         "command": "agendo.setGroupBy",
@@ -655,6 +670,11 @@
           "group": "2_config@9"
         },
         {
+          "command": "agendo.toggleTreeMode",
+          "when": "view == agendo.todos",
+          "group": "2_config@10"
+        },
+        {
           "command": "agendo.refreshComponents",
           "when": "view == agendo.skillStatus && !agendo.componentsChecking",
           "group": "navigation@1"
@@ -717,6 +737,10 @@
         },
         {
           "command": "agendo.openCanvas",
+          "when": "false"
+        },
+        {
+          "command": "agendo.toggleTreeMode",
           "when": "false"
         }
       ],
@@ -921,7 +945,7 @@
         "agendo.skillUpdateCheck": {
           "type": "boolean",
           "default": true,
-          "description": "Notify on activation when the bundled skill is newer or a bundled canvas update could not be installed automatically. The canvas is installed locally on activation when missing, the same version, or older; newer installed versions are preserved. GitHub/source checks remain explicit in Versions and Update Actions."
+          "description": "Notify on activation once per bundled version when the bundled skill is newer than installed. The same notice is suppressed for repeated activations until a newer bundled version ships; dismissal or Review Versions records the reported version. The canvas is installed locally on activation when missing, the same version, or older; newer installed versions are preserved. GitHub/source checks remain explicit in Versions and Update Actions."
         },
         "agendo.sortByDate": {
           "type": "boolean",

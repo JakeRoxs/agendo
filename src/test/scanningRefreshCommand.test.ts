@@ -7,6 +7,7 @@ import { registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import type { ScanningFinding } from "../todos/codeScanningService";
 import { ConfigService } from "../todos/configService";
+import { ROOT_REGISTRY_KEY, TodoRootRegistry } from "../todos/rootRegistry";
 import { scanningIdentity } from "../todos/scanningSnapshot";
 import { buildFileName } from "../todos/todoModel";
 import { TodoRepository } from "../todos/todoRepository";
@@ -995,5 +996,138 @@ suite("scanning refresh command", () => {
     const handler = callbacks.get(Command.RefreshScanningTodo) as any;
     await handler();
     assert.ok(pickerItems.length > 0, "Picker not shown for command palette invocation");
+  });
+
+  test("ImportCodeScanning is blocked when the active root is a manual todo directory", async () => {
+    const manualDir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-manual-import-"));
+    restore.push(() => fs.rm(manualDir, { recursive: true, force: true }));
+
+    const store: Record<string, unknown> = {};
+    const memento: vscode.Memento = {
+      get: <T>(key: string) => store[key] as T | undefined,
+      update: async (_key: string, value: unknown) => {
+        store[_key] = value;
+      },
+    } as unknown as vscode.Memento;
+    memento.update(ROOT_REGISTRY_KEY, [{ uri: manualDir, label: "Manual Root" }]);
+    memento.update("agendo.activeRootId", manualDir);
+
+    const registryConfig = new ConfigService(memento);
+    const registry = new TodoRootRegistry(registryConfig, memento);
+    assert.strictEqual(registry.getActiveRoot()?.source, "manual");
+    assert.strictEqual(registry.getActiveRoot()?.uri.fsPath, manualDir);
+
+    const warnings: string[] = [];
+    mock(vscode.window, "showWarningMessage", async (msg: string) => {
+      warnings.push(msg);
+    }, restore);
+
+    let fetchCalled = false;
+    mock(
+      require("../todos/codeScanningService"),
+      "fetchCodeQL",
+      async () => {
+        fetchCalled = true;
+        return { scope: "owner/repo", findings: [] };
+      },
+      restore,
+    );
+    mock(
+      vscode.window,
+      "showQuickPick",
+      async () => undefined,
+      restore,
+    );
+
+    const callbacks = new Map<string, (...args: any[]) => Promise<void>>();
+    const subscriptions: vscode.Disposable[] = [];
+    mock(
+      vscode.commands,
+      "registerCommand",
+      (id: string, cb: (...args: any[]) => Promise<void>) => {
+        callbacks.set(id, cb);
+        return new vscode.Disposable(() => {});
+      },
+    );
+    registerCommands(
+      { subscriptions } as never,
+      {
+        config: { getWorkspaceFolder: () => ({ uri: root }) },
+        repository: { getTodos: () => repository.getTodos(), refresh: () => repository.refresh() },
+        rootRegistry: registry,
+      } as never,
+    );
+
+    const handler = callbacks.get(Command.ImportCodeScanning) as any;
+    await handler();
+
+    assert.ok(
+      warnings.some((w) => w.includes("manual todo directory")),
+      "Manual root warning not shown for import",
+    );
+    assert.strictEqual(fetchCalled, false, "Scanner should not be called for manual root");
+  });
+
+  test("RefreshScanningTodo is blocked when the active root is a manual todo directory", async () => {
+    const manualDir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-manual-refresh-"));
+    restore.push(() => fs.rm(manualDir, { recursive: true, force: true }));
+
+    const store: Record<string, unknown> = {};
+    const memento: vscode.Memento = {
+      get: <T>(key: string) => store[key] as T | undefined,
+      update: async (_key: string, value: unknown) => {
+        store[_key] = value;
+      },
+    } as unknown as vscode.Memento;
+    memento.update(ROOT_REGISTRY_KEY, [{ uri: manualDir, label: "Manual Root" }]);
+    memento.update("agendo.activeRootId", manualDir);
+
+    const registryConfig = new ConfigService(memento);
+    const registry = new TodoRootRegistry(registryConfig, memento);
+    assert.strictEqual(registry.getActiveRoot()?.source, "manual");
+
+    const warnings: string[] = [];
+    mock(vscode.window, "showWarningMessage", async (msg: string) => {
+      warnings.push(msg);
+    }, restore);
+
+    let fetchCalled = false;
+    mock(
+      require("../todos/codeScanningService"),
+      "fetchCodeQL",
+      async () => {
+        fetchCalled = true;
+        return { scope: "owner/repo", findings: [] };
+      },
+      restore,
+    );
+
+    const callbacks = new Map<string, (...args: any[]) => Promise<void>>();
+    const subscriptions: vscode.Disposable[] = [];
+    mock(
+      vscode.commands,
+      "registerCommand",
+      (id: string, cb: (...args: any[]) => Promise<void>) => {
+        callbacks.set(id, cb);
+        return new vscode.Disposable(() => {});
+      },
+    );
+    registerCommands(
+      { subscriptions } as never,
+      {
+        config: { getWorkspaceFolder: () => ({ uri: root }) },
+        repository: { getTodos: () => repository.getTodos(), refresh: () => repository.refresh() },
+        rootRegistry: registry,
+      } as never,
+    );
+
+    const handler = callbacks.get(Command.RefreshScanningTodo) as any;
+    await handler(undefined);
+
+    assert.ok(
+      warnings.some((w) => w.includes("manual todo directory")),
+      "Manual root warning not shown for refresh",
+    );
+    assert.strictEqual(fetchCalled, false, "Scanner should not be called for manual root");
   });
 });

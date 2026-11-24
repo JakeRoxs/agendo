@@ -47,11 +47,11 @@ export function normalizeView(value) {
 }
 
 // Rejects stale targets so agent navigation reports them instead of showing a missing todo or empty group.
-export function assertViewExists(view, workspaceRoot) {
-  if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot)) {
+export function assertViewExists(view, workspaceRoot, rootMode = "workspace") {
+  if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot, rootMode)) {
     throw new CanvasError('todo_not_found', `Todo ${view.todoId} not found`);
   }
-  if (view.kind === 'group' && !listGroups(workspaceRoot).includes(view.groupName)) {
+  if (view.kind === 'group' && !listGroups(workspaceRoot, rootMode).includes(view.groupName)) {
     throw new CanvasError('group_not_found', `Group "${view.groupName}" not found`);
   }
 }
@@ -61,7 +61,7 @@ export function assertViewSupported(entry, view) {
   if (view.kind === 'digest' && !entry.hasDigest) throw new CanvasError('unsupported', 'Digest view is not available in this host');
 }
 
-export function normalizeFilters(input, workspaceRoot) {
+export function normalizeFilters(input, workspaceRoot, rootMode = "workspace") {
   const filters = {};
   if (input?.status !== undefined) {
     if (!STATUSES.includes(input.status)) throw new CanvasError('invalid_input', `status must be one of: ${STATUSES.join(', ')}`);
@@ -72,7 +72,7 @@ export function normalizeFilters(input, workspaceRoot) {
     filters.priority = input.priority;
   }
   if (input?.group !== undefined) {
-    if (typeof input.group !== 'string' || !listGroups(workspaceRoot).includes(input.group)) {
+    if (typeof input.group !== 'string' || !listGroups(workspaceRoot, rootMode).includes(input.group)) {
       throw new CanvasError('group_not_found', `Group "${input.group}" not found`);
     }
     filters.group = input.group;
@@ -120,7 +120,7 @@ export function step(entry, direction) {
 }
 
 function buildNav(entry, workspaceRoot) {
-  const summaries = listTodoSummaries(workspaceRoot);
+  const summaries = listTodoSummaries(workspaceRoot, entry.rootMode);
   const unique = new Map();
   for (const view of [...entry.history].reverse()) if (!unique.has(viewKey(view))) unique.set(viewKey(view), view);
   const recent = [...unique.values()].slice(0, MAX_RECENT).map(view => {
@@ -181,8 +181,8 @@ function send(res, status, type, body, extraHeaders = {}) {
  * One local HTTP server per canvas instance. The page is rendered from the
  * todo file on every request, so reopening an instance always shows live state.
  */
-export function createInstanceServer(workspaceRoot, actions = {}) {
-  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], historyReturnTargets: [], pos: -1, url: '', server: null, filters: {} };
+export function createInstanceServer(workspaceRoot, actions = {}, options = {}) {
+  const entry = { todoId: undefined, view: undefined, groupName: undefined, returnTo: undefined, history: [], historyReturnTargets: [], pos: -1, url: '', server: null, filters: {}, workspaceRoot, rootMode: options.rootMode ?? "workspace" };
   const hasBoard = typeof actions.getBoardSnapshot === 'function' && typeof actions.handleBoardMessage === 'function';
   entry.hasBoard = hasBoard;
   const hasDigest = typeof actions.getDigest === 'function';
@@ -204,9 +204,9 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
   const agentSelection = () => ({ view: entry.view, filters: entry.filters });
   const agentPrompt = intent => {
     let todos;
-    if (entry.view?.kind === 'todo') todos = [loadTodo(entry.todoId, workspaceRoot)];
+    if (entry.view?.kind === 'todo') todos = [loadTodo(entry.todoId, workspaceRoot, entry.rootMode)];
     else if (entry.view?.kind === 'group') {
-      todos = loadGroupTodos(entry.groupName, workspaceRoot).filter(todo =>
+      todos = loadGroupTodos(entry.groupName, workspaceRoot, entry.rootMode).filter(todo =>
         (!entry.filters.status || todo.status === entry.filters.status) &&
         (!entry.filters.priority || todo.priority === entry.filters.priority) &&
         (!entry.filters.group || todo.group === entry.filters.group));
@@ -231,7 +231,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
       if (req.method === 'GET' && ASSETS[path]) {
         send(res, 200, ASSETS[path].type, readFileSync(join(assetsDir, ASSETS[path].file)));
       } else if (req.method === 'GET' && path === '/version') {
-        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${JSON.stringify(entry.filters)}|${todoFingerprint(workspaceRoot)}|${proposalVersion()}`);
+        send(res, 200, 'text/plain', `${viewKey(entry.view)}|${JSON.stringify(entry.filters)}|${todoFingerprint(workspaceRoot, entry.rootMode)}|${proposalVersion()}`);
       } else if (req.method === 'GET' && path === '/board-snapshot') {
         const snapshot = await actions.getBoardSnapshot(boardScope());
         send(res, 200, 'application/json', JSON.stringify(snapshot));
@@ -327,13 +327,16 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           const view = normalizeView(payload?.view ?? entry.view);
           let reportTodos = [];
           if (view.kind === 'group' && view.groupName) {
-            const members = loadGroupTodos(view.groupName, workspaceRoot, entry.filters);
+            const members = loadGroupTodos(view.groupName, workspaceRoot, entry.rootMode).filter(todo =>
+              (!entry.filters.status || todo.status === entry.filters.status) &&
+              (!entry.filters.priority || todo.priority === entry.filters.priority) &&
+              (!entry.filters.group || todo.group === entry.filters.group));
             reportTodos = members.filter(t => t.status === 'completed');
           } else if (view.kind === 'board' && view.scope) {
-            const summaries = listTodoSummaries(workspaceRoot);
+            const summaries = listTodoSummaries(workspaceRoot, entry.rootMode);
             reportTodos = summaries.filter(t => t.status === 'completed' && t.group === view.scope);
           } else if (view.kind === 'todo' && view.todoId) {
-            const todo = loadTodo(view.todoId, workspaceRoot);
+            const todo = loadTodo(view.todoId, workspaceRoot, entry.rootMode);
             reportTodos = todo.status === 'completed' ? [todo] : [];
           }
           const matched = reportTodos.length;
@@ -369,19 +372,19 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         } else if (path === '/toggle') {
           const todoId = assertTodoId(entry.todoId);
           if (actions.assertWritable) await actions.assertWritable(todoId);
-          setCriterionMet(todoId, payload.index, payload.met, workspaceRoot);
+          setCriterionMet(todoId, payload.index, payload.met, workspaceRoot, entry.rootMode);
         } else if (path === '/status') {
           if (actions.setStatus) await actions.setStatus(assertTodoId(entry.todoId), payload.status);
-          else setTodoStatus(entry.todoId, payload.status, workspaceRoot);
+          else setTodoStatus(entry.todoId, payload.status, workspaceRoot, entry.rootMode);
         } else if (path === '/priority') {
           if (actions.setPriority) await actions.setPriority(assertTodoId(entry.todoId), payload.priority);
-          else setTodoPriority(entry.todoId, payload.priority, workspaceRoot);
+          else setTodoPriority(entry.todoId, payload.priority, workspaceRoot, entry.rootMode);
         } else if (path === '/group') {
           if (actions.setGroup) await actions.setGroup(assertTodoId(entry.todoId), payload.group);
-          else setTodoGroup(entry.todoId, payload.group, workspaceRoot);
+          else setTodoGroup(entry.todoId, payload.group, workspaceRoot, entry.rootMode);
         } else if (path === '/context') {
-          const todo = loadTodo(assertTodoId(entry.todoId), workspaceRoot);
-          const relations = getRelations(entry.todoId, workspaceRoot);
+          const todo = loadTodo(assertTodoId(entry.todoId), workspaceRoot, entry.rootMode);
+          const relations = getRelations(entry.todoId, workspaceRoot, entry.rootMode);
           return send(res, 200, 'application/json', JSON.stringify({
             id: todo.id,
             title: todo.title,
@@ -405,7 +408,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           }
           await actions.returnToBoard(entry.returnTo.scope);
         } else if (path === '/edit') {
-          const filePath = findTodoFile(entry.todoId, workspaceRoot);
+          const filePath = findTodoFile(entry.todoId, workspaceRoot, entry.rootMode);
           if (!actions.edit || !filePath) throw new CanvasError('unsupported', 'Editing is not available here');
           await actions.edit(filePath);
         } else if (path === '/nav') {
@@ -416,7 +419,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
         } else {
           const view = normalizeView(payload.view ?? payload.todoId);
           assertViewSupported(entry, view);
-          if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot)) {
+          if (view.kind === 'todo' && !findTodoFile(view.todoId, workspaceRoot, entry.rootMode)) {
             throw new CanvasError('todo_not_found', `Todo ${view.todoId} not found`);
           }
           navigate(entry, view);
@@ -440,7 +443,7 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           return;
         } else if (entry.groupName !== undefined) {
           // Group overview view
-          let members = loadGroupTodos(entry.groupName, workspaceRoot);
+          let members = loadGroupTodos(entry.groupName, workspaceRoot, entry.rootMode);
           if (entry.filters?.status) members = members.filter(m => m.status === entry.filters.status);
           if (entry.filters?.priority) members = members.filter(m => m.priority === entry.filters.priority);
           if (entry.filters?.group && entry.filters.group !== entry.groupName) members = members.filter(m => m.group === entry.filters.group);
@@ -452,9 +455,9 @@ export function createInstanceServer(workspaceRoot, actions = {}) {
           let relations = null;
           let groups = [];
           try {
-            todo = loadTodo(entry.todoId, workspaceRoot);
-            relations = getRelations(entry.todoId, workspaceRoot);
-            groups = listGroups(workspaceRoot);
+            todo = loadTodo(entry.todoId, workspaceRoot, entry.rootMode);
+            relations = getRelations(entry.todoId, workspaceRoot, entry.rootMode);
+            groups = listGroups(workspaceRoot, entry.rootMode);
           } catch (e) {
             if (!(e instanceof CanvasError)) throw e;
           }

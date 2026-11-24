@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import * as path from "node:path";
 import type { BusyIndicator } from "./busyIndicator";
 import { Command } from "./commands";
 import { get, Settings, set, setDefault } from "./configuration";
@@ -31,15 +32,16 @@ import {
   type ViewMode,
   viewModeLabel,
 } from "./todos/configService";
+import { TodoRootRegistry, type TodoRootDescriptor } from "./todos/rootRegistry";
 import type { FilterService } from "./todos/filterService";
-import type { LinkService } from "./todos/linkService";
+import { LinkService } from "./todos/linkService";
 import {
   type FindingChanges,
   readScanningProvenance,
   type ScanningProvenance,
 } from "./todos/scanningSnapshot";
 import type { SkillManager, SkillStatus } from "./todos/skillManager";
-import type { StatusService } from "./todos/statusService";
+import { StatusService } from "./todos/statusService";
 import { buildCollisionReconcileContext, findTodoCollisions } from "./todos/todoCollisions";
 import {
   buildFileName,
@@ -58,15 +60,22 @@ import type { TodoRepository } from "./todos/todoRepository";
 import {
   getTreeNodeKey,
   type TodoNode,
-  type TodoTreeProvider,
   type TreeNode,
 } from "./todos/todoTreeProvider";
 import type { TreeStateService } from "./todos/treeStateService";
 import { boardReturnTarget } from "./todos/workspaceNavigation";
 
+/** Minimal structural interface for the tree provider used by commands.
+ * Only `refresh()` is ever invoked on it, so both `TodoTreeProvider` and
+ * `MultiRootTreeProvider` satisfy it without unsafe casts. */
+export interface RefreshableTreeProvider {
+  refresh(): void;
+}
+
 export interface CommandServices {
   config: ConfigService;
   repository: TodoRepository;
+  rootRegistry?: TodoRootRegistry;
   filter: FilterService;
   treeState: TreeStateService;
   status: StatusService;
@@ -75,7 +84,7 @@ export interface CommandServices {
   canvas: CanvasManager;
   canvasViewer: CanvasViewer;
   busy: BusyIndicator;
-  treeProvider: TodoTreeProvider;
+  treeProvider: RefreshableTreeProvider;
   boardViewProvider: BoardViewProvider;
   refreshSkillStatus: () => void;
   scanning?: Pick<CommandServices, "filter" | "treeState" | "treeProvider" | "boardViewProvider">;
@@ -87,6 +96,7 @@ export function registerCommands(
   context: vscode.ExtensionContext,
   services: CommandServices,
 ): void {
+  const registry = services.rootRegistry ?? new TodoRootRegistry(services.config, context.workspaceState);
   const register: Register = (command, callback) => {
     context.subscriptions.push(vscode.commands.registerCommand(command, callback));
   };
@@ -95,10 +105,19 @@ export function registerCommands(
   registerLoadingCommands(register);
   registerFilterCommands(register, services, busy);
   registerBoardCommands(register, services, busy);
-  registerTodoCommands(register, services, busy);
-  registerConfigCommands(register, services);
+  registerTodoCommands(register, services, registry, busy);
+  registerConfigCommands(register, services, registry);
+  registerManualRootCommands(register, services, registry);
   registerSkillCommands(register, services, busy);
   registerTreeCommands(register, services);
+  register(Command.ToggleTreeMode, async () => {
+    const current = registry.getMode();
+    const next = current === "single" ? "multi" : "single";
+    registry.setMode(next);
+    await vscode.window.showInformationMessage(
+      `Agendo: Tree mode is now ${next}.`,
+    );
+  });
   register(Command.FocusCollision, async (arg: unknown) => {
     await services.repository.refresh();
     const todo = resolveTodo(arg);
@@ -280,8 +299,19 @@ async function runCodeScanningImport(
     );
     return;
   }
-  const workspace = config.getWorkspaceFolder();
-  if (workspace?.uri.scheme !== "file") {
+  const { path: rootPath, rootMode } = resolveActiveRoot(services.rootRegistry, config);
+  if (rootMode === "manual") {
+    vscode.window.showWarningMessage(
+      "The active root is a manual todo directory with no associated workspace folder. " +
+        "Code-scanning import operates on source-code workspaces; select a workspace folder root instead.",
+    );
+    return;
+  }
+  if (!rootPath) {
+    return;
+  }
+  const workspace = { uri: vscode.Uri.file(rootPath) } as vscode.WorkspaceFolder;
+  if (workspace.uri.scheme !== "file") {
     vscode.window.showWarningMessage(
       "Open a filesystem workspace before importing code-scanning findings.",
     );
@@ -538,8 +568,19 @@ async function runScanningTodoRefresh(
     vscode.window.showWarningMessage("Trust this workspace before refreshing scanner todos.");
     return;
   }
-  const workspace = services.config.getWorkspaceFolder();
-  if (workspace?.uri.scheme !== "file") {
+  const { path: source, rootMode } = resolveActiveRoot(services.rootRegistry, services.config);
+  if (rootMode === "manual") {
+    vscode.window.showWarningMessage(
+      "The active root is a manual todo directory with no associated workspace folder. " +
+        "Scanner refresh operates on source-code workspaces; select a workspace folder root instead.",
+    );
+    return;
+  }
+  if (!source) {
+    return;
+  }
+  const workspace = { uri: vscode.Uri.file(source) } as vscode.WorkspaceFolder;
+  if (workspace.uri.scheme !== "file") {
     vscode.window.showWarningMessage(
       "Open a filesystem workspace before refreshing scanner todos.",
     );
@@ -584,9 +625,9 @@ async function runScanningTodoRefresh(
     return;
   }
   if (provenance.source === "codeql") {
-    await refreshCodeQLTodo(services, todo, provenance);
+    await refreshCodeQLTodo(services, todo, provenance, workspace);
   } else {
-    await refreshSonarTodo(context, services, todo, provenance);
+    await refreshSonarTodo(context, services, todo, provenance, workspace);
   }
 }
 
@@ -594,12 +635,12 @@ async function refreshCodeQLTodo(
   services: CommandServices,
   todo: Todo,
   provenance: ScanningProvenance,
+  workspace: vscode.WorkspaceFolder,
 ): Promise<void> {
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Refreshing ${todo.id}…` },
     async () => {
-      const workspace = services.config.getWorkspaceFolder();
-      if (workspace?.uri.scheme !== "file") {
+      if (workspace.uri.scheme !== "file") {
         vscode.window.showWarningMessage(
           "Open a filesystem workspace before refreshing scanner todos.",
         );
@@ -652,12 +693,12 @@ async function refreshSonarTodo(
   services: CommandServices,
   todo: Todo,
   provenance: ScanningProvenance,
+  workspace: vscode.WorkspaceFolder,
 ): Promise<void> {
   const parts = provenance.scope.split("#");
   const server = validateSonarUrl(parts[0]).toString();
   const project = parts.slice(1).join("#");
-  // biome-ignore lint/style/noNonNullAssertion: workspace validated above
-  const sonar = await promptSonarQubeSettings(context, services.config.getWorkspaceFolder()!.uri, {
+  const sonar = await promptSonarQubeSettings(context, workspace.uri, {
     server,
     project,
   });
@@ -669,8 +710,7 @@ async function refreshSonarTodo(
     async () => {
       const scan = sonar.cli
         ? await fetchSonarQubeCli(
-            // biome-ignore lint/style/noNonNullAssertion: workspace validated above
-            services.config.getWorkspaceFolder()!.uri.fsPath,
+            workspace.uri.fsPath,
             sonar.server,
             sonar.project,
             undefined,
@@ -772,11 +812,14 @@ function registerBoardCommands(
       await busy.run(
         "Opening board…",
         async () => {
-          const root = services.config.getWorkspaceFolder()?.uri.fsPath;
+          const { path: root, rootMode } = resolveActiveRoot(
+            services.rootRegistry,
+            services.config,
+          );
           if (!root) {
             return;
           }
-          await services.canvasViewer.open(root, { kind: "board", scope });
+          await services.canvasViewer.open(root, { kind: "board", scope }, undefined, rootMode);
         },
         `${prefix}.openingBoard`,
       );
@@ -833,11 +876,14 @@ function registerFilterCommands(
         "Loading task digest…",
         async () => {
           await repository.refresh();
-          const root = services.config.getWorkspaceFolder()?.uri.fsPath;
+          const { path: root, rootMode } = resolveActiveRoot(
+            services.rootRegistry,
+            services.config,
+          );
           if (!root) {
             return;
           }
-          await services.canvasViewer.open(root, { kind: "digest", scope });
+          await services.canvasViewer.open(root, { kind: "digest", scope }, undefined, rootMode);
         },
         `${prefix}.digestLoading`,
       );
@@ -879,15 +925,149 @@ function registerFilterCommands(
   });
 }
 
+/** Resolve a command argument to the owning root's config/repository and the
+ * selected todo, falling back to the active root when no todo is selected.
+ * Returns undefined for stale selections (the todo is not in any known
+ * root), which callers treat as a safe no-op.
+ *
+ * Internal TreeNode (keyboard / command-palette path): the active provider's
+ * repository owns the nodes it renders, so a selected todo that is a member of
+ * the active repository is resolved through the active context. Otherwise the
+ * todo is resolved by exact URI through the root registry.
+ *
+ * VS Code TreeItem (view / item / context right-click path): resolve by exact
+ * resource URI across registry roots first, then fall back to the active
+ * repository only when the URI is an actual member of it. Never resolve by a
+ * bare todo ID, so duplicate IDs across roots never mutate the wrong root. */
+function resolveRootServices(
+  registry: TodoRootRegistry,
+  services: CommandServices,
+  arg: unknown,
+): { config: ConfigService; repository: TodoRepository; todo: Todo | undefined } | undefined {
+  // Internal TreeNode (keyboard/command-palette path).
+  const fromNode = resolveFromTreeNode(registry, services, arg);
+  if (fromNode) {
+    return fromNode;
+  }
+
+  // VS Code TreeItem (view/item/context right-click path).
+  const fromItem = resolveFromTreeItem(registry, services, arg);
+  if (fromItem) {
+    return fromItem;
+  }
+
+  // No todo selected: default to the active context; callers ignore `todo`.
+  return { config: services.config, repository: services.repository, todo: undefined };
+}
+
+/** Resolve a command argument through the internal TreeNode path.
+ * The active provider's repository owns the nodes it renders, so a selected
+ * todo that is a member of the active repository is resolved through the
+ * active context. Otherwise the todo is resolved by exact URI through the
+ * root registry. Returns undefined for stale selections. */
+function resolveFromTreeNode(
+  registry: TodoRootRegistry,
+  services: CommandServices,
+  arg: unknown,
+): { config: ConfigService; repository: TodoRepository; todo: Todo } | undefined {
+  if (!arg || typeof arg !== "object" || !(arg as { kind?: unknown }).kind) {
+    return undefined;
+  }
+  const node = arg as TreeNode;
+  if (node.kind !== "todo") {
+    return undefined;
+  }
+  const selectedTodo = (node as TodoNode).todo;
+  const activeMember = services.repository.getTodos().some(
+    (t) => t.uri.toString() === selectedTodo.uri.toString(),
+  );
+  if (activeMember) {
+    return { config: services.config, repository: services.repository, todo: selectedTodo };
+  }
+  const owned = registry.resolveRootForTodo(selectedTodo);
+  if (!owned) {
+    // Stale selection: the todo is not in any known root. Safe no-op.
+    return undefined;
+  }
+  return { config: owned.config, repository: owned.repository, todo: selectedTodo };
+}
+
+/** Resolve a command argument through the VS Code TreeItem path.
+ * Resolve by exact resource URI across registry roots first, then fall back
+ * to the active repository only when the URI is an actual member of it.
+ * Never resolve by bare todo ID. */
+function resolveFromTreeItem(
+  registry: TodoRootRegistry,
+  services: CommandServices,
+  arg: unknown,
+): { config: ConfigService; repository: TodoRepository; todo: Todo } | undefined {
+  const item =
+    arg && typeof arg === "object" && "resourceUri" in arg
+      ? arg as { resourceUri?: unknown }
+      : undefined;
+  const resourceUri = item?.resourceUri as vscode.Uri | undefined;
+  if (!resourceUri) {
+    return undefined;
+  }
+  // Resolve by exact resource URI across registry roots first.
+  for (const descriptor of registry.getRoots()) {
+    const context = registry.getContext(descriptor.id);
+    if (!context) continue;
+    const matches = context.repository.getTodos().filter(
+      (t) => t.uri.toString() === resourceUri.toString(),
+    );
+    if (matches.length === 1) {
+      return { config: context.config, repository: context.repository, todo: matches[0] };
+    }
+  }
+  // Fall back to the active repository only when the URI is an actual member.
+  const activeMember = services.repository.getTodos().find(
+    (t) => t.uri.toString() === resourceUri.toString(),
+  );
+  if (activeMember) {
+    return { config: services.config, repository: services.repository, todo: activeMember };
+  }
+  return undefined;
+}
+
+/**
+ * Resolve the active root to a filesystem path and root mode.
+ * Workspace roots use their associated folder path; manual roots use their
+ * registered directory. Falls back to the ConfigService workspace folder for
+ * backward compatibility when no root is registered.
+ */
+function resolveActiveRoot(
+  registry: TodoRootRegistry | undefined,
+  config: ConfigService,
+): { path: string | undefined; rootMode: "workspace" | "manual" } {
+  const root = registry?.getActiveRoot();
+  if (root) {
+    if (root.source === "workspace" && root.folder) {
+      return { path: root.folder.uri.fsPath, rootMode: "workspace" };
+    }
+    if (root.source === "manual") {
+      return { path: root.uri.fsPath, rootMode: "manual" };
+    }
+  }
+  const folder = config.getWorkspaceFolder();
+  return folder
+    ? { path: folder.uri.fsPath, rootMode: "workspace" }
+    : { path: undefined, rootMode: "workspace" };
+}
+
 function registerTodoCommands(
   register: Register,
   services: CommandServices,
+  registry: TodoRootRegistry,
   busy: BusyIndicator,
 ): void {
-  const { config, repository, status, links } = services;
 
   register(Command.OpenPreview, async (arg: unknown) => {
-    const todo = resolveTodo(arg);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
+    }
+    const { config, todo } = resolved;
     if (!todo) {
       return;
     }
@@ -895,31 +1075,42 @@ function registerTodoCommands(
   });
 
   register(Command.OpenCanvas, async (arg: unknown) => {
-    const todo = resolveTodo(arg) ?? resolveBoardTodo(arg, repository.getTodos());
-    if (todo) {
-      const returnTo = boardReturnTarget(
-        arg && typeof arg === "object" ? (arg as Record<string, unknown>).returnTo : undefined,
-      );
-      if (returnTo && !matchesTodoScope(todo, returnTo.scope)) return;
-      await config.openInCanvas(todo.uri, returnTo);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
     }
+    const { config, todo } = resolved;
+    if (!todo) {
+      return;
+    }
+    const returnTo = boardReturnTarget(
+      arg && typeof arg === "object" ? (arg as Record<string, unknown>).returnTo : undefined,
+    );
+    if (returnTo && !matchesTodoScope(todo, returnTo.scope)) return;
+    await config.openInCanvas(todo.uri, returnTo);
   });
 
   for (const targetStatus of TODO_STATUSES) {
     register(`agendo.setStatus.${targetStatus}`, async (arg: unknown) => {
-      const todo = resolveTodo(arg);
+      const resolved = resolveRootServices(registry, services, arg);
+      if (!resolved) {
+        return;
+      }
+      const { config, repository, todo } = resolved;
       if (!todo) {
         return;
       }
       const oldFileName = todo.fileName;
+      const statusService = new StatusService(config, repository);
+      const linksService = new LinkService(config);
       try {
         await busy.run(
           "Updating todo…",
           async () => {
-            const result = await status.setStatus(todo, targetStatus as TodoStatus);
+            const result = await statusService.setStatus(todo, targetStatus as TodoStatus);
             await repository.refresh();
             if (result) {
-              await links.warnOnBrokenReferences(oldFileName, result);
+              await linksService.warnOnBrokenReferences(oldFileName, result);
             }
           },
           undefined,
@@ -932,7 +1123,11 @@ function registerTodoCommands(
   }
 
   register(Command.SetPriority, async (arg: unknown) => {
-    const todo = resolveTodo(arg);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
+    }
+    const { config, repository, todo } = resolved;
     if (!todo) {
       return;
     }
@@ -944,14 +1139,16 @@ function registerTodoCommands(
       return;
     }
     const oldFileName = todo.fileName;
+    const statusService = new StatusService(config, repository);
+    const linksService = new LinkService(config);
     try {
       await busy.run(
         "Updating todo…",
         async () => {
-          const result = await status.setPriority(todo, picked.label as TodoPriority);
+          const result = await statusService.setPriority(todo, picked.label as TodoPriority);
           await repository.refresh();
           if (result) {
-            await links.warnOnBrokenReferences(oldFileName, result);
+            await linksService.warnOnBrokenReferences(oldFileName, result);
           }
         },
         undefined,
@@ -963,7 +1160,11 @@ function registerTodoCommands(
   });
 
   register(Command.SetGroup, async (arg: unknown) => {
-    const todo = resolveTodo(arg);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
+    }
+    const { config, repository, todo } = resolved;
     if (!todo) {
       return;
     }
@@ -975,11 +1176,12 @@ function registerTodoCommands(
     if (value === undefined) {
       return;
     }
+    const statusService = new StatusService(config, repository);
     try {
       await busy.run(
         "Updating todo…",
         async () => {
-          await status.setGroup(todo, value.trim() || undefined);
+          await statusService.setGroup(todo, value.trim() || undefined);
           await repository.refresh();
         },
         undefined,
@@ -991,7 +1193,11 @@ function registerTodoCommands(
   });
 
   register(Command.DeleteTodo, async (arg: unknown) => {
-    const todo = resolveTodo(arg);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
+    }
+    const { config, repository, todo } = resolved;
     if (!todo) {
       return;
     }
@@ -1003,11 +1209,12 @@ function registerTodoCommands(
     if (answer !== "Delete") {
       return;
     }
+    const statusService = new StatusService(config, repository);
     try {
       await busy.run(
         "Deleting todo…",
         async () => {
-          await status.deleteTodo(todo);
+          await statusService.deleteTodo(todo);
           await repository.refresh();
         },
         undefined,
@@ -1019,7 +1226,11 @@ function registerTodoCommands(
   });
 
   register(Command.SetDependency, async (arg: unknown) => {
-    const todo = resolveTodo(arg);
+    const resolved = resolveRootServices(registry, services, arg);
+    if (!resolved) {
+      return;
+    }
+    const { config, repository, todo } = resolved;
     if (!todo) {
       return;
     }
@@ -1054,14 +1265,16 @@ function registerTodoCommands(
     }
     const newDependencies = picked.map((item) => item.label.split(" · ")[0]).filter(Boolean);
     const oldFileName = todo.fileName;
+    const statusService = new StatusService(config, repository);
+    const linksService = new LinkService(config);
     try {
       await busy.run(
         "Updating todo…",
         async () => {
-          const result = await status.setDependencies(todo, newDependencies);
+          const result = await statusService.setDependencies(todo, newDependencies);
           await repository.refresh();
           if (result) {
-            await links.warnOnBrokenReferences(oldFileName, result);
+            await linksService.warnOnBrokenReferences(oldFileName, result);
           }
         },
         undefined,
@@ -1073,73 +1286,104 @@ function registerTodoCommands(
   });
 
   register(Command.CreateTodo, async () => {
-    await createTodo(config, repository, busy);
+    await createTodo(services.config, services.repository, busy);
   });
 
   register(Command.ImportFromClipboard, async () => {
-    await importFromClipboard(config, repository);
+    await importFromClipboard(services.config, services.repository);
   });
 }
 
-function registerConfigCommands(register: Register, services: CommandServices): void {
+function registerConfigCommands(
+  register: Register,
+  services: CommandServices,
+  registry: TodoRootRegistry,
+): void {
   const { config, repository } = services;
 
   register(Command.OpenSettings, async (scope?: unknown) => {
-    const root = config.getWorkspaceFolder()?.uri.fsPath;
+    const { path: root, rootMode } = resolveActiveRoot(registry, config);
     if (!root) {
       return;
     }
     await services.canvasViewer.openSettings(
       root,
       scope === "todos" || scope === "code-scanning" ? { kind: "board", scope } : undefined,
+      rootMode,
     );
   });
 
   register(Command.ChooseRoot, async () => {
-    const folder = config.getWorkspaceFolder();
-    if (!folder) {
+    const roots = registry.getRoots();
+    if (roots.length === 0) {
+      vscode.window.showInformationMessage("No roots available.");
       return;
     }
-    const value = await vscode.window.showInputBox({
-      prompt: "Workspace-relative path to the todos root folder",
-      value: config.root,
+    const activeId = registry.getActiveRootId();
+    const items: vscode.QuickPickItem[] = [];
+    const dataMap = new Map<string, TodoRootDescriptor>();
+    for (const root of roots) {
+      const isActive = root.id === activeId;
+      items.push({
+        label: root.label,
+        description: `${root.source} · ${root.uri.fsPath}${isActive ? " (active)" : ""}${root.available ? "" : " (unavailable)"}`,
+        picked: isActive,
+      });
+      dataMap.set(root.label, root);
+    }
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "Select a todo root",
     });
-    if (value === undefined) {
+    if (!picked) {
       return;
     }
-    await set(Settings.Root, value.trim() || "docs/todos", folder);
+    const root = dataMap.get(picked.label);
+    if (!root) {
+      return;
+    }
+    registry.setActiveRoot(root.id);
     await config.writeConfigFile();
     await config.applyGitignore();
     await repository.rebindRoot();
   });
   register(Command.ChooseWorkspaceFolder, async () => {
     const folders = config.workspaceFolders;
-    if (folders.length === 0) {
+    const manualRoot = config.getManualRoot();
+    const items: vscode.QuickPickItem[] = [];
+    const dataMap = new Map<string, { folder?: vscode.WorkspaceFolder; uri?: vscode.Uri }>();
+    for (const folder of folders) {
+      const rootUri = config.getRootUri(folder);
+      const rootPath = rootUri?.fsPath || folder.uri.fsPath;
+      items.push({ label: folder.name, description: rootPath });
+      dataMap.set(folder.name, { folder });
+    }
+    if (manualRoot) {
+      const label = `Manual: ${path.basename(manualRoot.fsPath)}`;
+      items.push({ label, description: manualRoot.fsPath });
+      dataMap.set(label, { uri: manualRoot });
+    }
+    if (items.length === 0) {
       vscode.window.showInformationMessage("No workspace folders available.");
       return;
     }
-    const items = folders.map((folder) => {
-      const rootUri = config.getRootUri(folder);
-      const rootPath = rootUri?.fsPath || folder.uri.fsPath;
-      return {
-        label: folder.name,
-        description: rootPath,
-        folder,
-      };
-    });
     const picked = await vscode.window.showQuickPick(items, {
-      placeHolder: "Select a workspace folder for todos",
+      placeHolder: "Select a root folder for todos",
     });
     if (!picked) {
       return;
     }
-    config.setWorkspaceFolder(picked.folder);
+    const data = dataMap.get(picked.label);
+    if (data?.uri) {
+      config.setManualRoot(data.uri);
+    } else if (data?.folder) {
+      config.setWorkspaceFolder(data.folder);
+    }
     await config.writeConfigFile();
     await config.applyGitignore();
     await repository.rebindRoot();
     const rootUri = config.getRootUri();
     vscode.window.showInformationMessage(
-      `Active folder: ${picked.folder.name}\nTodos root: ${rootUri?.fsPath || "none"}`,
+      `Active root: ${rootUri?.fsPath || "none"}`,
     );
   });
   register(Command.ToggleGitignore, async () => {
@@ -1233,6 +1477,102 @@ function registerConfigCommands(register: Register, services: CommandServices): 
     if (picked?.mode) {
       await setDefault(Settings.ViewMode, picked.mode as ViewMode);
     }
+  });
+}
+
+/** Register manual-root management commands (add/remove/select). */
+function registerManualRootCommands(
+  register: Register,
+  services: CommandServices,
+  registry: TodoRootRegistry,
+): void {
+  const { config, repository } = services;
+
+  register(Command.AddManualRoot, async () => {
+    const selected = await vscode.window.showOpenDialog({
+      canSelectFiles: false,
+      canSelectFolders: true,
+      canSelectMany: false,
+      defaultUri: vscode.Uri.file(
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "/",
+      ),
+    });
+    if (!selected?.[0]) {
+      return;
+    }
+    const uri = selected[0];
+    try {
+      await vscode.workspace.fs.stat(uri);
+    } catch {
+      vscode.window.showErrorMessage("Selected path is not a directory.");
+      return;
+    }
+    const label = await vscode.window.showInputBox({
+      prompt: "Root label",
+      value: path.basename(uri.fsPath),
+    });
+    if (label === undefined) {
+      return;
+    }
+    registry.addManualRoot(uri, label);
+    // Activate the newly added root so it becomes the active root.
+    const added = registry
+      .getRoots()
+      .find((r) => r.source === "manual" && r.uri.toString() === uri.toString());
+    if (added) {
+      registry.setActiveRoot(added.id);
+    }
+    await config.writeConfigFile();
+    await config.applyGitignore();
+    await repository.rebindRoot();
+    vscode.window.showInformationMessage(`Manual root added: ${label}`);
+  });
+
+  register(Command.RemoveManualRoot, async () => {
+    const roots = registry.getRoots();
+    const manualRoots = roots.filter((r) => r.source === "manual");
+    if (manualRoots.length === 0) {
+      vscode.window.showInformationMessage("No manual roots registered.");
+      return;
+    }
+    const activeId = registry.getActiveRootId();
+    const items: vscode.QuickPickItem[] = [];
+    const dataMap = new Map<string, TodoRootDescriptor>();
+    for (const root of manualRoots) {
+      const label = `${root.label} (${root.uri.fsPath})`;
+      dataMap.set(label, root);
+      items.push({
+        label,
+        description: root.uri.fsPath,
+        picked: root.id === activeId,
+      });
+    }
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "Remove a manual root",
+    });
+    if (!picked) {
+      return;
+    }
+    const context = dataMap.get(picked.label);
+    if (!context) {
+      return;
+    }
+    const wasActive = context.id === registry.getActiveRootId();
+    registry.removeManualRoot(context.id);
+    if (wasActive) {
+      const fallback = registry.getActiveRootId();
+      if (fallback) {
+        // Let the registry choose a safe fallback and synchronize ConfigService.
+        registry.setActiveRoot(fallback);
+        await config.writeConfigFile();
+        await config.applyGitignore();
+      } else {
+        // No roots remain: clear manual/active root without touching files.
+        config.clearManualRoot();
+      }
+    }
+    await repository.rebindRoot();
+    vscode.window.showInformationMessage("Manual root removed.");
   });
 }
 
@@ -1557,7 +1897,7 @@ export function resolveTodo(arg: unknown): Todo | undefined {
 
 async function runFilterPicker(
   filter: FilterService,
-  treeProvider: TodoTreeProvider,
+  treeProvider: RefreshableTreeProvider,
   repository: TodoRepository,
   scope: TodoViewScope = "todos",
 ): Promise<void> {

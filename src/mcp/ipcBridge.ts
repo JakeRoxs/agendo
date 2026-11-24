@@ -25,7 +25,7 @@ export interface IpcBridgeOptions {
    * filesystem path and is published in the endpoint registration record so the
    * MCP server can bind the bridge to a specific workspace root.
    */
-  discoveryDirectories?: Array<{ directory: string; workspace: string }>;
+  discoveryDirectories?: Array<{ directory: string; workspace: string; rootMode?: "workspace" | "manual"; label?: string }>;
 }
 
 /**
@@ -74,7 +74,7 @@ export class IpcBridge implements vscode.Disposable {
   private readonly context: vscode.ExtensionContext;
   private readonly diagnostics: DiagnosticsService;
   private configListener: vscode.Disposable | undefined;
-  private readonly discoveryDirectories: Array<{ directory: string; workspace: string }> | undefined;
+  private discoveryDirectories: Array<{ directory: string; workspace: string; rootMode?: "workspace" | "manual"; label?: string }> | undefined;
   private readonly registrations: Array<vscode.Disposable> = [];
 
   /**
@@ -124,9 +124,10 @@ export class IpcBridge implements vscode.Disposable {
   /**
    * Replace the live discovery registrations with the supplied directories.
    * Existing registrations are disposed; the endpoint itself is left running so
-   * MCP clients keep their connection. No-op when the bridge is not listening.
+   * MCP clients keep their connection. The supplied set is remembered so a
+   * later (re)start republishes it. No-op when the bridge is not listening.
    */
-  refreshDiscoveryDirectories(directories: Array<{ directory: string; workspace: string }>): void {
+  refreshDiscoveryDirectories(directories: Array<{ directory: string; workspace: string; rootMode?: "workspace" | "manual"; label?: string }>): void {
     for (const registration of this.registrations) {
       try {
         registration.dispose();
@@ -135,11 +136,12 @@ export class IpcBridge implements vscode.Disposable {
       }
     }
     this.registrations.length = 0;
+    this.discoveryDirectories = directories;
     if (!this.listening) {
       return;
     }
-    for (const { directory, workspace } of directories) {
-      const registration = publishEndpoint(directory, this.endpoint, workspace);
+    for (const { directory, workspace, rootMode, label } of directories) {
+      const registration = publishEndpoint(directory, this.endpoint, workspace, { rootMode, label });
       this.registrations.push(registration);
     }
   }
@@ -225,8 +227,8 @@ export class IpcBridge implements vscode.Disposable {
         return;
       }
       if (this.discoveryDirectories) {
-        for (const { directory, workspace } of this.discoveryDirectories) {
-          const registration = publishEndpoint(directory, this.endpoint, workspace);
+        for (const { directory, workspace, rootMode, label } of this.discoveryDirectories) {
+          const registration = publishEndpoint(directory, this.endpoint, workspace, { rootMode, label });
           this.registrations.push(registration);
         }
       }

@@ -5,8 +5,31 @@ import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
 import { Command } from "../commands";
 import { out } from "../output";
+import { createCanvasHostActions } from "./canvasHostActions";
 import type { CanvasHostActions } from "./canvasHostActions";
+import { FilterService } from "./filterService";
+import { LinkService } from "./linkService";
+import { StatusService } from "./statusService";
+import { BoardViewProvider } from "./boardViewProvider";
+import { buildTodoDigest } from "./digestService";
+import { matchesTodoScope } from "./todoModel";
+import type { TodoRootRegistry } from "./rootRegistry";
 import type { BoardReturnTarget, WorkspaceView } from "./workspaceNavigation";
+
+/** In-memory Memento fallback for tests that omit workspaceState. */
+class InMemoryMemento implements vscode.Memento {
+  private readonly store = new Map<string, unknown>();
+  keys(): readonly string[] {
+    return Array.from(this.store.keys());
+  }
+  get<T>(key: string): T | undefined {
+    return this.store.get(key) as T | undefined;
+  }
+  update(key: string, value: unknown): Promise<void> {
+    this.store.set(key, value);
+    return Promise.resolve();
+  }
+}
 
 const CANVAS_NAME = "agendo-work-session";
 
@@ -30,6 +53,7 @@ interface CanvasServerModule {
       getSettingsInfo?: () => Promise<unknown>;
       handleSettingsAction?: (payload: unknown) => Promise<unknown>;
     },
+    options?: { rootMode?: "workspace" | "manual" },
   ): InstanceServer;
   listen(entry: InstanceServer): Promise<void>;
   navigate(
@@ -53,7 +77,11 @@ export class CanvasViewer implements vscode.Disposable {
   private module?: CanvasServerModule;
   private entry?: InstanceServer;
   private root?: string;
+  private rootMode: "workspace" | "manual" = "workspace";
   private panel?: vscode.WebviewPanel;
+  /** Root registry used to resolve root-scoped host actions for the opened root. */
+  private registry?: TodoRootRegistry;
+  private readonly workspaceState: vscode.Memento;
 
   constructor(
     private readonly extensionUri: vscode.Uri,
@@ -64,21 +92,40 @@ export class CanvasViewer implements vscode.Disposable {
       getSettingsInfo?: () => Promise<unknown>;
       handleSettingsAction?: (payload: unknown) => Promise<unknown>;
     } = {},
-  ) {}
+    workspaceState: vscode.Memento = new InMemoryMemento(),
+  ) {
+    this.workspaceState = workspaceState;
+  }
 
   async open(
     workspaceRoot: string,
     target: string | WorkspaceView,
     returnTo?: BoardReturnTarget,
+    rootMode: "workspace" | "manual" = "workspace",
   ): Promise<void> {
-    const server = await this.ensureServer(workspaceRoot);
+    // Reuse an already-open server for the same root without rebuilding
+    // root-scoped host actions (which subscribe to the root's repository).
+    if (this.entry && this.root === workspaceRoot && this.rootMode === rootMode) {
+      const server = this.entry;
+      this.module?.navigate(server, target, returnTo ?? null);
+      const external = await vscode.env.asExternalUri(vscode.Uri.parse(server.url));
+      this.show(external.toString());
+      return;
+    }
+    const actions = this.registry ? this.rootActions(workspaceRoot) : this.actions;
+    const server = await this.ensureServer(workspaceRoot, rootMode, actions);
     this.module?.navigate(server, target, returnTo ?? null);
     const external = await vscode.env.asExternalUri(vscode.Uri.parse(server.url));
     this.show(external.toString());
   }
 
-  async openSettings(workspaceRoot: string, returnView?: WorkspaceView): Promise<void> {
-    const server = await this.ensureServer(workspaceRoot);
+  async openSettings(
+    workspaceRoot: string,
+    returnView?: WorkspaceView,
+    rootMode: "workspace" | "manual" = "workspace",
+  ): Promise<void> {
+    const actions = this.registry ? this.rootActions(workspaceRoot) : this.actions;
+    const server = await this.ensureServer(workspaceRoot, rootMode, actions);
     if (returnView) {
       this.module?.navigate(server, returnView, null);
     }
@@ -88,8 +135,18 @@ export class CanvasViewer implements vscode.Disposable {
     this.show(external.toString());
   }
 
-  private async ensureServer(workspaceRoot: string): Promise<InstanceServer> {
-    if (this.entry && this.root === workspaceRoot) {
+  private async ensureServer(
+    workspaceRoot: string,
+    rootMode: "workspace" | "manual" = "workspace",
+    actions?: Partial<CanvasHostActions> & {
+      getBoardSnapshot?: (scope: "todos" | "code-scanning") => Promise<unknown>;
+      handleBoardMessage?: (scope: "todos" | "code-scanning", message: unknown) => Promise<void>;
+      getDigest?: (scope: "todos" | "code-scanning") => Promise<{ content: string }>;
+      getSettingsInfo?: () => Promise<unknown>;
+      handleSettingsAction?: (payload: unknown) => Promise<unknown>;
+    },
+  ): Promise<InstanceServer> {
+    if (this.entry && this.root === workspaceRoot && this.rootMode === rootMode) {
       return this.entry;
     }
     await this.stopServer();
@@ -99,7 +156,7 @@ export class CanvasViewer implements vscode.Disposable {
       ).href,
     );
     const entry = this.module.createInstanceServer(workspaceRoot, {
-      ...this.actions,
+      ...(actions ?? this.actions),
       returnToBoard: async (scope) => {
         await vscode.commands.executeCommand(
           scope === "code-scanning" ? Command.CodeScanningOpenBoard : Command.OpenBoard,
@@ -109,12 +166,80 @@ export class CanvasViewer implements vscode.Disposable {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
         await vscode.window.showTextDocument(document, vscode.ViewColumn.Beside);
       },
-    });
+    }, { rootMode });
     await this.module.listen(entry);
     this.entry = entry;
     this.root = workspaceRoot;
+    this.rootMode = rootMode;
     out`Work-session canvas server listening at ${entry.url}`;
     return entry;
+  }
+
+  /** Make the registry available so opened canvases use root-scoped host actions. */
+  setRootRegistry(registry: TodoRootRegistry): void {
+    this.registry = registry;
+  }
+
+  /** Build root-scoped host actions for the root whose todo directory is `workspaceRoot`.
+   * Falls back to the base actions when no registry is bound or the root is unknown. */
+  private rootActions(workspaceRoot: string): Partial<CanvasHostActions> & {
+    getBoardSnapshot?: (scope: "todos" | "code-scanning") => Promise<unknown>;
+    handleBoardMessage?: (scope: "todos" | "code-scanning", message: unknown) => Promise<void>;
+    getDigest?: (scope: "todos" | "code-scanning") => Promise<{ content: string }>;
+    getSettingsInfo?: () => Promise<unknown>;
+    handleSettingsAction?: (payload: unknown) => Promise<unknown>;
+  } {
+    const registry = this.registry;
+    if (!registry) return this.actions;
+    const descriptor = registry.getRoots().find(
+      (root) =>
+        (root.source === "workspace" ? root.folder?.uri.fsPath : root.uri.fsPath) === workspaceRoot,
+    );
+    if (!descriptor) return this.actions;
+    const context = registry.getContext(descriptor.id);
+    if (!context) return this.actions;
+    const rootStatus = new StatusService(context.config, context.repository);
+    const rootLinks = new LinkService(context.config);
+    const rootTaskActions = createCanvasHostActions({
+      repository: context.repository,
+      status: rootStatus,
+      links: rootLinks,
+    });
+    const rootFilter = new FilterService(this.workspaceState, `agendo.filter.${descriptor.id}`);
+    const rootBoardProvider = new BoardViewProvider(
+      context.repository,
+      rootFilter,
+      rootStatus,
+      this.workspaceState,
+      "todos",
+      rootTaskActions,
+    );
+    const rootScanningBoardProvider = new BoardViewProvider(
+      context.repository,
+      rootFilter,
+      rootStatus,
+      this.workspaceState,
+      "code-scanning",
+      rootTaskActions,
+    );
+    return {
+      ...rootTaskActions,
+      getBoardSnapshot: async (scope) => {
+        const provider = scope === "code-scanning" ? rootScanningBoardProvider : rootBoardProvider;
+        return provider.getSnapshot();
+      },
+      handleBoardMessage: async (scope, message) => {
+        const provider = scope === "code-scanning" ? rootScanningBoardProvider : rootBoardProvider;
+        await provider.handleCanvasMessage(message);
+      },
+      getDigest: async (scope) => {
+        const todos = context.repository.getTodos().filter((todo) => matchesTodoScope(todo, scope));
+        const content = buildTodoDigest(todos, context.repository.getDependencyGraph());
+        return { content };
+      },
+      getSettingsInfo: this.actions.getSettingsInfo,
+      handleSettingsAction: this.actions.handleSettingsAction,
+    };
   }
 
   private show(url: string): void {

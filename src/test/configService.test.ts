@@ -271,4 +271,72 @@ suite("config service active root", () => {
     config.refreshActiveFolder();
     assert.strictEqual(config.getWorkspaceFolder(), folderB);
   });
+
+  test("getRootUri returns the explicit root URI when bound to a root", () => {
+    const rootUri = vscode.Uri.file("/path/custom/root");
+    const config = new ConfigService(undefined, rootUri);
+    assert.strictEqual(config.getRootUri(), rootUri);
+    // A folder argument returns that folder's root, not the explicit override.
+    const otherUri = config.getRootUri(makeFolder("other", "/path/other"));
+    assert.ok(otherUri);
+    assert.strictEqual(otherUri.fsPath, "/path/other/docs/todos");
+    // Old single-root constructor signature still works with no workspace folders.
+    const restoreFolders = mockWorkspaceFolders([]);
+    restore.push(restoreFolders);
+    const single = new ConfigService();
+    assert.strictEqual(single.getRootUri(), undefined);
+  });
+
+  test("getRootUri returns the manual root URI when a manual root is set", () => {
+    const restoreFolders = mockWorkspaceFolders([]);
+    restore.push(restoreFolders);
+
+    const manualUri = vscode.Uri.file("/path/manual/root");
+    const config = new ConfigService();
+    assert.strictEqual(config.getManualRoot(), undefined);
+    assert.strictEqual(config.getRootUri(), undefined);
+
+    config.setManualRoot(manualUri);
+    assert.strictEqual(config.getManualRoot(), manualUri);
+    const rootUri = config.getRootUri();
+    assert.ok(rootUri);
+    assert.strictEqual(rootUri?.fsPath, manualUri.fsPath);
+    // A folder argument returns that folder's root, not the manual override.
+    const otherUri = config.getRootUri(makeFolder("other", "/path/other"));
+    assert.ok(otherUri);
+    assert.strictEqual(otherUri.fsPath, "/path/other/docs/todos");
+  });
+
+  test("clearManualRoot restores the workspace-folder root", () => {
+    const restoreFolders = mockWorkspaceFolders([]);
+    restore.push(restoreFolders);
+
+    const config = new ConfigService();
+    const manualUri = vscode.Uri.file("/path/manual/root");
+    config.setManualRoot(manualUri);
+    assert.strictEqual(config.getManualRoot(), manualUri);
+    const rootUri = config.getRootUri();
+    assert.ok(rootUri);
+    assert.strictEqual(rootUri?.fsPath, manualUri.fsPath);
+
+    config.clearManualRoot();
+    assert.strictEqual(config.getManualRoot(), undefined);
+    assert.strictEqual(config.getRootUri(), undefined);
+  });
+
+  test("setWorkspaceFolder clears the manual root override", () => {
+    const restoreFolders = mockWorkspaceFolders([]);
+    restore.push(restoreFolders);
+
+    const config = new ConfigService();
+    const manualUri = vscode.Uri.file("/path/manual/root");
+    config.setManualRoot(manualUri);
+    const rootUri = config.getRootUri();
+    assert.ok(rootUri);
+    assert.strictEqual(rootUri?.fsPath, manualUri.fsPath);
+
+    config.setWorkspaceFolder(undefined);
+    assert.strictEqual(config.getManualRoot(), undefined);
+    assert.strictEqual(config.getRootUri(), undefined);
+  });
 });

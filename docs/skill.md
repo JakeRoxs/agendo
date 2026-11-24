@@ -55,27 +55,40 @@ are structured frontmatter, while `group`, `tags`, and an external `key` are opt
 | `complete` | Acceptance criteria are verified |
 | `cancelled` | Abandoned or superseded |
 
-## Multi-root workspaces
+## Multi-root workspaces and manual roots
 
-Agendo supports one active todo root per workspace folder. Each folder can configure its own
-`agendo.root`, and each root keeps an independent `.agendo-config.json`, ID sequence, scanner
-sequences, dependencies, groups, and assets. The same numeric ID in two roots is a distinct todo,
-and cross-root dependency references are unsupported.
+Agendo supports two kinds of todo roots, each with an independent `.agendo-config.json`, ID
+sequence, scanner sequences, dependencies, groups, and assets:
+
+- **Workspace-folder root** — derived from the folder-scoped `agendo.root` setting for a VS Code
+  workspace folder (default `docs/todos` relative to that folder).
+- **Manual todo root** — an arbitrary local filesystem directory registered with
+  **Agendo: Add Manual Todo Root**. Its URI is already the todo root; it is not a workspace folder.
+
+The same numeric ID in two roots is a distinct todo, and cross-root dependency references are
+unsupported.
 
 Resolve the workspace folder / todo root before any todo lookup, ID resolution, dependency
 traversal, import, status change, or summary. Prefer an explicit file path or task context, or the
-user's active workspace folder. In a multi-root workspace, do not assume the first folder; require
-folder selection.
+active/registered root. In multi-root, never assume the first root; require explicit selection.
 
-MCP todo tools accept an optional `workspaceFolder` (folder name or exact absolute path). When
-multiple roots are registered and the call cannot be disambiguated, the tool rejects the call
-rather than guessing. Pass `workspaceFolder` explicitly; when two folders share a basename, use the
-exact absolute path to disambiguate. The read-only diagnostics tool (`get_problems`) follows the
-same model: omit `workspaceFolder` for a single root, provide it when multiple roots are open.
+**Tree mode** (`agendo.treeMode`, toggled by **Agendo: Toggle Tree Mode**):
+
+- **Single** — the tree shows the active root's todos directly, with no root container wrapper.
+- **Multi** — every registered root is a named, collapsible top-level root node with its own isolated
+  child hierarchy. Roots are never flattened, and bare IDs are never used across roots.
+
+MCP todo tools accept an optional `workspaceFolder` that selects any registered workspace or manual
+root by label/basename or exact absolute path. When labels collide, use the exact absolute path.
+When multiple roots are registered and the call cannot be disambiguated, the tool rejects the call
+rather than guessing. The read-only diagnostics tool (`get_problems`) follows the same model: omit
+`workspaceFolder` for a single root, provide it when multiple roots are open.
 
 Use **Agendo: Choose Workspace Folder** to switch the active workspace folder (saved with the
 workspace). Use **Agendo: Choose Root** to select the todo directory within the active folder — the
-former picks the workspace folder, the latter picks the relative todo root path within it.
+former picks the workspace folder, the latter picks the relative todo root path within it. Use
+**Agendo: Add Manual Todo Root** / **Remove Manual Todo Root** to register or drop a manual root.
+
 
 CodeQL and SonarQube todos use separate `cql-` and `sq-` IDs and source-specific folders. The skill
 can work on those imported todos, but it does not fetch scanner alerts; use **Agendo: Import

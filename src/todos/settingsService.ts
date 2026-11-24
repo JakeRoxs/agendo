@@ -12,7 +12,10 @@ import {
 import type { SkillStatusTreeProvider } from "./skillStatusTreeProvider";
 import { TODO_STATUSES, type TodoStatus } from "./todoModel";
 import type { TodoRepository } from "./todoRepository";
-import type { TodoTreeProvider } from "./todoTreeProvider";
+
+interface RefreshableTreeProvider {
+  refresh(): void;
+}
 
 const GROUP_BY_MODES = new Set<string>(["status", "priority", "group", "none"]);
 const DEFAULT_PRIORITIES = new Set<string>(["p1", "p2", "p3"]);
@@ -55,8 +58,8 @@ export class SettingsService {
   private readonly boardViewProvider: BoardViewProvider;
   private readonly scanningBoardViewProvider: BoardViewProvider;
   private readonly repository: TodoRepository;
-  private readonly treeProvider: TodoTreeProvider;
-  private readonly scanningTreeProvider: TodoTreeProvider;
+  private readonly treeProvider: RefreshableTreeProvider;
+  private readonly scanningTreeProvider: RefreshableTreeProvider;
   private readonly skillStatusTreeProvider: SkillStatusTreeProvider;
   private readonly extensionVersion: string;
   private readonly getSkillStatus: () => Promise<unknown>;
@@ -71,8 +74,8 @@ export class SettingsService {
     boardViewProvider: BoardViewProvider;
     scanningBoardViewProvider: BoardViewProvider;
     repository: TodoRepository;
-    treeProvider: TodoTreeProvider;
-    scanningTreeProvider: TodoTreeProvider;
+    treeProvider: RefreshableTreeProvider;
+    scanningTreeProvider: RefreshableTreeProvider;
     skillStatusTreeProvider: SkillStatusTreeProvider;
     extensionVersion: string;
     getSkillStatus: () => Promise<unknown>;

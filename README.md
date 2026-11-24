@@ -125,12 +125,16 @@ conflicts, or explicitly set `agendo.backloggedFolder` to `backlog` to retain th
 The same configured folder name applies inside each code-scanning source directory. Custom folder
 settings remain supported.
 
-In a multi-root workspace, each folder can use its own `agendo.root`. Agendo shows one active
-workspace folder at a time; use **Agendo: Choose Workspace Folder** in the Todos view to switch.
-The selection is saved with the workspace. **Agendo: Choose Root** continues to select the todo
-directory within the active folder. Todo IDs are scoped to that root, so the same ID may exist
-independently in another workspace folder. MCP todo tools accept a `workspaceFolder` selector when
-multiple roots are registered and reject ambiguous calls rather than silently choosing one.
+In a multi-root workspace, each folder can use its own `agendo.root`, and arbitrary local
+directories can be registered as manual todo roots with **Agendo: Add Manual Todo Root**. Each root
+owns an isolated ID sequence, dependency graph, and tree. Agendo shows one active root at a time;
+use **Agendo: Choose Workspace Folder** to switch workspace folders, **Agendo: Choose Root** to
+select the todo directory within the active folder, and **Agendo: Toggle Tree Mode** to switch
+between single (active root only) and multi (named collapsible root nodes) tree presentation. Todo
+IDs are scoped to that root, so the same ID may exist independently in another root. MCP todo tools
+accept a `workspaceFolder` selector that names any registered workspace or manual root by
+label/basename or exact absolute path (use the exact path when labels collide) and reject ambiguous
+calls rather than silently choosing one.
 
 ## Duplicate IDs
 

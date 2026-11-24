@@ -57,11 +57,28 @@ function mockWorkspaceFolders(folders: vscode.WorkspaceFolder[]): () => void {
   };
 }
 
+function mockMcpProblemsEnabled(enabled = true): () => void {
+  const original = vscode.workspace.getConfiguration;
+  Object.defineProperty(vscode.workspace, "getConfiguration", {
+    value: () => ({
+      get: (key: string, defaultValue?: unknown) =>
+        key === "mcp.problems.enabled" ? enabled : defaultValue,
+    }),
+    configurable: true,
+  });
+  return () => {
+    Object.defineProperty(vscode.workspace, "getConfiguration", {
+      value: original,
+      configurable: true,
+    });
+  };
+}
+
 const mockContext: vscode.ExtensionContext = {
   subscriptions: [] as vscode.Disposable[],
 } as vscode.ExtensionContext;
 
-async function waitForListening(endpoint: string, timeoutMs = 5000): Promise<void> {
+async function waitForListening(endpoint: string, timeoutMs = 2000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let lastError: Error | undefined;
   while (Date.now() < deadline) {
@@ -955,6 +972,7 @@ suite("mcpProblems", () => {
         { uri: makeUri("/ws2"), name: "ws2", index: 1 },
       ]),
       mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
     ];
     let bridge: IpcBridge | undefined;
     const dir1 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
@@ -1010,6 +1028,7 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
     ];
     let bridge: IpcBridge | undefined;
     const dir1 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
@@ -1086,6 +1105,101 @@ suite("mcpProblems", () => {
     }
   });
 
+  test("bridge publishes records carrying root mode and label and refreshes the set", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
+      mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
+    ];
+    let bridge: IpcBridge | undefined;
+    const dir1 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    const dir2 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    try {
+      const service = new DiagnosticsService();
+      bridge = await IpcBridge.create({
+        context: mockContext,
+        diagnostics: service,
+        discoveryDirectories: [
+          { directory: dir1, workspace: "/ws1", rootMode: "workspace", label: "Workspace Root" },
+          { directory: dir2, workspace: "/ws2", rootMode: "manual", label: "Manual Root" },
+        ],
+      });
+      if (!bridge) {
+        throw new Error("bridge not created");
+      }
+      const endpoint = bridge.getEndpoint();
+      await waitForListening(endpoint);
+
+      const readRecord = (directory: string) => {
+        const registrations = fs.readdirSync(directory);
+        assert.strictEqual(registrations.length, 1);
+        return JSON.parse(fs.readFileSync(path.join(directory, registrations[0]), "utf8"));
+      };
+
+      // Each record carries its own root mode and label.
+      assert.deepStrictEqual(readRecord(dir1), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws1",
+        rootMode: "workspace",
+        label: "Workspace Root",
+      });
+      assert.deepStrictEqual(readRecord(dir2), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws2",
+        rootMode: "manual",
+        label: "Manual Root",
+      });
+
+      // Refresh to a new set: the endpoint stays live, dir2's stale record is
+      // removed, and the new manual root is published with its mode/label.
+      const dir3 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+      bridge.refreshDiscoveryDirectories([
+        { directory: dir1, workspace: "/ws1", rootMode: "workspace", label: "Workspace Root" },
+        { directory: dir3, workspace: "/ws3", rootMode: "manual", label: "Manual Root" },
+      ]);
+      assert.deepStrictEqual(readRecord(dir1), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws1",
+        rootMode: "workspace",
+        label: "Workspace Root",
+      });
+      assert.strictEqual(fs.readdirSync(dir2).length, 0);
+      assert.deepStrictEqual(readRecord(dir3), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws3",
+        rootMode: "manual",
+        label: "Manual Root",
+      });
+
+      // The endpoint is still accepting connections after the refresh.
+      const socket = net.createConnection(endpoint);
+      const response = await requestResponse(socket, {
+        id: 1,
+        method: "get_problems",
+        params: {},
+      });
+      socket.end();
+      assert.strictEqual(response.ok, true);
+      assert.strictEqual(response.id, 1);
+
+      bridge.dispose();
+      fs.rmSync(dir3, { recursive: true, force: true });
+    } finally {
+      if (bridge) {
+        bridge.dispose();
+      }
+      fs.rmSync(dir1, { recursive: true, force: true });
+      fs.rmSync(dir2, { recursive: true, force: true });
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
   test("IpcBridge rejects oversized request frames and bounds responses", async () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
@@ -1103,6 +1217,7 @@ suite("mcpProblems", () => {
           ],
         ],
       ]),
+      mockMcpProblemsEnabled(),
     ];
     let bridge: IpcBridge | undefined;
     try {
@@ -1193,6 +1308,7 @@ suite("mcpProblems", () => {
           [makeDiagnostic(makeUri("/ws/a.ts"), "problem", vscode.DiagnosticSeverity.Error)],
         ],
       ]),
+      mockMcpProblemsEnabled(),
     ];
     let bridge: IpcBridge | undefined;
     try {
@@ -1231,6 +1347,7 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
     ];
     let bridge: IpcBridge | undefined;
     try {
@@ -1268,6 +1385,7 @@ suite("mcpProblems", () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
     ];
     try {
       const service = new DiagnosticsService();

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import {
   resolveTodoRoot,
+  resolveRootForCall,
   collectWorkspaceRegistrations,
 } from '../discovery.mjs';
 import { loadTodo, setTodoStatus } from '../../canvas/agendo-work-session/todos.mjs';
@@ -179,6 +180,70 @@ describe('resolveTodoRoot multi-root selection', () => {
     }
   });
 
+  it('isolates the same todo ID across a workspace root and a manual root', async () => {
+    const workspaceRoot = await mkdtemp(join(tmpdir(), 'agendo-workspace-'));
+    const manualRoot = await mkdtemp(join(tmpdir(), 'agendo-manual-'));
+    try {
+      // Workspace root: todos under docs/todos.
+      await writeTodo(workspaceRoot, '001');
+
+      // Manual root: todos read directly from the root, honoring .agendo-config.json
+      // with a custom backlogged folder.
+      await writeFile(
+        join(manualRoot, '.agendo-config.json'),
+        JSON.stringify({ backloggedFolder: 'inbox' }),
+      );
+      const inboxDir = join(manualRoot, 'inbox');
+      await mkdir(inboxDir, { recursive: true });
+      await writeFile(
+        join(inboxDir, '001-pending-p2-sample.md'),
+        '---\nstatus: pending\npriority: p2\n---\n# Manual\n\n## Problem Statement\n\nManual.\n\n## Acceptance Criteria\n\n- [ ] One\n',
+      );
+
+      const regWorkspace = registration(workspaceRoot);
+      const regManual = { ...registration(manualRoot), rootMode: 'manual', label: 'Manual Root' };
+
+      // Workspace root selected by path: workspace mode.
+      const ws = await resolveRootForCall(
+        [regWorkspace, regManual],
+        { workspaceFolder: workspaceRoot, cwd: tmpdir() },
+      );
+      assert.strictEqual(ws.workspaceRoot, workspaceRoot);
+      assert.strictEqual(ws.rootMode, 'workspace');
+      const wsTodo = await loadTodo('001', ws.workspaceRoot, ws.rootMode);
+      assert.equal(wsTodo.status, 'pending');
+
+      // Manual root selected by path: manual mode reads directly from the root.
+      const manual = await resolveRootForCall(
+        [regWorkspace, regManual],
+        { workspaceFolder: manualRoot, cwd: tmpdir() },
+      );
+      assert.strictEqual(manual.workspaceRoot, manualRoot);
+      assert.strictEqual(manual.rootMode, 'manual');
+      const manualTodo = await loadTodo('001', manual.workspaceRoot, manual.rootMode);
+      assert.equal(manualTodo.status, 'pending');
+      assert.equal(manualTodo.filePath, join(inboxDir, '001-pending-p2-sample.md'));
+
+      // Manual root selected by label.
+      const byLabel = await resolveRootForCall(
+        [regWorkspace, regManual],
+        { workspaceFolder: 'Manual Root', cwd: tmpdir() },
+      );
+      assert.strictEqual(byLabel.workspaceRoot, manualRoot);
+      assert.strictEqual(byLabel.rootMode, 'manual');
+
+      // Isolated write: set status in the manual root only; the workspace root is unchanged.
+      await setTodoStatus('001', 'in-progress', manual.workspaceRoot, manual.rootMode);
+      const manualAfter = await loadTodo('001', manual.workspaceRoot, manual.rootMode);
+      const wsAfter = await loadTodo('001', ws.workspaceRoot, ws.rootMode);
+      assert.equal(manualAfter.status, 'in-progress');
+      assert.equal(wsAfter.status, 'pending');
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+      await rm(manualRoot, { recursive: true, force: true });
+    }
+  });
+
   it('no registration returns undefined so the caller falls back to standalone CWD root', async () => {
     // Empty registry.
     assert.strictEqual(await resolveTodoRoot([], {}), undefined);
@@ -247,5 +312,99 @@ describe('collectWorkspaceRegistrations hostPid filtering', () => {
     } finally {
       await rm(registry, { recursive: true, force: true });
     }
+  });
+
+  describe('readEndpoint preserves rootMode and label', () => {
+    it('round-trips a manual registration with rootMode and label through collectWorkspaceRegistrations', async () => {
+      const registry = await mkdtemp(join(tmpdir(), 'agendo-registry-'));
+      const root = await mkdtemp(join(tmpdir(), 'agendo-manual-root-'));
+      try {
+        await writeFile(
+          join(registry, `${randomUUID()}.json`),
+          JSON.stringify({
+            endpoint: validEndpoint(),
+            hostPid: undefined,
+            workspace: root,
+            rootMode: 'manual',
+            label: 'Personal Todos',
+          }),
+        );
+
+        const records = await collectWorkspaceRegistrations(registry);
+        assert.equal(records.length, 1);
+        assert.equal(records[0].workspace, root);
+        assert.equal(records[0].rootMode, 'manual');
+        assert.equal(records[0].label, 'Personal Todos');
+
+        // Selecting by label returns the manual root with manual mode.
+        const resolved = await resolveTodoRoot([records[0]], { workspaceFolder: 'Personal Todos' });
+        assert.strictEqual(resolved, root);
+
+        // Selecting by path also works.
+        const resolvedByPath = await resolveTodoRoot([records[0]], { workspaceFolder: root });
+        assert.strictEqual(resolvedByPath, root);
+      } finally {
+        await rm(registry, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('workspace records without rootMode default to workspace mode', async () => {
+      const registry = await mkdtemp(join(tmpdir(), 'agendo-registry-'));
+      const root = await mkdtemp(join(tmpdir(), 'agendo-workspace-root-'));
+      try {
+        await writeFile(
+          join(registry, `${randomUUID()}.json`),
+          JSON.stringify({
+            endpoint: validEndpoint(),
+            hostPid: undefined,
+            workspace: root,
+            // No rootMode or label.
+          }),
+        );
+
+        const records = await collectWorkspaceRegistrations(registry);
+        assert.equal(records.length, 1);
+        assert.equal(records[0].workspace, root);
+        assert.equal(records[0].rootMode, undefined);
+        assert.equal(records[0].label, undefined);
+
+        // resolveRootForCall applies the safe default.
+        const resolved = await resolveRootForCall([records[0]], { workspaceFolder: root });
+        assert.strictEqual(resolved.workspaceRoot, root);
+        assert.strictEqual(resolved.rootMode, 'workspace');
+      } finally {
+        await rm(registry, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+      }
+    });
+
+    it('invalid rootMode values are safely defaulted to workspace', async () => {
+      const registry = await mkdtemp(join(tmpdir(), 'agendo-registry-'));
+      const root = await mkdtemp(join(tmpdir(), 'agendo-invalid-root-'));
+      try {
+        await writeFile(
+          join(registry, `${randomUUID()}.json`),
+          JSON.stringify({
+            endpoint: validEndpoint(),
+            hostPid: undefined,
+            workspace: root,
+            rootMode: 'bogus',
+          }),
+        );
+
+        const records = await collectWorkspaceRegistrations(registry);
+        assert.equal(records.length, 1);
+        assert.equal(records[0].rootMode, 'bogus');
+
+        // buildCandidates applies the safe default.
+        const resolved = await resolveRootForCall([records[0]], {});
+        assert.strictEqual(resolved.workspaceRoot, root);
+        assert.strictEqual(resolved.rootMode, 'workspace');
+      } finally {
+        await rm(registry, { recursive: true, force: true });
+        await rm(root, { recursive: true, force: true });
+      }
+    });
   });
 });

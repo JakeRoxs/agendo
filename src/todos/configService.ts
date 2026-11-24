@@ -78,16 +78,25 @@ export const TODO_FILE_PATTERN = FILENAME_RE;
 export class ConfigService {
   private workspaceState?: vscode.Memento;
   private activeFolder: vscode.WorkspaceFolder | undefined;
+  private readonly explicitRootUri?: vscode.Uri;
+  private manualRootUri: vscode.Uri | undefined;
   private canvasOpener?: (uri: vscode.Uri, returnTo?: BoardReturnTarget) => Promise<boolean>;
 
   /**
    * Constructs the config service. When `workspaceState` is provided, the
    * selected workspace folder is persisted so it survives reloads; when the
    * persisted folder is removed, the service falls back to the first folder.
+   *
+   * When `rootUri` is provided, the service is bound to that exact todo root
+   * URI and `getRootUri()` returns it directly; this is used for per-root
+   * contexts (workspace and manual) without touching the active folder state.
    */
-  constructor(workspaceState?: vscode.Memento) {
+  constructor(workspaceState?: vscode.Memento, rootUri?: vscode.Uri) {
     this.workspaceState = workspaceState;
-    this.refreshActiveFolder();
+    this.explicitRootUri = rootUri;
+    if (!rootUri) {
+      this.refreshActiveFolder();
+    }
   }
 
   /** All workspace folders, or an empty array when there is no workspace. */
@@ -140,6 +149,7 @@ export class ConfigService {
    */
   setWorkspaceFolder(folder: vscode.WorkspaceFolder | undefined): void {
     this.activeFolder = folder;
+    this.manualRootUri = undefined;
     if (this.workspaceState) {
       if (folder) {
         this.workspaceState.update("activeWorkspaceFolder", folder.uri.toString());
@@ -267,11 +277,41 @@ export class ConfigService {
 
   /** Absolute URI of the todos root folder for the active folder (or a given folder). */
   getRootUri(folder?: vscode.WorkspaceFolder): vscode.Uri | undefined {
-    const targetFolder = folder ?? this.activeFolder;
+    if (folder) {
+      // A specific folder always resolves to its own folder-scoped root, even
+      // when a manual root is currently active.
+      return vscode.Uri.joinPath(folder.uri, ...this.getRootValue(folder).split("/"));
+    }
+    if (this.manualRootUri) {
+      return this.manualRootUri;
+    }
+    if (this.explicitRootUri) {
+      return this.explicitRootUri;
+    }
+    const targetFolder = this.activeFolder;
     if (!targetFolder) {
       return undefined;
     }
     return vscode.Uri.joinPath(targetFolder.uri, ...this.getRootValue(targetFolder).split("/"));
+  }
+
+  /** The manually selected absolute todo root URI, when a manual root is
+   * active. Overrides the workspace-folder root in {@link getRootUri} when no
+   * folder is supplied. */
+  getManualRoot(): vscode.Uri | undefined {
+    return this.manualRootUri;
+  }
+
+  /** Select a manual (external) todo root as the active root. Clears the
+   * active workspace folder selection. */
+  setManualRoot(uri: vscode.Uri): void {
+    this.manualRootUri = uri;
+  }
+
+  /** Clear the manually selected root so the active workspace folder root is
+   * used again. */
+  clearManualRoot(): void {
+    this.manualRootUri = undefined;
   }
 
   /** Absolute URI of a named subfolder under the root. */
