@@ -4,19 +4,17 @@ import {
   TERMINAL_STATUSES as SharedTerminalStatuses,
   type TodoPriority,
   type TodoStatus,
-  buildFileName,
   FILENAME_RE,
   PRIORITIES,
   STATUSES,
 } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 
 export type { TodoStatus, TodoPriority };
+export { buildFileName } from "../../resources/canvas/agendo-work-session/statusLifecycle.js";
 export const TODO_STATUSES: TodoStatus[] = STATUSES as unknown as TodoStatus[];
 export const TODO_PRIORITIES: TodoPriority[] = PRIORITIES as unknown as TodoPriority[];
 export const ACTIVE_STATUSES: TodoStatus[] = SharedActiveStatuses as unknown as TodoStatus[];
 export const TERMINAL_STATUSES: TodoStatus[] = SharedTerminalStatuses as unknown as TodoStatus[];
-export { buildFileName };
-
 export const SCANNING_ID_PREFIX = { codeql: "cql", sonarqube: "sq" } as const;
 export type ScanningSource = keyof typeof SCANNING_ID_PREFIX;
 export type TodoViewScope = "todos" | "code-scanning";
