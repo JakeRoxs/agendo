@@ -26,6 +26,35 @@ import { TodoRepository } from "./todos/todoRepository";
 import { getTreeNodeKey, TodoTreeProvider, type TreeNode } from "./todos/todoTreeProvider";
 import { TreeStateService } from "./todos/treeStateService";
 
+/**
+ * Compute the per-folder MCP discovery directory entries for the current
+ * workspace. Each entry pairs a discovery directory with its folder's
+ * filesystem path so the endpoint registration record binds to the right root.
+ * The saved workspace file is registered as an alias only when it yields a
+ * distinct directory.
+ */
+function computeDiscoveryDirectories(
+  context: vscode.ExtensionContext,
+): Array<{ directory: string; workspace: string }> {
+  const localFolders =
+    vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
+  const directories = localFolders
+    .map((folder) => {
+      const directory = workspaceDiscoveryDirectory(context, folder.uri);
+      if (!directory) return undefined;
+      return { directory, workspace: folder.uri.fsPath };
+    })
+    .filter((entry): entry is { directory: string; workspace: string } => Boolean(entry));
+  const workspaceFile = vscode.workspace.workspaceFile;
+  if (workspaceFile?.scheme === "file") {
+    const fileDirectory = workspaceDiscoveryDirectory(context, workspaceFile);
+    if (fileDirectory && !directories.some((entry) => entry.directory === fileDirectory)) {
+      directories.push({ directory: fileDirectory, workspace: workspaceFile.fsPath });
+    }
+  }
+  return directories;
+}
+
 export async function activate(context: vscode.ExtensionContext) {
   out`${Settings.Identifier} activated`;
 
@@ -34,7 +63,7 @@ export async function activate(context: vscode.ExtensionContext) {
     out`Could not prepare the Agendo MCP server: ${String(error)}`;
   });
 
-  const config = new ConfigService();
+  const config = new ConfigService(context.workspaceState);
   const repository = new TodoRepository(config);
   const filter = new FilterService(context.workspaceState);
   const treeState = new TreeStateService(context.workspaceState);
@@ -85,7 +114,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(canvasViewer);
   config.setCanvasOpener(async (uri, returnTo) => {
     const todoId = /^((?:(?:cql|sq)-)?\d{3,})-/.exec(basename(uri.fsPath))?.[1];
-    const root = config.getWorkspaceFolder()?.uri.fsPath;
+    const root = config.getRootUri()?.fsPath;
     if (!todoId || !root) {
       return false;
     }
@@ -257,26 +286,30 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Expose the local diagnostics IPC endpoint to MCP configuration commands.
   // Register the bridge's endpoint under every local workspace folder (and the
-  // saved workspace file as an alias) so the MCP server can route by CWD.
-  const localFolders =
-    vscode.workspace.workspaceFolders?.filter((folder) => folder.uri.scheme === "file") ?? [];
-  const discoveryDirectories = localFolders
-    .map((folder) => workspaceDiscoveryDirectory(context, folder.uri))
-    .filter((directory): directory is string => Boolean(directory));
-  const workspaceFile = vscode.workspace.workspaceFile;
-  if (workspaceFile?.scheme === "file") {
-    const fileDirectory = workspaceDiscoveryDirectory(context, workspaceFile);
-    if (fileDirectory && !discoveryDirectories.includes(fileDirectory)) {
-      discoveryDirectories.push(fileDirectory);
-    }
-  }
-
+  // saved workspace file as an alias) so the MCP server can route by CWD. Each
+  // registration record carries its folder's filesystem path so a multi-root
+  // client can bind to the correct root without cross-root substitution.
+  const discoveryDirectories = computeDiscoveryDirectories(context);
   const problemsBridge = await IpcBridge.create({
     context,
     diagnostics: new DiagnosticsService(),
     discoveryDirectories,
   });
   context.subscriptions.push(problemsBridge);
+
+  // Reconcile the active workspace folder, todo repository, and live MCP
+  // discovery registrations whenever the workspace folder set changes
+  // (add/remove/reorder). The config service restores the persisted selection
+  // or falls back to the first folder; the repository rebinds its watcher to
+  // the new active root; the bridge republishes each folder's endpoint record
+  // without tearing down the IPC endpoint.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(async () => {
+      config.refreshActiveFolder();
+      await repository.rebindRoot();
+      problemsBridge.refreshDiscoveryDirectories(computeDiscoveryDirectories(context));
+    }),
+  );
 
   const services: CommandServices = {
     config,

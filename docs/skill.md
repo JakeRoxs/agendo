@@ -30,9 +30,11 @@ or constraints from that request directly.
 
 ## Todo conventions
 
-The skill reads `.agendo-config.json` from the configured todo root when available. Agendo writes
-that file only when settings differ from their defaults. Without it, the skill uses `docs/todos`,
-the standard lifecycle folders, and direct directory listings so git-ignored todos are still found.
+The skill first resolves the active workspace folder and todos root (folder-scoped `agendo.root`,
+defaulting to `docs/todos`), then reads `.agendo-config.json` from that resolved root only. Agendo
+writes that file only when settings differ from their defaults. Without it, the skill uses
+`docs/todos`, the standard lifecycle folders, and direct directory listings so git-ignored todos are
+still found.
 
 Todo filenames carry the ID, status, priority, and a short description:
 
@@ -52,6 +54,28 @@ are structured frontmatter, while `group`, `tags`, and an external `key` are opt
 | `backlogged` | Still open, but not part of active work |
 | `complete` | Acceptance criteria are verified |
 | `cancelled` | Abandoned or superseded |
+
+## Multi-root workspaces
+
+Agendo supports one active todo root per workspace folder. Each folder can configure its own
+`agendo.root`, and each root keeps an independent `.agendo-config.json`, ID sequence, scanner
+sequences, dependencies, groups, and assets. The same numeric ID in two roots is a distinct todo,
+and cross-root dependency references are unsupported.
+
+Resolve the workspace folder / todo root before any todo lookup, ID resolution, dependency
+traversal, import, status change, or summary. Prefer an explicit file path or task context, or the
+user's active workspace folder. In a multi-root workspace, do not assume the first folder; require
+folder selection.
+
+MCP todo tools accept an optional `workspaceFolder` (folder name or exact absolute path). When
+multiple roots are registered and the call cannot be disambiguated, the tool rejects the call
+rather than guessing. Pass `workspaceFolder` explicitly; when two folders share a basename, use the
+exact absolute path to disambiguate. The read-only diagnostics tool (`get_problems`) follows the
+same model: omit `workspaceFolder` for a single root, provide it when multiple roots are open.
+
+Use **Agendo: Choose Workspace Folder** to switch the active workspace folder (saved with the
+workspace). Use **Agendo: Choose Root** to select the todo directory within the active folder — the
+former picks the workspace folder, the latter picks the relative todo root path within it.
 
 CodeQL and SonarQube todos use separate `cql-` and `sq-` IDs and source-specific folders. The skill
 can work on those imported todos, but it does not fetch scanner alerts; use **Agendo: Import

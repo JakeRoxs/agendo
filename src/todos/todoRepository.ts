@@ -182,6 +182,12 @@ export class TodoRepository implements vscode.Disposable {
     this.watcher.onDidDelete(trigger);
   }
 
+  /** Rebind the file watcher to the current config root and refresh the cache. */
+  async rebindRoot(): Promise<void> {
+    this.startWatching();
+    await this.refresh();
+  }
+
   private scheduleRefresh(): void {
     this.cancelScheduledRefresh();
     this.refreshTimer = setTimeout(() => {

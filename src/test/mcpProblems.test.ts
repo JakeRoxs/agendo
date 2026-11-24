@@ -762,45 +762,46 @@ suite("mcpProblems", () => {
       mockGetDiagnostics([]),
     ];
     let bridge: IpcBridge | undefined;
-    const discoveryDirectory = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
-    try {
-      const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
-      const originalGetConfiguration = vscode.workspace.getConfiguration;
-      const configListeners: Array<(event: never) => void> = [];
-      let problemsEnabled = true;
-      Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
-        value: (listener: (event: never) => void) => {
-          configListeners.push(listener);
-          return { dispose() {} };
-        },
-        configurable: true,
-      });
-      Object.defineProperty(vscode.workspace, "getConfiguration", {
-        value: () => ({
-          get: (key: string, defaultValue?: unknown) =>
-            key === "mcp.problems.enabled" ? problemsEnabled : defaultValue,
-        }),
-        configurable: true,
-      });
+      const discoveryDirectory = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
       try {
-        const service = new DiagnosticsService();
-        bridge = await IpcBridge.create({
-          context: mockContext,
-          diagnostics: service,
-          discoveryDirectories: [discoveryDirectory],
+        const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
+        const originalGetConfiguration = vscode.workspace.getConfiguration;
+        const configListeners: Array<(event: never) => void> = [];
+        let problemsEnabled = true;
+        Object.defineProperty(vscode.workspace, "onDidChangeConfiguration", {
+          value: (listener: (event: never) => void) => {
+            configListeners.push(listener);
+            return { dispose() {} };
+          },
+          configurable: true,
         });
-        if (!bridge) {
-          throw new Error("bridge not created");
-        }
-        const endpoint = bridge.getEndpoint();
-        await waitForListening(endpoint);
-        const registrations = fs.readdirSync(discoveryDirectory);
-        assert.strictEqual(registrations.length, 1);
-        const recordPath = path.join(discoveryDirectory, registrations[0]);
-        assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), {
-          endpoint,
-          hostPid: process.pid,
+        Object.defineProperty(vscode.workspace, "getConfiguration", {
+          value: () => ({
+            get: (key: string, defaultValue?: unknown) =>
+              key === "mcp.problems.enabled" ? problemsEnabled : defaultValue,
+          }),
+          configurable: true,
         });
+        try {
+          const service = new DiagnosticsService();
+          bridge = await IpcBridge.create({
+            context: mockContext,
+            diagnostics: service,
+            discoveryDirectories: [{ directory: discoveryDirectory, workspace: "/ws" }],
+          });
+          if (!bridge) {
+            throw new Error("bridge not created");
+          }
+          const endpoint = bridge.getEndpoint();
+          await waitForListening(endpoint);
+          const registrations = fs.readdirSync(discoveryDirectory);
+          assert.strictEqual(registrations.length, 1);
+          const recordPath = path.join(discoveryDirectory, registrations[0]);
+          assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), {
+            endpoint,
+            hostPid: process.pid,
+            workspace: "/ws",
+          });
 
         // The private temp directory is only meaningful on Unix; Windows uses
         // an OS named pipe with no per-window temp directory.
@@ -868,8 +869,8 @@ suite("mcpProblems", () => {
     ];
     let bridge: IpcBridge | undefined;
     const discoveryDirectories = [
-      fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")),
-      fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")),
+      { directory: fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")), workspace: "/ws1" },
+      { directory: fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-")), workspace: "/ws2" },
     ];
     try {
       const originalOnDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration;
@@ -903,20 +904,22 @@ suite("mcpProblems", () => {
         const endpoint = bridge.getEndpoint();
         await waitForListening(endpoint);
 
-        // One registration per discovery directory, same endpoint + hostPid.
-        for (const directory of discoveryDirectories) {
+        // One registration per discovery directory, same endpoint + hostPid,
+        // each carrying its own workspace path without cross-substitution.
+        for (const { directory, workspace } of discoveryDirectories) {
           const registrations = fs.readdirSync(directory);
           assert.strictEqual(registrations.length, 1);
           const recordPath = path.join(directory, registrations[0]);
           assert.deepStrictEqual(JSON.parse(fs.readFileSync(recordPath, "utf8")), {
             endpoint,
             hostPid: process.pid,
+            workspace,
           });
         }
 
         // Terminal disposal cleans up registrations in every directory.
         bridge.dispose();
-        for (const directory of discoveryDirectories) {
+        for (const { directory } of discoveryDirectories) {
           assert.deepStrictEqual(fs.readdirSync(directory), []);
         }
       } finally {
@@ -936,9 +939,147 @@ suite("mcpProblems", () => {
         }
       }
     } finally {
-      for (const directory of discoveryDirectories) {
+      for (const { directory } of discoveryDirectories) {
         fs.rmSync(directory, { recursive: true, force: true });
       }
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("bridge publishes each discovery directory's own workspace path without cross-root substitution", async () => {
+    const restore = [
+      mockWorkspaceFolders([
+        { uri: makeUri("/ws1"), name: "ws1", index: 0 },
+        { uri: makeUri("/ws2"), name: "ws2", index: 1 },
+      ]),
+      mockGetDiagnostics([]),
+    ];
+    let bridge: IpcBridge | undefined;
+    const dir1 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    const dir2 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    try {
+      const service = new DiagnosticsService();
+      bridge = await IpcBridge.create({
+        context: mockContext,
+        diagnostics: service,
+        discoveryDirectories: [
+          { directory: dir1, workspace: "/ws1" },
+          { directory: dir2, workspace: "/ws2" },
+        ],
+      });
+      if (!bridge) {
+        throw new Error("bridge not created");
+      }
+      const endpoint = bridge.getEndpoint();
+      await waitForListening(endpoint);
+
+      const readRecord = (directory: string) => {
+        const registrations = fs.readdirSync(directory);
+        assert.strictEqual(registrations.length, 1);
+        return JSON.parse(fs.readFileSync(path.join(directory, registrations[0]), "utf8"));
+      };
+
+      // Each record maps to its own root: no cross-root substitution.
+      assert.deepStrictEqual(readRecord(dir1), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws1",
+      });
+      assert.deepStrictEqual(readRecord(dir2), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws2",
+      });
+
+      bridge.dispose();
+    } finally {
+      if (bridge) {
+        bridge.dispose();
+      }
+      fs.rmSync(dir1, { recursive: true, force: true });
+      fs.rmSync(dir2, { recursive: true, force: true });
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("bridge refreshes discovery directories while the endpoint stays live", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
+      mockGetDiagnostics([]),
+    ];
+    let bridge: IpcBridge | undefined;
+    const dir1 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    const dir2 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    const dir3 = fs.mkdtempSync(path.join(tmpdir(), "agendo-discovery-test-"));
+    try {
+      const service = new DiagnosticsService();
+      bridge = await IpcBridge.create({
+        context: mockContext,
+        diagnostics: service,
+        discoveryDirectories: [{ directory: dir1, workspace: "/ws1" }],
+      });
+      if (!bridge) {
+        throw new Error("bridge not created");
+      }
+      const endpoint = bridge.getEndpoint();
+      await waitForListening(endpoint);
+
+      const readRecord = (directory: string) => {
+        const registrations = fs.readdirSync(directory);
+        assert.strictEqual(registrations.length, 1);
+        return JSON.parse(fs.readFileSync(path.join(directory, registrations[0]), "utf8"));
+      };
+
+      // Initial: only dir1 registered.
+      assert.deepStrictEqual(readRecord(dir1), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws1",
+      });
+      assert.strictEqual(fs.readdirSync(dir2).length, 0);
+      assert.strictEqual(fs.readdirSync(dir3).length, 0);
+
+      // Refresh to a new set: dir1 + dir2. The endpoint stays live and dir3 is
+      // never touched; stale registrations are unlinked.
+      bridge.refreshDiscoveryDirectories([
+        { directory: dir1, workspace: "/ws1" },
+        { directory: dir2, workspace: "/ws2" },
+      ]);
+      assert.deepStrictEqual(readRecord(dir1), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws1",
+      });
+      assert.deepStrictEqual(readRecord(dir2), {
+        endpoint,
+        hostPid: process.pid,
+        workspace: "/ws2",
+      });
+      assert.strictEqual(fs.readdirSync(dir3).length, 0);
+
+      // The endpoint is still accepting connections after the refresh.
+      const socket = net.createConnection(endpoint);
+      const response = await requestResponse(socket, {
+        id: 1,
+        method: "get_problems",
+        params: {},
+      });
+      socket.end();
+      assert.strictEqual(response.ok, true);
+      assert.strictEqual(response.id, 1);
+
+      bridge.dispose();
+    } finally {
+      if (bridge) {
+        bridge.dispose();
+      }
+      fs.rmSync(dir1, { recursive: true, force: true });
+      fs.rmSync(dir2, { recursive: true, force: true });
+      fs.rmSync(dir3, { recursive: true, force: true });
       for (const r of restore) {
         r();
       }

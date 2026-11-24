@@ -400,7 +400,6 @@ describe('Settings button and page', () => {
         backloggedFolder: 'backlog',
         cancelledFolder: 'cancelled',
         completedFolder: 'completed',
-        codeScanningEnabled: true
       },
       viewOptions: { groupBy: 'status', sortByDate: true }
     });
@@ -409,7 +408,6 @@ describe('Settings button and page', () => {
     assert.ok(html.includes('docs/todos'), 'Should show root folder');
     assert.match(html, /data-setting="set-gitignored" checked/, 'Should show current gitignore setting');
     assert.ok(html.includes('backlog'), 'Should show backlog folder');
-    assert.match(html, /data-setting="set-code-scanning-enabled" checked/, 'Should show code scanning enabled');
     assert.ok(html.includes('Extension Settings'), 'Should have extension settings section');
     assert.ok(html.includes('Tree grouping'), 'Should show grouping setting');
   });

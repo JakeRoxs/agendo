@@ -52,7 +52,11 @@ function configFake(root = "docs/todos"): ConfigFake {
     cancelledFolder: "cancelled",
     completedFolder: "completed",
     viewMode: "preview",
-    codeScanningEnabled: false,
+    getWorkspaceFolder: () => ({
+      uri: vscode.Uri.file("/workspace"),
+      name: "workspace",
+      index: 0,
+    }),
     get writeConfigFileCalls() {
       return writeConfigFileCalls;
     },

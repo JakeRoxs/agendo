@@ -620,6 +620,12 @@ suite("scanning refresh command", () => {
       },
       restore,
     );
+    mock(
+      vscode.window,
+      "showQuickPick",
+      async () => undefined,
+      restore,
+    );
     const callbacks = new Map<string, (...args: any[]) => Promise<void>>();
     const subscriptions: vscode.Disposable[] = [];
     let refreshCount = 0;

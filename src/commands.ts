@@ -50,6 +50,7 @@ export enum Command {
   SetGroup = "agendo.setGroup",
   DeleteTodo = "agendo.deleteTodo",
   ChooseRoot = "agendo.chooseRoot",
+  ChooseWorkspaceFolder = "agendo.chooseWorkspaceFolder",
   ToggleGitignore = "agendo.toggleGitignore",
   SetDefaultRoot = "agendo.setDefault.root",
   SetDefaultPriority = "agendo.setDefault.priority",

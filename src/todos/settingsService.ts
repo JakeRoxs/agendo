@@ -48,7 +48,7 @@ function isValidSourceUrl(value: string): boolean {
  */
 export class SettingsService {
   private readonly get: <T>(key: Settings) => T;
-  private readonly set: (key: Settings, value: unknown) => PromiseLike<void>;
+  private readonly set: (key: Settings, value: unknown, folder?: vscode.WorkspaceFolder) => PromiseLike<void>;
   private readonly setDefault: (key: Settings, value: unknown) => PromiseLike<void>;
   private readonly executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
   private readonly config: ConfigService;
@@ -64,7 +64,7 @@ export class SettingsService {
 
   constructor(context: {
     get: <T>(key: Settings) => T;
-    set: (key: Settings, value: unknown) => PromiseLike<void>;
+    set: (key: Settings, value: unknown, folder?: vscode.WorkspaceFolder) => PromiseLike<void>;
     setDefault: (key: Settings, value: unknown) => PromiseLike<void>;
     executeCommand: (command: string, ...args: unknown[]) => Promise<unknown>;
     config: ConfigService;
@@ -108,7 +108,6 @@ export class SettingsService {
         backloggedFolder: this.config.backloggedFolder,
         cancelledFolder: this.config.cancelledFolder,
         completedFolder: this.config.completedFolder,
-        codeScanningEnabled: this.get<boolean>(Settings.CodeScanningEnabled),
         sonarQubeUrl: this.get<string>(Settings.SonarQubeUrl),
         sonarQubeProjectKey: this.get<string>(Settings.SonarQubeProjectKey),
       },
@@ -169,7 +168,6 @@ export class SettingsService {
       case "set-backlogged-folder":
       case "set-cancelled-folder":
       case "set-completed-folder":
-      case "set-code-scanning-enabled":
         return this.handleFolderSetting(action, payload);
       case "set-sonarqube-url":
       case "set-sonarqube-project-key":
@@ -298,9 +296,11 @@ export class SettingsService {
   ): Promise<SettingsActionResult> {
     let key: Settings;
     let value: unknown;
+    let folder: vscode.WorkspaceFolder | undefined;
     if (action === "set-root") {
       value = this.requireRelativePath(payload, "value");
       key = Settings.Root;
+      folder = this.config.getWorkspaceFolder();
     } else if (action === "set-gitignored") {
       value = this.requireBoolean(payload, "value");
       key = Settings.GitignoreTodos;
@@ -314,10 +314,9 @@ export class SettingsService {
       value = this.requireFolderName(payload, "value");
       key = Settings.CompletedFolder;
     } else {
-      value = this.requireBoolean(payload, "value");
-      key = Settings.CodeScanningEnabled;
+      throw new Error(`Unknown folder setting: ${action}`);
     }
-    await this.set(key, value);
+    await this.set(key, value, folder);
     await this.refreshConfigProjection();
     await this.repository.refresh();
     return { success: true };
@@ -511,7 +510,6 @@ export interface SettingsInfo {
     backloggedFolder: string;
     cancelledFolder: string;
     completedFolder: string;
-    codeScanningEnabled: boolean;
     sonarQubeUrl: string;
     sonarQubeProjectKey: string;
   };

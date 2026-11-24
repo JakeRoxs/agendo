@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
+import { statSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
@@ -39,6 +40,10 @@ async function readEndpoint(fullPath, name) {
     return {
       endpoint: record.endpoint,
       hostPid: Number.isSafeInteger(record.hostPid) && record.hostPid > 1 ? record.hostPid : undefined,
+      // Preserve the workspace path published by the bridge so consumers can
+      // bind the endpoint to a specific workspace root. Old records without the
+      // field yield undefined and are ignored by todo-root resolution.
+      workspace: typeof record.workspace === 'string' ? record.workspace : undefined,
     };
   } catch (error) {
     if (error.code === 'ENOENT' || error instanceof SyntaxError) return undefined;
@@ -151,4 +156,86 @@ export async function discoverEndpoint(directory, options = {}) {
   const candidates = selectHostRecords(records, hostPid);
   const scoped = scopeToWorkspace(candidates, cwdIdentity);
   return selectEndpoint(await liveEndpoints(scoped), { hostPid, cwdIdentity });
+}
+
+/**
+ * Collect registration records that carry a workspace path, optionally filtered
+ * by host PID. Host PID filtering mirrors the diagnostics endpoint: when a PID
+ * is supplied (Kilo), only registrations from that host are considered and the
+ * absence of a match is reported as `editor_unavailable` rather than falling
+ * back to another window. Records without a workspace path are ignored.
+ */
+export async function collectWorkspaceRegistrations(directory, hostPid) {
+  const records = await collectRegistrations(directory);
+  const candidates = selectHostRecords(records, hostPid);
+  return candidates.filter((record) => record.workspace !== undefined);
+}
+
+/**
+ * Resolve the todo root for an MCP invocation from registration records.
+ *
+ * `registrations` are registration records (with workspace paths) already
+ * filtered by host PID when in Kilo mode. Duplicate registrations for the same
+ * workspace path are collapsed into one candidate.
+ *
+ * `workspaceFolder` is optional: a folder name (basename) or exact path.
+ *
+ * Returns the resolved workspace root path, or `undefined` when no editor
+ * registration exists (caller should use the standalone fallback).
+ *
+ * Throws:
+ * - `invalid_input: ...` when `workspaceFolder` names no registered folder.
+ * - `ambiguous_root: ...` when multiple registered folders match.
+ */
+export function resolveTodoRoot(registrations, { workspaceFolder, cwd }) {
+  // Deduplicate by workspace path; only registrations that carry a path.
+  const workspaceMap = new Map();
+  for (const r of registrations) {
+    if (r.workspace !== undefined) workspaceMap.set(r.workspace, r);
+  }
+  const candidates = [...workspaceMap.values()];
+
+  // Exclude workspace-file aliases: the workspace must be an existing
+  // directory. A `.code-workspace` file is a file, not a todo root.
+  const folderCandidates = candidates.filter((r) => {
+    try {
+      return statSync(r.workspace).isDirectory();
+    } catch {
+      return false;
+    }
+  });
+
+  if (workspaceFolder !== undefined) {
+    const matches = folderCandidates.filter((r) => {
+      const workspace = r.workspace;
+      if (workspace === workspaceFolder) return true;
+      if (basename(workspace) === workspaceFolder) return true;
+      return normalizePath(workspace) === normalizePath(resolve(workspaceFolder));
+    });
+    if (matches.length === 0) {
+      throw new Error(`invalid_input: No registered workspace folder matches "${workspaceFolder}".`);
+    }
+    if (matches.length > 1) {
+      throw new Error(`ambiguous_root: Multiple registered workspace folders match "${workspaceFolder}".`);
+    }
+    return matches[0].workspace;
+  }
+
+  // No workspaceFolder: prefer CWD identity match, then sole root.
+  const cwdIdentity = cwd ? workspaceIdentity(resolve(cwd)) : undefined;
+  if (cwdIdentity !== undefined) {
+    const cwdMatches = folderCandidates.filter((r) => r.workspace && workspaceIdentity(r.workspace) === cwdIdentity);
+    if (cwdMatches.length === 1) return cwdMatches[0].workspace;
+    if (cwdMatches.length > 1) {
+      throw new Error(`ambiguous_root: Multiple registered workspace folders match the current directory.`);
+    }
+  }
+
+  if (folderCandidates.length === 1) return folderCandidates[0].workspace;
+  if (folderCandidates.length > 1) {
+    throw new Error(`ambiguous_root: Multiple registered workspace folders exist; specify workspaceFolder to select one.`);
+  }
+
+  // No editor registration: caller uses standalone fallback.
+  return undefined;
 }

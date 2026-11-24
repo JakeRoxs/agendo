@@ -20,7 +20,12 @@ const REQUEST_TIMEOUT = 30_000; // 30 seconds
 export interface IpcBridgeOptions {
   context: vscode.ExtensionContext;
   diagnostics: DiagnosticsService;
-  discoveryDirectories?: string[];
+  /**
+   * One entry per local discovery directory. `workspace` is the folder's
+   * filesystem path and is published in the endpoint registration record so the
+   * MCP server can bind the bridge to a specific workspace root.
+   */
+  discoveryDirectories?: Array<{ directory: string; workspace: string }>;
 }
 
 /**
@@ -69,7 +74,7 @@ export class IpcBridge implements vscode.Disposable {
   private readonly context: vscode.ExtensionContext;
   private readonly diagnostics: DiagnosticsService;
   private configListener: vscode.Disposable | undefined;
-  private readonly discoveryDirectories: string[] | undefined;
+  private readonly discoveryDirectories: Array<{ directory: string; workspace: string }> | undefined;
   private readonly registrations: Array<vscode.Disposable> = [];
 
   /**
@@ -114,6 +119,29 @@ export class IpcBridge implements vscode.Disposable {
   /** Endpoint the MCP server connects to via `--endpoint`. */
   getEndpoint(): string {
     return this.endpoint;
+  }
+
+  /**
+   * Replace the live discovery registrations with the supplied directories.
+   * Existing registrations are disposed; the endpoint itself is left running so
+   * MCP clients keep their connection. No-op when the bridge is not listening.
+   */
+  refreshDiscoveryDirectories(directories: Array<{ directory: string; workspace: string }>): void {
+    for (const registration of this.registrations) {
+      try {
+        registration.dispose();
+      } catch (error) {
+        out`Failed to remove diagnostics endpoint registration: ${error}`;
+      }
+    }
+    this.registrations.length = 0;
+    if (!this.listening) {
+      return;
+    }
+    for (const { directory, workspace } of directories) {
+      const registration = publishEndpoint(directory, this.endpoint, workspace);
+      this.registrations.push(registration);
+    }
   }
 
   /** Terminal disposal: stop listening, drop the config listener, clean up. */
@@ -197,8 +225,8 @@ export class IpcBridge implements vscode.Disposable {
         return;
       }
       if (this.discoveryDirectories) {
-        for (const directory of this.discoveryDirectories) {
-          const registration = publishEndpoint(directory, this.endpoint);
+        for (const { directory, workspace } of this.discoveryDirectories) {
+          const registration = publishEndpoint(directory, this.endpoint, workspace);
           this.registrations.push(registration);
         }
       }

@@ -54,6 +54,13 @@ function writeRegistration(directory: string, filename: string, content: string)
   }
 }
 
+/**
+ * Publish an IPC endpoint registration record under `directory`. When a
+ * `workspacePath` is supplied, the record carries the normalized absolute
+ * filesystem path under the `workspace` field so a discovery consumer can bind
+ * the endpoint to a specific workspace root. Standalone calls without a path
+ * keep the prior `{ endpoint, hostPid }` shape.
+ */
 export function publishEndpoint(
   directory: string,
   endpoint: string,
@@ -61,11 +68,16 @@ export function publishEndpoint(
 ): vscode.Disposable {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
   const filename = `${randomUUID()}.json`;
-  const record = {
+  const record: Record<string, unknown> = {
     endpoint,
     hostPid: process.pid,
-    ...(workspacePath ? { workspace: workspacePath } : {}),
   };
+  if (workspacePath !== undefined) {
+    if (!isAbsolute(workspacePath)) {
+      throw new Error(`workspace path must be an absolute filesystem path: ${workspacePath}`);
+    }
+    record.workspace = normalizePath(workspacePath);
+  }
   writeRegistration(directory, filename, JSON.stringify(record));
   return {
     dispose: () => rmSync(join(directory, filename), { force: true }),

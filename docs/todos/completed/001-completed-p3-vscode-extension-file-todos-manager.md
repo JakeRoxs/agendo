@@ -240,8 +240,8 @@ Adding `backlogged` is a contract change and must be reflected in
 
 ## Acceptance Criteria
 
-- [x] Decision recorded for extension project location.
-- [x] `file-todos` SKILL.md updated to add `backlogged` + `docs/todos/backlog/` folder. *(bundled `resources/skill/SKILL.md`)*
+- [ ] Decision recorded for extension project location.
+- [ ] `file-todos` SKILL.md updated to add `backlogged` + `docs/todos/backlog/` folder. *(bundled `resources/skill/SKILL.md`)*
 - [x] `file-todos` SKILL.md updated to formalize `cancelled` + `docs/todos/cancelled/` folder. *(bundled skill; one-time migration of existing cancelled files belongs to the source repo, `docs/todos` of the source project, and is out of scope here.)*
 - [x] `file-todos` SKILL.md updated to read `.todos-config.json` (root + gitignored discovery strategy). *(bundled skill)*
 - [x] (Build phase) TreeView groups todos by status → priority with icons/colors.

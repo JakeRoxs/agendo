@@ -27,10 +27,11 @@ Flesh out the settings canvas page (`resources/canvas/agendo-work-session/settin
 - Default root input
 - Default priority selector
 - Default preview selector
-- Code scanning enabled toggle
 - Lifecycle folder names, SonarQube connection preferences, dependency-node and criteria-change preferences
 - Skill/canvas update source preferences and bundled-update notifications, outside the unchanged update action sections
 - Independent Todos and Code Scanning board column visibility controls, replacing the board toolbar's Hidden/Show controls
+
+> Retired: the "Code scanning enabled toggle" planned here is superseded by todo 069, which removes the persistent `agendo.codeScanning.enabled` gate entirely. Scanning runs only on manual invocation via **Import Code-Scanning Todos**, so no enabled/disabled control is needed.
 
 Extend `resources/canvas/agendo-work-session/assets/settings.js` to POST explicit typed values to `/settings/action`. The extension delegates validated updates to `SettingsService`. Mutations reload the Settings page to show persisted values; navigation actions avoid reloading. Keep the old command-palette settings as fallbacks.
 

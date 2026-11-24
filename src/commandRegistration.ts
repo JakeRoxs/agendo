@@ -287,16 +287,6 @@ async function runCodeScanningImport(
     );
     return;
   }
-  if (!config.codeScanningEnabled) {
-    const choice = await vscode.window.showInformationMessage(
-      "Enable optional code-scanning imports for this workspace? Scans are fetched only when you run this command.",
-      "Enable",
-    );
-    if (choice !== "Enable") {
-      return;
-    }
-    await set(Settings.CodeScanningEnabled, true);
-  }
   const source = await vscode.window.showQuickPick(
     [
       {
@@ -1092,7 +1082,7 @@ function registerTodoCommands(
 }
 
 function registerConfigCommands(register: Register, services: CommandServices): void {
-  const { config } = services;
+  const { config, repository } = services;
 
   register(Command.OpenSettings, async (scope?: unknown) => {
     const root = config.getWorkspaceFolder()?.uri.fsPath;
@@ -1106,6 +1096,10 @@ function registerConfigCommands(register: Register, services: CommandServices): 
   });
 
   register(Command.ChooseRoot, async () => {
+    const folder = config.getWorkspaceFolder();
+    if (!folder) {
+      return;
+    }
     const value = await vscode.window.showInputBox({
       prompt: "Workspace-relative path to the todos root folder",
       value: config.root,
@@ -1113,10 +1107,46 @@ function registerConfigCommands(register: Register, services: CommandServices): 
     if (value === undefined) {
       return;
     }
-    await set(Settings.Root, value.trim() || "docs/todos");
+    await set(Settings.Root, value.trim() || "docs/todos", folder);
+    await config.writeConfigFile();
+    await config.applyGitignore();
+    await repository.rebindRoot();
+  });
+  register(Command.ChooseWorkspaceFolder, async () => {
+    const folders = config.workspaceFolders;
+    if (folders.length === 0) {
+      vscode.window.showInformationMessage("No workspace folders available.");
+      return;
+    }
+    const items = folders.map((folder) => {
+      const rootUri = config.getRootUri(folder);
+      const rootPath = rootUri?.fsPath || folder.uri.fsPath;
+      return {
+        label: folder.name,
+        description: rootPath,
+        folder,
+      };
+    });
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: "Select a workspace folder for todos",
+    });
+    if (!picked) {
+      return;
+    }
+    config.setWorkspaceFolder(picked.folder);
+    await config.writeConfigFile();
+    await config.applyGitignore();
+    await repository.rebindRoot();
+    const rootUri = config.getRootUri();
+    vscode.window.showInformationMessage(
+      `Active folder: ${picked.folder.name}\nTodos root: ${rootUri?.fsPath || "none"}`,
+    );
   });
   register(Command.ToggleGitignore, async () => {
     await set(Settings.GitignoreTodos, !config.gitignored);
+    await config.writeConfigFile();
+    await config.applyGitignore();
+    await repository.refresh();
   });
   register(Command.SetViewMode, async () => {
     const currentMode = config.viewMode;
