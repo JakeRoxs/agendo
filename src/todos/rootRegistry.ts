@@ -225,7 +225,7 @@ export class TodoRootRegistry {
       : descriptor.uri.fsPath;
     const rootMode = descriptor.source === "workspace" ? "workspace" : "manual";
     config.setCanvasOpener(async (uri, returnTo) => {
-      const todoId = /^((?:(?:cql|sq)-)?\d{3,})-/.exec(path.basename(uri.fsPath))?.[1];
+      const todoId = /^((?:cql-|sq-)?\d{3,})-/.exec(path.basename(uri.fsPath))?.[1];
       if (!todoId || !workspaceRoot) {
         return false;
       }

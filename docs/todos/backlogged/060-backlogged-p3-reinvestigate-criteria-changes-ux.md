@@ -1,5 +1,5 @@
 ---
-status: ready
+status: backlogged
 priority: p3
 issue_id: "060"
 tags: [canvas, ux, criteria]

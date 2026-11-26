@@ -442,6 +442,42 @@ suite("MultiRootTreeProvider", () => {
     registry.dispose();
   });
 
+  test("root persistence hash uses Unicode code points for BMP and astral paths", async () => {
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-unicode-"));
+    const restoreBase = () => fs.rm(baseDir, { recursive: true, force: true });
+    restore.push(restoreBase);
+    const paths = ["bmp-é", "astral-🧭"].map((name) => path.join(baseDir, name));
+    const folders = paths.map((fsPath, index) => makeFolder(`unicode-${index}`, fsPath));
+    const { registry, provider, memento, restore: cleanup } = await setupRegistry(
+      folders,
+      [],
+      paths.map((fsPath) => ({ dir: path.join(fsPath, "docs", "todos"), files: [] })),
+    );
+    restore.push(cleanup);
+
+    registry.setMode("multi");
+    const roots = provider.getChildren() as RootNode[];
+    assert.strictEqual(roots.length, paths.length);
+    for (const root of roots) {
+      let expectedHash = 0;
+      for (const char of root.rootId) {
+        expectedHash = Math.trunc(expectedHash * 31 + (char.codePointAt(0) ?? 0));
+        expectedHash %= 4_294_967_296;
+        if (expectedHash >= 2_147_483_648) expectedHash -= 4_294_967_296;
+        else if (expectedHash < -2_147_483_648) expectedHash += 4_294_967_296;
+      }
+      const expectedSuffix = `r${Math.abs(expectedHash).toString(36)}`;
+      provider.collapse(root);
+      assert.deepStrictEqual(
+        memento.get(`agendo.tree.collapsed.roots.${expectedSuffix}`),
+        [root.rootId],
+      );
+    }
+
+    provider.dispose();
+    registry.dispose();
+  });
+
   test("root-container collapsed state persists per root across reconstruction", async () => {
     const dir1 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-persist-root1-"));
     const dir2 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-persist-root2-"));

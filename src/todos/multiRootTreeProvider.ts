@@ -37,9 +37,9 @@ function encodeRootId(rootId: string): string {
   for (const char of rootId) {
     const next = Math.trunc((hash * 31) + (char.codePointAt(0) ?? 0));
     // Preserve the signed 32-bit wraparound of the previous `| 0` hash step.
-    hash = next % 4294967296;
-    if (hash >= 2147483648) hash -= 4294967296;
-    else if (hash < -2147483648) hash += 4294967296;
+    hash = next % 4_294_967_296;
+    if (hash >= 2_147_483_648) hash -= 4_294_967_296;
+    else if (hash < -2_147_483_648) hash += 4_294_967_296;
   }
   return `r${Math.abs(hash).toString(36)}`;
 }

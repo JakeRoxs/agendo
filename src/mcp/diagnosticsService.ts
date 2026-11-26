@@ -241,13 +241,7 @@ export class DiagnosticsService {
 
     const matched = this.collectMatching(folder.uri, targetUri, severitySet, all);
 
-    const total = matched.length;
-    let truncated = false;
-    let limited = matched;
-    if (total > limit) {
-      truncated = true;
-      limited = matched.slice(0, limit);
-    }
+    const { total, truncated, diagnostics: limited } = this.limitDiagnostics(matched, limit);
 
     const diagnostics = this.buildDiagnostics(folder.uri, limited);
 
@@ -257,6 +251,19 @@ export class DiagnosticsService {
       total,
       truncated,
       diagnostics,
+    };
+  }
+
+  private limitDiagnostics<T>(matched: T[], limit: number): {
+    total: number;
+    truncated: boolean;
+    diagnostics: T[];
+  } {
+    const total = matched.length;
+    return {
+      total,
+      truncated: total > limit,
+      diagnostics: total > limit ? matched.slice(0, limit) : matched,
     };
   }
 

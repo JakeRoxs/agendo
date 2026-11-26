@@ -69,19 +69,22 @@ function computeDiscoveryDirectories(
   // a file, so it is never a todo root (resolveTodoRoot excludes
   // non-directories), but it still anchors the endpoint for CWD-based routing.
   const workspaceFile = vscode.workspace.workspaceFile;
+  let workspaceAlias:
+    | { directory: string; workspace: string; rootMode: "workspace"; label: string }
+    | undefined;
   if (workspaceFile?.scheme === "file") {
     const fileDirectory = workspaceDiscoveryDirectory(context, workspaceFile);
     if (fileDirectory && !directories.some((entry) => entry.directory === fileDirectory)) {
-      directories.push({
+      workspaceAlias = {
         directory: fileDirectory,
         workspace: workspaceFile.fsPath,
         rootMode: "workspace",
         label: path.basename(workspaceFile.fsPath),
-      });
+      };
     }
   }
 
-  return directories;
+  return workspaceAlias ? [...directories, workspaceAlias] : directories;
 }
 
 export async function activate(context: vscode.ExtensionContext) {
