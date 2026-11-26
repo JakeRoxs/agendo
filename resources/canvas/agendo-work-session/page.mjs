@@ -330,7 +330,7 @@ export function renderCanvas(todo, relations, nav, actions = {}, groups = [], pr
   <link rel="stylesheet" href="/page.css"></head>
   <body data-todo-id="${escapeHtml(todo.id)}" data-status="${escapeHtml(todo.status)}" data-percent="${percent}">
     <main>
-      ${navigation || editButton || settingsButton || copyContextButton ? `<div class="canvas-toolbar">${navigation}${editButton}${copyContextButton}${settingsButton}</div>` : ''}
+      ${navigation || editButton || settingsButton || copyContextButton ? `<div class="canvas-toolbar">${navigation}<div class="toolbar-actions">${editButton}${copyContextButton}${settingsButton}</div></div>` : ''}
       ${validationBanner}
       <h1><span class="todo-id">#${escapeHtml(displayId(todo.id))}</span>${escapeHtml(displayTitle(todo))}</h1>
       <div class="meta">
@@ -403,7 +403,7 @@ export function renderGroupCanvas(groupName, members, nav, actions = {}, filters
   <link rel="stylesheet" href="/page.css"></head>
   <body data-group="${escapeHtml(groupName)}">
     <main>
-      ${navigation || settingsButton ? `<div class="canvas-toolbar">${navigation}${settingsButton}</div>` : ''}
+      ${navigation || settingsButton ? `<div class="canvas-toolbar">${navigation}<div class="toolbar-actions">${settingsButton}</div></div>` : ''}
       ${filterBanner}
       <h1><span class="group-id">Group:</span> ${escapeHtml(groupName)}</h1>
       <div class="meta">

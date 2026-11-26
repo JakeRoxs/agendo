@@ -87,6 +87,68 @@ describe('criterion parsing', () => {
   });
 });
 
+describe('work log ordering', () => {
+  const { root, todosDir } = makeRoot();
+  after(() => rmSync(root, { recursive: true, force: true }));
+
+  it('sorts timestamped entries newest-first and treats legacy dates as day-start UTC', () => {
+    writeTodo(todosDir, '001', 'pending', 'p3', 'status: pending\npriority: p3\n', [
+      '# Test',
+      '',
+      '## Work Log',
+      '',
+      '### 2026-02-02',
+      'legacy newer day',
+      '',
+      '### 2026-02-01T22:30:00-05:00',
+      'late timestamp',
+      '',
+      '### 2026-02-02T01:00:00Z',
+      'early timestamp',
+      '',
+      '### 2026-02-01',
+      'legacy older day',
+      '',
+    ].join('\n'));
+    const todo = loadTodo('001', root);
+    assert.deepStrictEqual(todo.workLog.map(entry => entry.content), [
+      'late timestamp',
+      'early timestamp',
+      'legacy newer day',
+      'legacy older day',
+    ]);
+    assert.deepStrictEqual(todo.workLog.map(entry => entry.date), [
+      '2026-02-01T22:30:00-05:00',
+      '2026-02-02T01:00:00Z',
+      '2026-02-02',
+      '2026-02-01',
+    ]);
+  });
+
+  it('sorts same-day timestamp headings by instant and keeps ties in source order', () => {
+    writeTodo(todosDir, '002', 'pending', 'p3', 'status: pending\npriority: p3\n', [
+      '# Test',
+      '',
+      '## Work Log',
+      '',
+      '### 2026-02-02T10:00:00Z',
+      'first',
+      '',
+      '### 2026-02-02T12:00:00+02:00',
+      'same instant',
+      '',
+      '### 2026-02-02T11:00:00Z',
+      'latest',
+      '',
+    ].join('\n'));
+    assert.deepStrictEqual(loadTodo('002', root).workLog.map(entry => entry.content), [
+      'latest',
+      'first',
+      'same instant',
+    ]);
+  });
+});
+
 describe('dependency parsing', () => {
   const { root, todosDir } = makeRoot();
   after(() => rmSync(root, { recursive: true, force: true }));

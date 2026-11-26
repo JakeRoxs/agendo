@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { loadTodo, loadGroupTodos, setTodoStatus } from '../todos.mjs';
 import { renderCanvas, renderGroupCanvas } from '../page.mjs';
 import { assertViewExists, assertViewSupported, createInstanceServer, listen, normalizeFilters, normalizeView, navigate, step } from '../server.mjs';
-import { writeFileSync, rmSync, mkdirSync, mkdtempSync, existsSync } from 'node:fs';
+import { writeFileSync, rmSync, mkdirSync, mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -330,6 +330,14 @@ describe('loadGroupTodos', () => {
 import { renderSettingsPage } from '../settings.mjs';
 
 describe('Settings button and page', () => {
+  it('collapses shared toolbar action labels only when its container is narrow', () => {
+    const css = readFileSync(new URL('../assets/page.css', import.meta.url), 'utf8');
+    assert.match(css, /container-type:\s*inline-size/);
+    assert.match(css, /@container\s*\(max-width:\s*620px\)/);
+    assert.match(css, /\.toolbar-actions\s+\.edit-button>span\s*\{\s*display:\s*none/);
+    assert.match(css, /\.edit-button\s*>\s*span\s*\{[^}]*display:\s*inline-block/);
+  });
+
   it('renders settings button in todo canvas toolbar', () => {
     const todo = {
       id: '001',
@@ -345,10 +353,12 @@ describe('Settings button and page', () => {
       dependencies: [],
       scan: { source: undefined, scope: undefined, grouping: undefined, target: undefined, refreshedAt: undefined, reviewRequired: false }
     };
-    const html = renderCanvas(todo, null, null, {}, []);
+    const html = renderCanvas(todo, null, null, { edit: true }, []);
     assert.ok(html.includes('data-settings'), 'Should render settings button');
     assert.ok(html.includes('Settings'), 'Should have Settings label');
     assert.ok(html.includes('<button type="button" class="edit-button" data-settings'), 'Should be a button element');
+    assert.match(html, /data-settings title="Settings and About" aria-label="Settings and About"/);
+    assert.match(html, /class="toolbar-actions"[^>]*>.*data-settings/s);
   });
 
   it('renders settings button in group canvas toolbar', () => {
@@ -429,6 +439,7 @@ describe('Settings button and page', () => {
     }, { blocked: false, dependencies: [], dependents: [] }, { recent: [], pos: -1 });
     assert.ok(html.includes('data-copy-context'), 'Should render copy context button');
     assert.ok(html.includes('Copy Context'), 'Should have Copy Context label');
+    assert.match(html, /data-copy-context title="Copy context to clipboard" aria-label="Copy context to clipboard"/);
   });
 
   it('normalizes view inputs for navigation', () => {
@@ -466,8 +477,9 @@ describe('Settings button and page', () => {
       dependencies: [],
       scan: { source: undefined, scope: undefined, grouping: undefined, target: undefined, refreshedAt: undefined, reviewRequired: false }
     };
-    const html = renderCanvas(todo, null, null, {}, []);
+    const html = renderCanvas(todo, null, null, { edit: true }, []);
     assert.ok(html.includes('aria-label="Settings and About"'), 'Should have aria-label');
+    assert.match(html, /data-edit title="Edit todo file" aria-label="Edit todo file"/);
     assert.ok(html.includes('<button type="button"'), 'Should be a button for keyboard navigation');
   });
 

@@ -84,6 +84,8 @@ button:hover{background:#3d3d3d;}
 .todo-link .todo-id{color:inherit;opacity:0.7;}
 
 .canvas-toolbar{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+.canvas-toolbar{container-type:inline-size;}
+.toolbar-actions{display:flex;align-items:center;gap:6px;flex:0 0 auto;margin-left:auto;}
 .history{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 240px;min-width:0;}
 .history button[data-nav]{padding:4px 12px;font-size:1.05em;}
 .todo-title-area{position:relative;display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;min-height:32px;}
@@ -128,8 +130,10 @@ select.badge{border:0;cursor:pointer;font:inherit;font-size:0.8em;font-weight:60
 select.badge:disabled{opacity:0.6;cursor:progress;}
 select.badge option{background:#2d2d2d;color:#e6e6e6;text-align:left;}
 .edit-button,.board-page #toolbar button{display:inline-flex;align-items:center;gap:6px;flex-shrink:1;min-width:0;margin-left:auto;min-height:32px;padding:5px 10px;font:inherit;font-size:0.85em;overflow:hidden;}
+.toolbar-actions .edit-button{margin-left:0;}
 .edit-button svg{flex-shrink:0;}
 .edit-button > span{display:inline-block;min-width:0;overflow:hidden;white-space:nowrap;}
+@container (max-width: 620px){.toolbar-actions .edit-button>span{display:none;}.toolbar-actions .edit-button{margin-left:0;padding:5px 8px;}}
 .triage-guide{border-left:3px solid #ffd36b;background:#2b281f;padding:12px 16px;margin:20px 0;border-radius:0 6px 6px 0;}
 .triage-guide h2{margin:0 0 6px;padding:0;border:0;color:#ffd36b;}
 .triage-guide p{margin:0;color:#d4d0c4;}

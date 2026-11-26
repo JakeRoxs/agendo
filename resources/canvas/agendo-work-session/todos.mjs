@@ -407,11 +407,17 @@ function parseCriteria(bodyLines) {
 function parseWorkLog(logText) {
   const workLog = [];
   if (!logText) return workLog;
+  let sourceOrder = 0;
   for (const entry of logText.split(/^### /m).filter(e => e.trim())) {
     const [date, ...rest] = entry.split(/\r?\n/);
-    workLog.push({ date: date.trim(), content: rest.join('\n').trim() });
+    const heading = date.trim();
+    const timestamp = heading.match(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})\b/);
+    const day = heading.match(/\b\d{4}-\d{2}-\d{2}\b/);
+    const sortTime = timestamp ? Date.parse(timestamp[0]) : day ? Date.parse(`${day[0]}T00:00:00Z`) : Number.NEGATIVE_INFINITY;
+    workLog.push({ date: heading, content: rest.join('\n').trim(), sortTime, sourceOrder: sourceOrder++ });
   }
-  return workLog;
+  return workLog.sort((a, b) => b.sortTime - a.sortTime || a.sourceOrder - b.sourceOrder)
+    .map(({ date, content }) => ({ date, content }));
 }
 
 function computeValidation(ctx) {
