@@ -87,6 +87,11 @@ export class FilterService {
     return this.filter;
   }
 
+  /** Reload filter state written by another view or command instance. */
+  reload(): void {
+    this.filter = this.state.get<TodoFilter>(this.stateKey) ?? {};
+  }
+
   get isActive(): boolean {
     const { statuses, priorities, tag, text, blocked, dependsOn, blocking, group, sources } =
       this.filter;

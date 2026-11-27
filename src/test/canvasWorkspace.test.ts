@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
 import { CanvasViewer } from "../todos/canvasViewer";
 import { ConfigService } from "../todos/configService";
+import { FilterService } from "../todos/filterService";
 import { StatusService } from "../todos/statusService";
 import { parseTodo } from "../todos/todoModel";
 import type { WorkspaceView } from "../todos/workspaceNavigation";
@@ -270,6 +271,56 @@ suite("Shared workspace host boundary", () => {
       assert.deepStrictEqual(captured, [["/tmp/manual-root", "manual"], ["/path/a", "workspace"]]);
     } finally {
       if (original) Object.defineProperty(vscode.env, "asExternalUri", original);
+      viewer.dispose();
+    }
+  });
+
+  test("registered-root scanning board reads the scanning toolbar filter, not todo filter state", async () => {
+    const todos = [
+      parseTodo(
+        vscode.Uri.file(path.join(root, "code-scanning", "codeql", "cql-001-pending-p2-codeql.md")),
+        "---\nstatus: pending\npriority: p2\n---\n# CodeQL\n",
+        "code-scanning/codeql",
+      ),
+      parseTodo(
+        vscode.Uri.file(path.join(root, "code-scanning", "sonarqube", "sq-001-pending-p2-sonar.md")),
+        "---\nstatus: pending\npriority: p2\n---\n# Sonar\n",
+        "code-scanning/sonarqube",
+      ),
+    ].filter((todo) => todo !== undefined);
+    const values = new Map<string, unknown>();
+    const state = {
+      get: (key: string, defaultValue?: unknown) => values.get(key) ?? defaultValue,
+      update: async (key: string, value: unknown) => {
+        values.set(key, value);
+      },
+    } as unknown as vscode.Memento;
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
+      onDidChange: () => new vscode.Disposable(() => {}),
+    };
+    const descriptor = { id: "root-1", source: "workspace", folder: { uri: vscode.Uri.file(root) } };
+    const context = { config: {}, repository };
+    const viewer = new CanvasViewer(vscode.Uri.file(root), {}, state);
+    viewer.setRootRegistry({
+      getRoots: () => [descriptor],
+      getContext: () => context,
+    } as never);
+    try {
+      const actions = (viewer as unknown as {
+        rootActions: (workspaceRoot: string) => {
+          getBoardSnapshot: (scope: "todos" | "code-scanning") => Promise<any>;
+        };
+      }).rootActions(root);
+      await new FilterService(state, "agendo.codeScanning.filter").set({ sources: ["sonarqube"] });
+      await new FilterService(state, "agendo.filter.root-1").set({ sources: ["codeql"] });
+      const snapshot = await actions.getBoardSnapshot("code-scanning");
+      assert.deepStrictEqual(snapshot.sections.map((section: { source: string }) => section.source), [
+        "sonarqube",
+      ]);
+      assert.strictEqual(snapshot.sections[0].columns[0].todos[0].title, "Sonar");
+    } finally {
       viewer.dispose();
     }
   });
