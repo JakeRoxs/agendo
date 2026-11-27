@@ -679,6 +679,14 @@ suite("shared board presentation", () => {
       children: Element[] = [];
       parentElement?: Element;
       textContent = "";
+      private html = "";
+      set innerHTML(value: string) {
+        this.html = value;
+        this.textContent = value.replace(/<[^>]*>/g, "");
+      }
+      get innerHTML() {
+        return this.html;
+      }
       className = "";
       dataset: Record<string, string> = {};
       attributes = new Map<string, string>();

@@ -15,7 +15,9 @@
   <section id="settings" class="settings-panel" aria-label="Board card settings" hidden></section>
   <main id="board" class="board" aria-label="Agendo task board"></main>
   <script nonce="__AGENDO_BOARD_NONCE__">
-(() => __AGENDO_BOARD_HOST__)();
+(() => {
+  return __AGENDO_BOARD_HOST__;
+})();
 const host = globalThis.agendoBoardHost;
 const toolbar = document.getElementById("toolbar");
 const settings = document.getElementById("settings");
