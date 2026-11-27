@@ -709,6 +709,21 @@ suite("shared board presentation", () => {
   });
 
   test("shared browser script renders snapshots and emits actions through a non-VS-Code host", () => {
+    const textFromMarkup = (markup: string): string => {
+      let text = "";
+      let insideTag = false;
+      for (const character of markup) {
+        if (character === "<") {
+          insideTag = true;
+        } else if (character === ">") {
+          insideTag = false;
+        } else if (!insideTag) {
+          text += character;
+        }
+      }
+      return text;
+    };
+
     class Element {
       children: Element[] = [];
       parentElement?: Element;
@@ -716,7 +731,7 @@ suite("shared board presentation", () => {
       private html = "";
       set innerHTML(value: string) {
         this.html = value;
-        this.textContent = value.replace(/<[^>]*>/g, "");
+        this.textContent = textFromMarkup(value);
       }
       get innerHTML() {
         return this.html;
