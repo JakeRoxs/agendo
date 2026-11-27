@@ -7,10 +7,15 @@ import { registerCommands } from "../commandRegistration";
 import { Command } from "../commands";
 import type { ScanningFinding } from "../todos/codeScanningService";
 import { ConfigService } from "../todos/configService";
+import { InMemoryMemento } from "../todos/inMemoryMemento";
 import { ROOT_REGISTRY_KEY, TodoRootRegistry } from "../todos/rootRegistry";
 import { scanningIdentity } from "../todos/scanningSnapshot";
 import { buildFileName } from "../todos/todoModel";
 import { TodoRepository } from "../todos/todoRepository";
+import { BusyIndicator } from "../busyIndicator";
+import { MultiRootTreeProvider } from "../todos/multiRootTreeProvider";
+import { FilterService } from "../todos/filterService";
+import { TreeStateService } from "../todos/treeStateService";
 
 class TestConfig extends ConfigService {
   constructor(private readonly uri: vscode.Uri) {
@@ -97,7 +102,7 @@ suite("scanning refresh command", () => {
       "status: pending",
       "priority: p1",
       `issue_id: "${id}"`,
-      "tags: [code-scanning, codeql]",
+      `tags: [code-scanning, ${source}]`,
       "dependencies: []",
       `scan_identity: ${identity}`,
       `scan_source: ${source}`,
@@ -119,6 +124,51 @@ suite("scanning refresh command", () => {
     const todo = todos.find((t) => t.id === id);
     assert.ok(todo, `Todo ${id} not found after refresh`);
     return { todo, id };
+  }
+
+  /** Create a scanning todo file under the given root directory without
+   * refreshing any repository. Returns the todo id and file path. */
+  async function createScanningTodoFile(
+    root: string,
+    source: "codeql" | "sonarqube",
+    target: string,
+    grouping: string,
+    scope: string,
+  ): Promise<{ id: string; filePath: string }> {
+    const sourceDir = path.join(root, "code-scanning", source);
+    await fs.mkdir(sourceDir, { recursive: true });
+    const id = `${source === "codeql" ? "cql" : "sq"}-001`;
+    const provenance = {
+      source,
+      scope,
+      grouping: grouping as any,
+      target,
+    };
+    const identity = scanningIdentity(provenance);
+    const fileName = buildFileName(id, "pending", "p1", "test");
+    const filePath = path.join(sourceDir, fileName);
+    const content = [
+      "---",
+      "status: pending",
+      "priority: p1",
+      `issue_id: "${id}"`,
+      `tags: [code-scanning, ${source}]`,
+      "dependencies: []",
+      `scan_identity: ${identity}`,
+      `scan_source: ${source}`,
+      `scan_scope: ${JSON.stringify(scope)}`,
+      `scan_grouping: ${grouping}`,
+      `scan_target: ${JSON.stringify(target)}`,
+      "---",
+      `# Test ${id}`,
+      "",
+      "<!-- agendo:scan-evidence:start -->",
+      "## Scanner Evidence",
+      "<!-- agendo:scan-evidence:end -->",
+      "",
+    ].join("\n");
+    await fs.writeFile(filePath, content);
+    return { id, filePath };
   }
 
   test("resolves todo from TodoNode argument", async () => {
@@ -1129,5 +1179,181 @@ suite("scanning refresh command", () => {
       "Manual root warning not shown for refresh",
     );
     assert.strictEqual(fetchCalled, false, "Scanner should not be called for manual root");
+  });
+
+  test("CodeScanningRefresh removes deleted SonarQube files from the root-scoped tree", async () => {
+    // Create two root directories
+    const rootA = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root-a-"));
+    const rootB = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root-b-"));
+    restore.push(() => fs.rm(rootA, { recursive: true, force: true }));
+    restore.push(() => fs.rm(rootB, { recursive: true, force: true }));
+
+    // Create scanning todo files in both roots
+    await createScanningTodoFile(
+      rootA,
+      "sonarqube",
+      "AYE123",
+      "finding",
+      "https://sonar.example.com/#project",
+    );
+    await createScanningTodoFile(rootB, "codeql", "src/test.ts", "file", "owner/repo");
+
+    // Set up registry with both roots as manual roots (persisted in memento)
+    const store: Record<string, unknown> = {};
+    const memento: vscode.Memento = {
+      get: <T>(key: string) => store[key] as T | undefined,
+      update: async (_key: string, value: unknown) => {
+        store[_key] = value;
+      },
+    } as unknown as vscode.Memento;
+    memento.update(ROOT_REGISTRY_KEY, [
+      { uri: rootA, label: "Root A" },
+      { uri: rootB, label: "Root B" },
+    ]);
+
+    const registryConfig = new ConfigService(memento);
+    const registry = new TodoRootRegistry(registryConfig, memento);
+    registry.setMode("multi");
+
+    // Get contexts to create one repository per root
+    const contexts = registry.getContexts();
+    const descriptorA = registry.getRoots().find((root) => root.uri.fsPath === rootA);
+    const descriptorB = registry.getRoots().find((root) => root.uri.fsPath === rootB);
+    assert.ok(descriptorA, "Expected a descriptor for root A");
+    assert.ok(descriptorB, "Expected a descriptor for root B");
+    const repoA = contexts.find((context) => context.descriptor.id === descriptorA.id)?.repository;
+    const repoB = contexts.find((context) => context.descriptor.id === descriptorB.id)?.repository;
+    assert.ok(repoA, "Expected a root context for root A");
+    assert.ok(repoB, "Expected a root context for root B");
+
+    // Refresh repositories to populate the cache from disk
+    await repoA.refresh();
+    await repoB.refresh();
+
+    // Verify todos exist in both roots before deletion
+    assert.ok(
+      repoA.getTodos().some((t) => t.id === "sq-001"),
+      "Todo sq-001 not found in root A after initial refresh",
+    );
+    assert.ok(
+      repoB.getTodos().some((t) => t.id === "cql-001"),
+      "Todo cql-001 not found in root B after initial refresh",
+    );
+
+    // Delete a todo file from root A externally (simulating external deletion)
+    const todoFileA = path.join(rootA, "code-scanning", "sonarqube", "sq-001-pending-p1-test.md");
+    await fs.unlink(todoFileA);
+
+    // Track refresh calls to verify every repository is refreshed
+    let legacyRefreshCount = 0;
+    let rootARefreshCount = 0;
+    let rootBRefreshCount = 0;
+    const originalRefreshA = repoA.refresh.bind(repoA);
+    const originalRefreshB = repoB.refresh.bind(repoB);
+    repoA.refresh = async () => {
+      rootARefreshCount++;
+      await originalRefreshA();
+    };
+    repoB.refresh = async () => {
+      rootBRefreshCount++;
+      await originalRefreshB();
+    };
+
+    // Set up services and register commands
+    const busy = new BusyIndicator();
+    const scanningTreeProvider = new MultiRootTreeProvider(
+      registry,
+      new InMemoryMemento(),
+      busy,
+      "code-scanning",
+    );
+    const rootNodeA = { kind: "root" as const, rootId: descriptorA.id };
+    const rootNodeB = { kind: "root" as const, rootId: descriptorB.id };
+    assert.ok(
+      scanningTreeProvider.getChildren(rootNodeA).length > 0,
+      "Expected root A to contain a visible code-scanning source before deletion",
+    );
+    assert.ok(
+      scanningTreeProvider.getChildren(rootNodeB).length > 0,
+      "Expected root B to contain a visible code-scanning source before deletion",
+    );
+    let treeRefreshCount = 0;
+    const treeRefreshSubscription = scanningTreeProvider.onDidChangeTreeData(() => {
+      treeRefreshCount++;
+    });
+    const scanningFilter = new FilterService(new InMemoryMemento());
+    const scanningTreeState = new TreeStateService(new InMemoryMemento());
+
+    const callbacks = new Map<string, (...args: any[]) => Promise<void>>();
+    const subscriptions: vscode.Disposable[] = [];
+    mock(
+      vscode.commands,
+      "registerCommand",
+      (id: string, cb: (...args: any[]) => Promise<void>) => {
+        callbacks.set(id, cb);
+        return new vscode.Disposable(() => {});
+      },
+    );
+    mock(vscode.commands, "executeCommand", async () => undefined, restore);
+    mock(vscode.window, "showErrorMessage", async () => undefined, restore);
+    mock(vscode.window, "showInformationMessage", async () => undefined, restore);
+
+    registerCommands(
+      { subscriptions } as never,
+      {
+        config: { getWorkspaceFolder: () => ({ uri: vscode.Uri.file(rootA) }) },
+        repository: {
+          getTodos: () => [],
+          refresh: async () => {
+            legacyRefreshCount++;
+          },
+        },
+        rootRegistry: registry,
+        busy,
+        treeProvider: {
+          refresh: () => {},
+          getActiveFilter: () => scanningFilter,
+        },
+        scanning: {
+          filter: scanningFilter,
+          treeState: scanningTreeState,
+          treeProvider: scanningTreeProvider,
+          boardViewProvider: { refresh: () => {} } as never,
+        },
+      } as never,
+    );
+
+    // Execute CodeScanningRefresh
+    const handler = callbacks.get(Command.CodeScanningRefresh);
+    assert.ok(handler, "CodeScanningRefresh not registered");
+    await handler();
+
+    assert.strictEqual(
+      scanningTreeProvider.getChildren(rootNodeA).length,
+      0,
+      "Deleted todo still appears in root A's code-scanning tree",
+    );
+    assert.ok(
+      scanningTreeProvider.getChildren(rootNodeB).length > 0,
+      "Root B's code-scanning tree no longer shows its todo",
+    );
+    assert.ok(treeRefreshCount > 0, "Code-scanning tree did not receive a refresh event");
+    treeRefreshSubscription.dispose();
+
+    // Verify the deleted todo is gone from root A's repository cache
+    assert.ok(
+      !repoA.getTodos().some((t) => t.id === "sq-001"),
+      "Deleted todo still present in root A cache after refresh",
+    );
+    // Verify root B's todo still exists (not affected by root A deletion)
+    assert.ok(
+      repoB.getTodos().some((t) => t.id === "cql-001"),
+      "Root B todo disappeared after refresh",
+    );
+
+    // Verify all repositories were refreshed (legacy + both roots)
+    assert.strictEqual(legacyRefreshCount, 1, "Legacy repository was not refreshed");
+    assert.strictEqual(rootARefreshCount, 1, "Root A repository was not refreshed");
+    assert.strictEqual(rootBRefreshCount, 1, "Root B repository was not refreshed");
   });
 });

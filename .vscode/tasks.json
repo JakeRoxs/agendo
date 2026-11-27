@@ -73,7 +73,7 @@
     {
       "label": "Bump Version",
       "type": "shell",
-      "command": "npm version ${input:bumpLevel} --no-git-tag-version && NEW_VERSION=$(node -p \"require('./package.json').version\") && sed -i \"s/version-[0-9]*\\.[0-9]*\\.[0-9]*/version-${NEW_VERSION}/g\" README.md && echo \"Updated README version badge to ${NEW_VERSION}\"",
+      "command": "node -e \"(async()=>{const {execFileSync}=require('node:child_process');const fs=require('fs');execFileSync('npm version ${input:bumpLevel} --no-git-tag-version',{shell:true,stdio:'inherit'});const version=require('./package.json').version;let mcp=fs.readFileSync('resources/mcp/server.mjs','utf8');mcp=mcp.replace(/version: '[^']+'/,'version: \\''+version+'\\'');fs.writeFileSync('resources/mcp/server.mjs',mcp);await require('esbuild').build({entryPoints:['resources/mcp/server.mjs'],bundle:true,platform:'node',format:'esm',target:'node18',outfile:'resources/mcp/server.bundle.mjs'});let readme=fs.readFileSync('README.md','utf8');readme=readme.replace(/extension-[0-9]+[.][0-9]+[.][0-9]+/g,'extension-'+version);fs.writeFileSync('README.md',readme);console.log('Bumped to '+version+'; synced MCP server version and regenerated resources/mcp/server.bundle.mjs');})()\"",
       "problemMatcher": [],
       "group": "build",
       "presentation": {

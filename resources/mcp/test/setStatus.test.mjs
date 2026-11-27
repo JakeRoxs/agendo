@@ -293,6 +293,56 @@ describe('set_status MCP tool', () => {
     }
   });
 
+  it('setTodoGroup is a no-op and does not rewrite when the group is already set', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agendo-mcp-group-noop-'));
+    try {
+      await writePendingTodo(root);
+
+      // Set group
+      const result = await setTodoGroup('001', 'auth', root);
+      assert.ok(result.success);
+      assert.equal(result.changed, true);
+      assert.match(result.message, /Group set to auth/);
+
+      const before = await readFile(join(root, 'docs', 'todos', '001-pending-p2-sample.md'), 'utf8');
+
+      // Same group again: no rewrite, unchanged result.
+      const repeated = await setTodoGroup('001', 'auth', root);
+      assert.ok(repeated.success);
+      assert.equal(repeated.changed, false);
+      assert.match(repeated.message, /Already auth/);
+      assert.strictEqual(
+        await readFile(join(root, 'docs', 'todos', '001-pending-p2-sample.md'), 'utf8'),
+        before,
+        'file must not be rewritten on a no-op',
+      );
+
+      // A different group still rewrites.
+      const changed = await setTodoGroup('001', 'other', root);
+      assert.ok(changed.success);
+      assert.equal(changed.changed, true);
+
+      // Clearing the group is a real change.
+      const cleared = await setTodoGroup('001', '', root);
+      assert.ok(cleared.success);
+      assert.equal(cleared.changed, true);
+      const clearedText = await readFile(join(root, 'docs', 'todos', '001-pending-p2-sample.md'), 'utf8');
+      assert.doesNotMatch(clearedText, /^group:/m);
+
+      // Clearing an already-cleared group is a no-op.
+      const clearedAgain = await setTodoGroup('001', '', root);
+      assert.ok(clearedAgain.success);
+      assert.equal(clearedAgain.changed, false);
+      assert.strictEqual(
+        await readFile(join(root, 'docs', 'todos', '001-pending-p2-sample.md'), 'utf8'),
+        clearedText,
+        'file must not be rewritten when clearing an already-cleared group',
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   describe('isReadyBlocked readiness gate', () => {
     it('blocks a missing dependency ID', () => {
       assert.strictEqual(isReadyBlocked(['001'], [{ id: '002', status: 'completed' }]), true);

@@ -57,6 +57,25 @@ function mockWorkspaceFolders(folders: vscode.WorkspaceFolder[]): () => void {
   };
 }
 
+function mockGetWorkspaceFolder(folder: vscode.WorkspaceFolder | undefined): () => void {
+  const original = vscode.workspace.getWorkspaceFolder;
+  Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+    value: (uri: vscode.Uri) => {
+      if (!folder) return undefined;
+      const fsPath = uri.fsPath;
+      const base = folder.uri.fsPath;
+      return fsPath === base || fsPath.startsWith(`${base}/`) ? folder : undefined;
+    },
+    configurable: true,
+  });
+  return () => {
+    Object.defineProperty(vscode.workspace, "getWorkspaceFolder", {
+      value: original,
+      configurable: true,
+    });
+  };
+}
+
 function mockMcpProblemsEnabled(enabled = true): () => void {
   const original = vscode.workspace.getConfiguration;
   Object.defineProperty(vscode.workspace, "getConfiguration", {
@@ -442,6 +461,142 @@ suite("mcpProblems", () => {
         assert.ok(
           error instanceof Error &&
             (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND,
+        );
+        return true;
+      });
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("getProblems resolves workspaceFolder by absolute path", async () => {
+    const restore = [
+      mockWorkspaceFolders([
+        { uri: makeUri("/ws1"), name: "ws1", index: 0 },
+        { uri: makeUri("/ws2"), name: "ws2", index: 1 },
+      ]),
+      mockGetDiagnostics([
+        [
+          makeUri("/ws2/a.ts"),
+          [makeDiagnostic(makeUri("/ws2/a.ts"), "x", vscode.DiagnosticSeverity.Error)],
+        ],
+      ]),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      const result = await service.getProblems({ workspaceFolder: "/ws2" });
+      assert.strictEqual(result.workspaceFolder, "ws2");
+      assert.strictEqual(result.total, 1);
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("getProblems resolves workspaceFolder by file URI", async () => {
+    const restore = [
+      mockWorkspaceFolders([
+        { uri: makeUri("/ws1"), name: "ws1", index: 0 },
+        { uri: makeUri("/ws2"), name: "ws2", index: 1 },
+      ]),
+      mockGetDiagnostics([
+        [
+          makeUri("/ws2/a.ts"),
+          [makeDiagnostic(makeUri("/ws2/a.ts"), "x", vscode.DiagnosticSeverity.Error)],
+        ],
+      ]),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      const result = await service.getProblems({ workspaceFolder: "file:///ws2" });
+      assert.strictEqual(result.workspaceFolder, "ws2");
+      assert.strictEqual(result.total, 1);
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("getProblems resolves equivalent Windows workspace path and URI spellings", async function () {
+    if (process.platform !== "win32") {
+      this.skip();
+    }
+    const folder = {
+      uri: makeUri("C:\\TSS_Website"),
+      name: "TSS_Website",
+      index: 0,
+    };
+    const restore = [
+      mockWorkspaceFolders([
+        folder,
+        { uri: makeUri("D:\\Other"), name: "Other", index: 1 },
+      ]),
+      mockGetDiagnostics([]),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      for (const workspaceFolder of [
+        "C:\\TSS_Website",
+        "c:\\TSS_Website",
+        "file:///c%3A/TSS_Website",
+      ]) {
+        const result = await service.getProblems({ workspaceFolder });
+        assert.strictEqual(result.workspaceFolder, "TSS_Website", workspaceFolder);
+      }
+    } finally {
+      for (const restoreMock of restore) {
+        restoreMock();
+      }
+    }
+  });
+
+  test("getProblems infers workspaceFolder from an absolute path when omitted", async () => {
+    const restore = [
+      mockWorkspaceFolders([
+        { uri: makeUri("/ws1"), name: "ws1", index: 0 },
+        { uri: makeUri("/ws2"), name: "ws2", index: 1 },
+      ]),
+      mockGetDiagnostics([
+        [
+          makeUri("/ws2/a.ts"),
+          [makeDiagnostic(makeUri("/ws2/a.ts"), "x", vscode.DiagnosticSeverity.Error)],
+        ],
+      ]),
+      mockGetWorkspaceFolder({ uri: makeUri("/ws2"), name: "ws2", index: 1 }),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      const result = await service.getProblems({ path: "/ws2/a.ts" });
+      assert.strictEqual(result.workspaceFolder, "ws2");
+      assert.strictEqual(result.total, 1);
+      assert.strictEqual(result.diagnostics[0].path, "a.ts");
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("getProblems requires workspaceFolder in multi-root mode when a path cannot be inferred", async () => {
+    const restore = [
+      mockWorkspaceFolders([
+        { uri: makeUri("/ws1"), name: "ws1", index: 0 },
+        { uri: makeUri("/ws2"), name: "ws2", index: 1 },
+      ]),
+      mockGetDiagnostics([]),
+      // No folder contains the hinted path, so no inference is possible.
+      mockGetWorkspaceFolder(undefined),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      await assert.rejects(service.getProblems({ path: "/elsewhere/x.ts" }), (error) => {
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
         );
         return true;
       });

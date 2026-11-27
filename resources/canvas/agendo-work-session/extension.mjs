@@ -7,7 +7,7 @@ import { buildAgentPrompt, createSessionBridge } from './agent-requests.mjs';
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { assertViewExists, assertViewSupported, createInstanceServer, listen, navigate, normalizeFilters, normalizeView } from './server.mjs';
+import { assertViewExists, assertViewSupported, closeServer, createInstanceServer, listen, navigate, normalizeFilters, normalizeView } from './server.mjs';
 import { assertTodoId, findTodoFile, getRelations, listGroups, loadGroupTodos, loadTodo, resolveWorkspaceRoot, setCriterionMet } from './todos.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -334,7 +334,7 @@ const canvas = createCanvas({
     if (!entry) return;
     servers.delete(instanceId);
     entry.disposeProposals();
-    await new Promise(resolve => entry.server.close(() => resolve()));
+    await closeServer(entry.server);
   }
 });
 

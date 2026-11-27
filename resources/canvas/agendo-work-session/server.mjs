@@ -492,3 +492,32 @@ export async function listen(entry) {
   });
   entry.url = `http://127.0.0.1:${entry.server.address().port}/`;
 }
+
+/**
+ * Close an HTTP server with a bounded timeout so shutdown cannot hang on lingering
+ * connections. `server.close()` stops accepting new connections and its callback waits
+ * for every open socket to drain; a keep-alive connection from the canvas page (which
+ * polls /version every few seconds) can keep a socket active indefinitely. On timeout,
+ * `closeAllConnections()` is used when available to close already-accepted sockets so
+ * the server handle is released and the host process can exit. Always resolves.
+ */
+export function closeServer(server) {
+  return new Promise((resolve) => {
+    let settled = false;
+    function settle() {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve();
+    }
+    server.once('close', settle);
+    server.close();
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      // Force-close lingering connections so the server handle is released.
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+    }, 5000);
+  });
+}

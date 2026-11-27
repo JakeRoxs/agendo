@@ -175,10 +175,11 @@ suite("Standalone canvas safety guards", () => {
   });
 
   test("clearing group with no frontmatter does not create meaningless block", () => {
-    writeTodo("013", "pending", "p2", "no-group", "# No Group\n");
+    const file = writeTodo("013", "pending", "p2", "no-group", "# No Group\n");
     const result = module.setTodoGroup("013", "", root);
     assert.strictEqual(result.success, true);
-    const content = fs.readFileSync(result.filePath, "utf8");
+    assert.strictEqual(result.changed, false);
+    const content = fs.readFileSync(file, "utf8");
     assert.doesNotMatch(content, /^---/);
     assert.doesNotMatch(content, /group:/);
   });

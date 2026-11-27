@@ -193,7 +193,7 @@ function getTodoFileHandler(args, workspaceRoot, rootMode) {
 
 const server = new McpServer({
   name: 'agendo',
-  version: '0.3.0',
+  version: '0.3.5',
 });
 
 registerRootTool(server, 'get_todo_context',

@@ -13,8 +13,10 @@ export interface GetProblemsParams {
    */
   path?: string;
   /**
-   * Canonical workspace folder identifier (the folder's name). Required when
-   * multiple workspace roots are open; omitted when a single root is open.
+   * Canonical workspace folder identifier: the folder's name, its absolute
+   * path, or a file URI. Required when multiple workspace roots are open;
+   * omitted when a single root is open. When omitted together with an absolute
+   * `path`, the folder is inferred from that path.
    */
   workspaceFolder?: string;
   /**
@@ -216,7 +218,7 @@ export class DiagnosticsService {
     this.validateParams(params);
 
     const folders = vscode.workspace.workspaceFolders ?? [];
-    const folder = this.resolveWorkspaceFolder(params.workspaceFolder, folders);
+    const folder = this.resolveWorkspaceFolder(params.workspaceFolder, folders, params.path);
 
     let targetUri: vscode.Uri | undefined;
     if (params.path !== undefined) {
@@ -269,17 +271,38 @@ export class DiagnosticsService {
   private resolveWorkspaceFolder(
     workspaceFolder: string | undefined,
     folders: readonly vscode.WorkspaceFolder[],
+    pathHint: string | undefined,
   ): vscode.WorkspaceFolder {
     if (folders.length === 1) {
       return folders[0];
     }
+    if (!workspaceFolder && !pathHint) {
+      throw new McpError(
+        ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
+        "Multiple workspace folders are open; specify workspaceFolder.",
+      );
+    }
+
+    // Infer the selected folder from an absolute path when no folder is named.
+    if (!workspaceFolder && pathHint) {
+      const inferred = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(pathHint));
+      if (inferred) {
+        const match = folders.find((f) => f.uri.toString() === inferred.uri.toString());
+        if (match) return match;
+      }
+    }
+
     if (!workspaceFolder) {
       throw new McpError(
         ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
         "Multiple workspace folders are open; specify workspaceFolder.",
       );
     }
-    const match = folders.find((folder) => folder.name === workspaceFolder);
+
+    const match = folders.find((folder) => {
+      if (folder.name === workspaceFolder) return true;
+      return this.folderMatchesId(folder, workspaceFolder);
+    });
     if (!match) {
       throw new McpError(
         ProblemErrorCode.WORKSPACE_NOT_FOUND,
@@ -287,6 +310,48 @@ export class DiagnosticsService {
       );
     }
     return match;
+  }
+
+  /** Resolve a workspace folder identifier (name, absolute path, or file URI) to
+   *  a comparable key, or undefined when it cannot be interpreted as a path/URI. */
+  private parseFolderId(id: string): { uri: vscode.Uri; fsPathKey: string } | undefined {
+    let uri: vscode.Uri | undefined;
+    try {
+      uri = vscode.Uri.parse(id);
+    } catch {
+      uri = undefined;
+    }
+    if (uri?.scheme === "file" && uri.fsPath) {
+      return { uri, fsPathKey: this.folderKey(uri) };
+    }
+    if (path.isAbsolute(id)) {
+      uri = vscode.Uri.file(path.resolve(id));
+      return { uri, fsPathKey: this.folderKey(uri) };
+    }
+    return undefined;
+  }
+
+  /** Compare a folder against a name/path/URI identifier. Names are matched
+   *  exactly; paths and URIs are matched by normalized location, folding
+   *  drive-letter case on Windows so C:\TSS_Website and c:\TSS_Website agree. */
+  private folderMatchesId(folder: vscode.WorkspaceFolder, id: string): boolean {
+    const key = this.parseFolderId(id);
+    if (!key) return false;
+    return (
+      folder.uri.toString() === key.uri.toString() ||
+      this.folderKey(folder.uri) === key.fsPathKey
+    );
+  }
+
+  /** Normalize a file URI to a comparable path key. Separators are unified and,
+   *  on Windows, the drive letter is folded to lower case so equivalent Windows
+   *  paths collate equal without losing URI/path distinction. */
+  private folderKey(uri: vscode.Uri): string {
+    let fsPath = uri.fsPath.replace(/\\/g, "/");
+    if (process.platform === "win32") {
+      fsPath = fsPath.toLowerCase();
+    }
+    return fsPath;
   }
 
   private normalizeLimit(limit: number | undefined): number {

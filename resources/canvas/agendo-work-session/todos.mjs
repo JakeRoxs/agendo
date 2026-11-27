@@ -855,13 +855,23 @@ export function setTodoGroup(todoId, newGroup, workspaceRoot, rootMode = "worksp
   if (!filePath) throw new CanvasError('todo_not_found', `Todo ${todoId} not found`);
 
   const content = readFileSync(filePath, 'utf-8');
-  const eol = content.includes('\r\n') ? '\r\n' : '\n';
-  let lines = content.split(/\r?\n/);
-
+  const lines = content.split(/\r?\n/);
   const hasFrontmatter = lines[0].trim() === '---';
   if (hasFrontmatter && !lines.some((line, i) => i > 0 && line.trim() === '---')) {
     throw new CanvasError('invalid_input', 'Malformed frontmatter: missing closing ---');
   }
+  const { frontmatter } = parseFrontmatter(content);
+  const currentGroup = typeof frontmatter.group === 'string' ? frontmatter.group : undefined;
+  const nextGroup = trimmed || undefined;
+  if (currentGroup === nextGroup) {
+    return {
+      success: true,
+      message: nextGroup ? `Already ${nextGroup}` : 'Already cleared',
+      changed: false,
+    };
+  }
+
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
   updateGroupField(lines, trimmed, hasFrontmatter);
 
   const text = lines.join(eol);

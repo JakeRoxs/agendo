@@ -2,6 +2,17 @@
 
 All notable changes to the Agendo extension are documented here.
 
+## [0.3.5] - Unreleased
+Includes work-session canvas **0.1.15**
+
+### Fixed
+
+- Resolve MCP `get_problems` folder selection by name, path, or file URI in multi-root workspaces
+- Infer absolute MCP diagnostic paths correctly across workspace roots
+- Treat `set_group` as a no-op when the target group is unchanged
+- Refresh root-scoped code-scanning trees after deletion so removed findings disappear
+- Shut down canvas extensions cleanly on deactivation, closing lingering connections
+
 ## [0.3.4] - 2026-11-27
 Includes canvas **0.1.14**
 

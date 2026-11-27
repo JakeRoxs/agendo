@@ -1073,7 +1073,17 @@ function registerFilterCommands(
   let digestLoading = false;
 
   register(commands.Refresh, async () => {
-    await busy.run("Refreshing todos…", () => repository.refresh(), `${prefix}.refreshing`);
+    await busy.run("Refreshing todos…", async () => {
+      await repository.refresh();
+      // Refresh each unique registered root repository so every root-scoped
+      // child provider's cache is updated (external deletions removed).
+      if (services.rootRegistry) {
+        for (const ctx of services.rootRegistry.getContexts()) {
+          await ctx.repository.refresh();
+        }
+      }
+      treeProvider.refresh();
+    }, `${prefix}.refreshing`);
   });
   register(commands.ShowDigest, async () => {
     if (digestLoading) {
