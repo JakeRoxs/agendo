@@ -19,6 +19,7 @@ import {
   fetchSonarQubeCli,
   fetchSonarQubeCliBranches,
   importScanningFindings,
+  ScanningImportCancelledError,
   type ScanningFinding,
   sonarQubeCliServer,
   sonarQubeDefaults,
@@ -70,6 +71,7 @@ import { boardReturnTarget } from "./todos/workspaceNavigation";
  * `MultiRootTreeProvider` satisfy it without unsafe casts. */
 export interface RefreshableTreeProvider {
   refresh(): void;
+  getActiveFilter?(): FilterService | undefined;
 }
 
 export interface CommandServices {
@@ -292,12 +294,38 @@ async function runCodeScanningImport(
   context: vscode.ExtensionContext,
   services: CommandServices,
 ): Promise<void> {
-  const { config, repository } = services;
+  const workspace = getCodeScanningWorkspace(services);
+  if (!workspace) return;
+  const savedConfig = readSavedScanningImport(context, services, workspace);
+  const selection = await chooseScanningImport(context, workspace, savedConfig);
+  if (!selection) return;
+  await runScanningImport(context, services, workspace, savedConfig.key, selection);
+}
+
+type SavedScanningImport = {
+  source: "codeql" | "sonarqube";
+  branch?: string;
+  grouping: "file" | "rule" | "finding";
+  sonar?: { server: string; project: string; cli: boolean };
+};
+
+type ScanningImportSource = { label: string; source: "codeql" | "sonarqube" };
+type ScanningSelection = {
+  source: ScanningImportSource;
+  sonar?: Awaited<ReturnType<typeof promptSonarQubeSettings>>;
+  branch: { label: string; branch?: string };
+  grouping: { label: string; grouping: SavedScanningImport["grouping"] };
+};
+
+function getCodeScanningWorkspace(
+  services: CommandServices,
+): vscode.WorkspaceFolder | undefined {
+  const { config } = services;
   if (!vscode.workspace.isTrusted) {
     vscode.window.showWarningMessage(
       "Trust this workspace before importing code-scanning findings.",
     );
-    return;
+    return undefined;
   }
   const { path: rootPath, rootMode } = resolveActiveRoot(services.rootRegistry, config);
   if (rootMode === "manual") {
@@ -305,19 +333,99 @@ async function runCodeScanningImport(
       "The active root is a manual todo directory with no associated workspace folder. " +
         "Code-scanning import operates on source-code workspaces; select a workspace folder root instead.",
     );
-    return;
+    return undefined;
   }
   if (!rootPath) {
-    return;
+    return undefined;
   }
   const workspace = { uri: vscode.Uri.file(rootPath) } as vscode.WorkspaceFolder;
   if (workspace.uri.scheme !== "file") {
     vscode.window.showWarningMessage(
       "Open a filesystem workspace before importing code-scanning findings.",
     );
-    return;
+    return undefined;
   }
-  const source = await vscode.window.showQuickPick(
+  return workspace;
+}
+
+function readSavedScanningImport(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  workspace: vscode.WorkspaceFolder,
+): { key: string; value?: SavedScanningImport } {
+  const normalizedWorkspacePath = path.resolve(workspace.uri.fsPath).replace(/\\/g, "/");
+  let normalizedRootId = normalizedWorkspacePath;
+  while (normalizedRootId.endsWith("/") && normalizedRootId.length > 1) {
+    normalizedRootId = normalizedRootId.slice(0, -1);
+  }
+  const rootId =
+    services.rootRegistry?.getActiveRoot()?.id ??
+    (normalizedRootId || "/");
+  const key = `agendo.codeScanningImport.${encodeURIComponent(rootId)}`;
+  return { key, value: validateSavedScanningImport(context.workspaceState.get<unknown>(key)) };
+}
+
+function validateSavedScanningImport(value: unknown): SavedScanningImport | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<SavedScanningImport>;
+  if (
+    !["codeql", "sonarqube"].includes(candidate.source as string) ||
+    !["file", "rule", "finding"].includes(candidate.grouping as string) ||
+    (candidate.branch !== undefined && typeof candidate.branch !== "string") ||
+    (candidate.source === "sonarqube" &&
+      (!candidate.sonar || typeof candidate.sonar.server !== "string" ||
+        typeof candidate.sonar.project !== "string" || !candidate.sonar.project.trim() ||
+        typeof candidate.sonar.cli !== "boolean" ||
+        !isValidSavedSonarServer(candidate.sonar.server)))
+  ) return undefined;
+  return candidate as SavedScanningImport;
+}
+
+function isValidSavedSonarServer(server: string): boolean {
+  try {
+    validateSonarUrl(server);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function chooseScanningImport(
+  context: vscode.ExtensionContext,
+  workspace: vscode.WorkspaceFolder,
+  savedConfig: { key: string; value?: SavedScanningImport },
+): Promise<ScanningSelection | undefined> {
+  const saved = savedConfig.value;
+  const choice = await chooseScanningSource(saved);
+  if (!choice) return undefined;
+  const { source, reuse } = choice;
+  const sonar = await chooseScanningSonar(context, workspace, source, reuse, saved);
+  if (source.source === "sonarqube" && !sonar) return undefined;
+  const branches = await loadScanningBranches(workspace, source, sonar);
+  return chooseScanningBranchAndGrouping(source, branches, reuse, saved, sonar);
+}
+
+async function chooseScanningSource(
+  saved?: SavedScanningImport,
+): Promise<{ source: ScanningImportSource; reuse: boolean } | undefined> {
+  const mode = saved
+    ? await vscode.window.showQuickPick(
+        [
+          { label: "Use last configuration", description: `${saved.source === "codeql" ? "CodeQL" : "SonarQube"} · ${saved.branch ?? "default branch"} · by ${saved.grouping}`, value: "reuse" as const },
+          { label: "Choose configuration", description: "Pick source, branch, and grouping again", value: "edit" as const },
+        ],
+        { placeHolder: "Repeat the previous code-scanning import?" },
+      )
+    : { value: "edit" as const };
+  if (!mode) return undefined;
+  const reuse = mode.value === "reuse" && !!saved;
+  let source: ScanningImportSource | undefined;
+  if (reuse && saved) {
+    source = saved.source === "codeql"
+      ? { label: "CodeQL", source: "codeql" }
+      : { label: "SonarQube", source: "sonarqube" };
+  } else {
+    source = await vscode.window.showQuickPick(
     [
       {
         label: "CodeQL",
@@ -331,18 +439,53 @@ async function runCodeScanningImport(
       },
     ],
     { placeHolder: "Import code-scanning todos from..." },
-  );
+    );
+  }
   if (!source) {
-    return;
+    return undefined;
   }
-  const sonar =
-    source.source === "sonarqube"
-      ? await promptSonarQubeSettings(context, workspace.uri)
-      : undefined;
-  if (source.source === "sonarqube" && !sonar) {
-    return;
+  return { source, reuse };
+}
+
+async function chooseScanningBranchAndGrouping(
+  source: ScanningImportSource,
+  branches: Awaited<ReturnType<typeof fetchCodeQLBranches>>,
+  reuse: boolean,
+  saved: SavedScanningImport | undefined,
+  sonar: ScanningSelection["sonar"],
+): Promise<ScanningSelection | undefined> {
+  let branch = reuse && saved ? reuseScanningBranch(branches, saved) : undefined;
+  branch ??= await promptScanningBranch(source, branches);
+  if (!branch) return undefined;
+  let grouping = reuse && saved ? reuseScanningGrouping(saved) : undefined;
+  grouping ??= await promptScanningGrouping();
+  if (!grouping) return undefined;
+  return { source, sonar, branch, grouping };
+}
+
+async function chooseScanningSonar(
+  context: vscode.ExtensionContext,
+  workspace: vscode.WorkspaceFolder,
+  source: ScanningImportSource,
+  reuse: boolean,
+  saved?: SavedScanningImport,
+): Promise<Awaited<ReturnType<typeof promptSonarQubeSettings>> | undefined> {
+  if (source.source !== "sonarqube") return undefined;
+  if (!reuse || !saved?.sonar) return promptSonarQubeSettings(context, workspace.uri);
+  try {
+    return await promptSonarQubeSettings(context, workspace.uri, saved.sonar);
+  } catch {
+    // Saved CLI server/configuration may have gone stale since the last import.
+    return promptSonarQubeSettings(context, workspace.uri);
   }
-  const branches = await vscode.window.withProgress(
+}
+
+async function loadScanningBranches(
+  workspace: vscode.WorkspaceFolder,
+  source: ScanningImportSource,
+  sonar: ScanningSelection["sonar"],
+) {
+  return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
       title: `Loading ${source.label} branches...`,
@@ -355,7 +498,24 @@ async function runCodeScanningImport(
         : fetchSonarQubeBranches(sonar.server, sonar.project, sonar.token);
     },
   );
-  const branchChoice = await vscode.window.showQuickPick(
+}
+
+function reuseScanningBranch(
+  branches: Awaited<ReturnType<typeof loadScanningBranches>>,
+  saved: SavedScanningImport,
+): ScanningSelection["branch"] | undefined {
+  if (saved.branch !== undefined && !branches.branches.includes(saved.branch)) return undefined;
+  return {
+    label: saved.branch ?? `${branches.defaultBranch} (default)`,
+    branch: saved.branch,
+  };
+}
+
+async function promptScanningBranch(
+  source: ScanningImportSource,
+  branches: Awaited<ReturnType<typeof loadScanningBranches>>,
+): Promise<ScanningSelection["branch"] | undefined> {
+  return vscode.window.showQuickPick(
     [
       {
         label: `${branches.defaultBranch} (default)`,
@@ -370,10 +530,19 @@ async function runCodeScanningImport(
     {
       title: `Select ${source.label} branch`,
       placeHolder: `Choose the branch to import from; default is ${branches.defaultBranch}`,
-    },
-  );
-  if (!branchChoice) return;
-  const grouping = await vscode.window.showQuickPick(
+      },
+    );
+}
+
+function reuseScanningGrouping(
+  saved: SavedScanningImport,
+): ScanningSelection["grouping"] | undefined {
+  if (!["file", "rule", "finding"].includes(saved.grouping)) return undefined;
+  return { label: `By ${saved.grouping}`, grouping: saved.grouping };
+}
+
+async function promptScanningGrouping(): Promise<ScanningSelection["grouping"] | undefined> {
+  return vscode.window.showQuickPick(
     [
       {
         label: "By file (default)",
@@ -398,48 +567,84 @@ async function runCodeScanningImport(
       title: "Group imported findings",
       placeHolder:
         "Default: by file. Changing grouping creates separate todos; previous imports remain.",
-    },
-  );
-  if (!grouping) return;
+      },
+    );
+}
+
+async function runScanningImport(
+  context: vscode.ExtensionContext,
+  services: CommandServices,
+  workspace: vscode.WorkspaceFolder,
+  configKey: string,
+  selection: ScanningSelection,
+): Promise<void> {
+  const { config, repository } = services;
+  const { source, sonar, branch, grouping } = selection;
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
-    async () => {
-      let scan: { scope: string; branch?: string; findings: ScanningFinding[] } | undefined;
-      if (source.source === "codeql") {
-        scan = await fetchCodeQL(workspace.uri.fsPath, undefined, branchChoice.branch);
-      } else if (sonar?.cli) {
-        scan = await fetchSonarQubeCli(
-          workspace.uri.fsPath,
-          sonar.server,
-          sonar.project,
-          undefined,
-          branchChoice.branch,
-        );
-      } else if (sonar) {
-        scan = await fetchSonarQube(
-          sonar.server,
-          sonar.project,
-          sonar.token,
-          undefined,
-          undefined,
-          branchChoice.branch,
-        );
-      }
+    async (progress, token) => {
+      const scan = await loadScanningFindings(workspace, source, sonar, branch.branch);
       if (!scan) return;
-      const result = await importScanningFindings(
-        config,
-        repository,
-        source.source,
-        scan.scope,
-        scan.findings,
-        grouping.grouping,
-        { branch: branchChoice.branch },
-      );
+      if (token.isCancellationRequested) {
+        vscode.window.showInformationMessage(`${source.label} import cancelled before any todos were written.`);
+        return;
+      }
+      let result: Awaited<ReturnType<typeof importScanningFindings>>;
+      try {
+        result = await importScanningFindings(
+          config,
+          repository,
+          source.source,
+          scan.scope,
+          scan.findings,
+          grouping.grouping,
+          {
+            branch: branch.branch,
+            isCancellationRequested: () => token.isCancellationRequested,
+            onProgress: ({ completed, total, label }) => {
+              progress.report({
+                message: total === 0
+                  ? "No findings to import"
+                  : `${completed}/${total} groups · ${label}`,
+                ...(total > 0 && completed > 0 ? { increment: 100 / total } : {}),
+              });
+            },
+          },
+        );
+      } catch (error) {
+        if (!(error instanceof ScanningImportCancelledError)) throw error;
+        vscode.window.showInformationMessage(`${source.label} import cancelled before any todos were written.`);
+        return;
+      }
       vscode.window.showInformationMessage(
-        `${source.label} (${branchChoice.label}, ${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
+        `${source.label} (${branch.label}, ${grouping.label}): ${result.created} todos created, ${result.updated} updated from ${scan.findings.length} findings. Existing lifecycle and notes were preserved.`,
       );
+      await context.workspaceState.update(configKey, {
+        source: source.source,
+        branch: branch.branch,
+        grouping: grouping.grouping,
+        ...(sonar ? { sonar: { server: sonar.server, project: sonar.project, cli: sonar.cli } } : {}),
+      } satisfies SavedScanningImport);
     },
   );
+}
+
+async function loadScanningFindings(
+  workspace: vscode.WorkspaceFolder,
+  source: ScanningImportSource,
+  sonar: ScanningSelection["sonar"],
+  branch: string | undefined,
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } | undefined> {
+  if (source.source === "codeql") return fetchCodeQL(workspace.uri.fsPath, undefined, branch);
+  if (sonar?.cli) {
+    return fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project, undefined, branch);
+  }
+  if (sonar) {
+    return fetchSonarQube(
+      sonar.server, sonar.project, sonar.token, undefined, undefined, branch,
+    );
+  }
+  return undefined;
 }
 
 async function resolveSonarServerAndProject(
@@ -520,10 +725,12 @@ async function promptForSonarToken(
 async function promptSonarQubeSettings(
   context: vscode.ExtensionContext,
   workspace: vscode.Uri,
-  fixed?: { server: string; project: string },
+  fixed?: { server: string; project: string; cli?: boolean },
 ): Promise<{ server: string; project: string; token: string; cli: boolean } | undefined> {
   const defaults = await sonarQubeDefaults(workspace);
-  const auth = await vscode.window.showQuickPick(
+  const auth = fixed?.cli !== undefined
+    ? { cli: fixed.cli }
+    : await vscode.window.showQuickPick(
     [
       { label: "SonarQube CLI", description: "Reuse sonar auth login (no token entry)", cli: true },
       {
@@ -847,7 +1054,10 @@ function registerFilterCommands(
   busy: BusyIndicator,
   scope: TodoViewScope = "todos",
 ): void {
-  const { repository, filter, treeProvider } = services;
+  const { repository, treeProvider } = services;
+  // Multi-root tree children own root-scoped filters. Commands must update the
+  // filter consumed by the currently visible child, not the legacy default.
+  const getFilter = () => treeProvider.getActiveFilter?.() ?? services.filter;
   const commands =
     scope === "code-scanning"
       ? {
@@ -894,16 +1104,19 @@ function registerFilterCommands(
     }
   });
   register(commands.ClearFilters, async () => {
+    const filter = getFilter();
     await filter.clear();
     await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
     services.boardViewProvider.refresh();
   });
   register(commands.Filter, async () => {
+    const filter = getFilter();
     await runFilterPicker(filter, treeProvider, repository, scope);
     services.boardViewProvider.refresh();
   });
   register(commands.Search, async () => {
+    const filter = getFilter();
     const text = await vscode.window.showInputBox({
       prompt: "Search todos (id, title, tag, key, dependency)",
       value: filter.current.text ?? "",
@@ -918,6 +1131,7 @@ function registerFilterCommands(
     services.boardViewProvider.refresh();
   });
   register(commands.ClearSearch, async () => {
+    const filter = getFilter();
     await filter.set({ ...filter.current, text: undefined });
     await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
@@ -2130,7 +2344,7 @@ TODO
 
 ## Work Log
 
-- ${now.slice(0, 10)} — Created from ${url}
+### ${now} — Created from ${url}
 `;
 
   // Write the todo file

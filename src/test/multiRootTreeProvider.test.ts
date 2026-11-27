@@ -212,6 +212,78 @@ suite("MultiRootTreeProvider", () => {
     registry.dispose();
   });
 
+  test("active-root search filters visible todos by ID", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-search-"));
+    restore.push(() => fs.rm(dir, { recursive: true, force: true }));
+    const { registry, provider, restore: cleanup } = await setupRegistry(
+      [makeFolder("search", dir)],
+      [],
+      [{
+        dir: path.join(dir, "docs", "todos"),
+        files: [
+          { id: "077", status: "pending", priority: "p2", title: "First" },
+          { id: "078", status: "pending", priority: "p2", title: "Second" },
+        ],
+      }],
+    );
+    restore.push(cleanup);
+    const filter = provider.getActiveFilter();
+    assert.ok(filter);
+    await filter.set({ text: "077" });
+    assert.deepStrictEqual(collectTodos(provider.getChildren(), provider).map((todo) => todo.id), ["077"]);
+    provider.dispose();
+    registry.dispose();
+  });
+
+  test("regular and code-scanning root filters persist independently", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-scoped-search-"));
+    restore.push(() => fs.rm(dir, { recursive: true, force: true }));
+    const { registry, memento, provider, restore: cleanup } = await setupRegistry(
+      [makeFolder("search", dir)],
+      [],
+      [{
+        dir: path.join(dir, "docs", "todos"),
+        files: [
+          { id: "077", status: "pending", priority: "p2", title: "Todo match" },
+          { id: "078", status: "pending", priority: "p2", title: "Todo other" },
+          { id: "cql-077", status: "pending", priority: "p2", title: "Scanner match" },
+          { id: "cql-078", status: "pending", priority: "p2", title: "Scanner other" },
+        ],
+      }],
+    );
+    restore.push(cleanup);
+    const scanning = new MultiRootTreeProvider(registry, memento, undefined, "code-scanning");
+    const regularFilter = provider.getActiveFilter();
+    const scanningFilter = scanning.getActiveFilter();
+    assert.ok(regularFilter);
+    assert.ok(scanningFilter);
+    await regularFilter.set({ text: "077" });
+    await scanningFilter.set({ text: "cql-078" });
+
+    assert.deepStrictEqual(collectTodos(provider.getChildren(), provider).map((todo) => todo.id), ["077"]);
+    assert.deepStrictEqual(
+      collectTodos(scanning.getChildren(), scanning).map((todo) => todo.id),
+      ["cql-078"],
+    );
+
+    const restoredRegular = new MultiRootTreeProvider(registry, memento);
+    const restoredScanning = new MultiRootTreeProvider(registry, memento, undefined, "code-scanning");
+    assert.deepStrictEqual(
+      collectTodos(restoredRegular.getChildren(), restoredRegular).map((todo) => todo.id),
+      ["077"],
+    );
+    assert.deepStrictEqual(
+      collectTodos(restoredScanning.getChildren(), restoredScanning).map((todo) => todo.id),
+      ["cql-078"],
+    );
+
+    provider.dispose();
+    scanning.dispose();
+    restoredRegular.dispose();
+    restoredScanning.dispose();
+    registry.dispose();
+  });
+
   test("multi mode shows named root containers with separate child hierarchies", async () => {
     const dir1 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root1-"));
     const dir2 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root2-"));
@@ -437,6 +509,42 @@ suite("MultiRootTreeProvider", () => {
     assert.ok(provider0);
     assert.ok(provider1);
     assert.notStrictEqual(provider0, provider1);
+
+    provider.dispose();
+    registry.dispose();
+  });
+
+  test("root persistence hash uses Unicode code points for BMP and astral paths", async () => {
+    const baseDir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-unicode-"));
+    const restoreBase = () => fs.rm(baseDir, { recursive: true, force: true });
+    restore.push(restoreBase);
+    const paths = ["bmp-é", "astral-🧭"].map((name) => path.join(baseDir, name));
+    const folders = paths.map((fsPath, index) => makeFolder(`unicode-${index}`, fsPath));
+    const { registry, provider, memento, restore: cleanup } = await setupRegistry(
+      folders,
+      [],
+      paths.map((fsPath) => ({ dir: path.join(fsPath, "docs", "todos"), files: [] })),
+    );
+    restore.push(cleanup);
+
+    registry.setMode("multi");
+    const roots = provider.getChildren() as RootNode[];
+    assert.strictEqual(roots.length, paths.length);
+    for (const root of roots) {
+      let expectedHash = 0;
+      for (const char of root.rootId) {
+        expectedHash = Math.trunc(expectedHash * 31 + (char.codePointAt(0) ?? 0));
+        expectedHash %= 4_294_967_296;
+        if (expectedHash >= 2_147_483_648) expectedHash -= 4_294_967_296;
+        else if (expectedHash < -2_147_483_648) expectedHash += 4_294_967_296;
+      }
+      const expectedSuffix = `r${Math.abs(expectedHash).toString(36)}`;
+      provider.collapse(root);
+      assert.deepStrictEqual(
+        memento.get(`agendo.tree.collapsed.roots.${expectedSuffix}`),
+        [root.rootId],
+      );
+    }
 
     provider.dispose();
     registry.dispose();

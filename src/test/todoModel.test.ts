@@ -3146,13 +3146,21 @@ suite("todoModel", () => {
       });
       await registrations.get(Command.ClearFilters)?.();
       await registrations.get(Command.Filter)?.();
-      const selectedFilters = workspaceState.get("agendo.filter") as {
+      const rootFilterKey = [...workspaceState.keys()].find((key) => key.startsWith("agendo.filter."));
+      assert.ok(rootFilterKey, "active root should persist its filter state");
+      const selectedFilters = workspaceState.get(rootFilterKey) as {
         statuses?: string[];
         group?: string;
       };
       assert.strictEqual(selectedFilters.group, "auth");
       assert.ok(!selectedFilters.statuses?.includes("auth"));
+      inputQueue.shift();
+      inputQueue.unshift("001");
       await registrations.get(Command.Search)?.();
+      const searchedFilters = workspaceState.get(rootFilterKey) as {
+        text?: string;
+      };
+      assert.strictEqual(searchedFilters.text, "001");
       await registrations.get(Command.ClearSearch)?.();
       await registrations.get(Command.ShowDigest)?.();
 

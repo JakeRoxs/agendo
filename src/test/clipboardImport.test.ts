@@ -8,6 +8,7 @@ suite("Clipboard import refresh reporting", () => {
   let warnings: string[];
   let information: string[];
   let writes: number;
+  let writtenContent: string;
   let refreshes: number;
   let writeFailure: Error | undefined;
   let refresh: () => Promise<void>;
@@ -24,6 +25,7 @@ suite("Clipboard import refresh reporting", () => {
     warnings = [];
     information = [];
     writes = 0;
+    writtenContent = "";
     refreshes = 0;
     writeFailure = undefined;
     refresh = async () => {};
@@ -43,9 +45,10 @@ suite("Clipboard import refresh reporting", () => {
     mock(vscode.workspace, "fs", {
       ...vscode.workspace.fs,
       createDirectory: async () => {},
-      writeFile: async () => {
+      writeFile: async (_uri: vscode.Uri, content: Uint8Array) => {
         if (writeFailure) throw writeFailure;
         writes++;
+        writtenContent = Buffer.from(content).toString("utf8");
       },
     });
   });
@@ -94,6 +97,10 @@ suite("Clipboard import refresh reporting", () => {
       await action;
     }
     assert.strictEqual(writes, 1);
+    assert.match(
+      writtenContent,
+      /### \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z — Created from https:\/\/github\.com\/owner\/repo\/issues\/99/,
+    );
     assert.strictEqual(refreshes, 1);
     assert.deepStrictEqual(errors, []);
     assert.deepStrictEqual(warnings, []);

@@ -33,6 +33,12 @@ import type { TodoRepository } from "./todoRepository";
 
 export type ScanningSource = "codeql" | "sonarqube";
 export type ScanningGrouping = "file" | "rule" | "finding";
+export class ScanningImportCancelledError extends Error {
+  constructor() {
+    super("Scanner import cancelled before any todos were written.");
+    this.name = "ScanningImportCancelledError";
+  }
+}
 export interface ScanningFinding {
   id: string;
   rule: string;
@@ -201,7 +207,7 @@ function updateFrontmatterStatus(content: string, status: TodoStatus): string {
 
 /** Append an auto-completion work log entry to the todo's Work Log section. */
 function addWorkLogEntry(content: string, action: string): string {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = new Date().toISOString();
   const entry = `\n### ${date} - Auto-completed by scanner import\n\n**By:** Kilo\n\n**Actions:**\n- ${action}\n`;
   const workLogMatch = /^## Work Log\r?\n(?:\r?\n)?/m.exec(content);
   if (workLogMatch) {
@@ -1181,7 +1187,12 @@ export async function importScanningFindings(
   scope: string,
   findings: ScanningFinding[],
   grouping: ScanningGrouping = "file",
-  options: { target?: string; branch?: string } = {},
+  options: {
+    target?: string;
+    branch?: string;
+    onProgress?: (progress: { completed: number; total: number; label: string }) => void;
+    isCancellationRequested?: () => boolean;
+  } = {},
 ): Promise<ScanningImportResult> {
   if (!["file", "rule", "finding"].includes(grouping)) {
     throw new Error("Choose a supported scanner import grouping.");
@@ -1212,6 +1223,8 @@ export async function importScanningFindings(
     groups.clear();
     groups.set(options.target, findingsForTarget);
   }
+  const importGroups = [...groups].sort(([a], [b]) => a.localeCompare(b));
+  options.onProgress?.({ completed: 0, total: importGroups.length, label: "Preparing findings" });
   let nextId = repository.getMaxId(source) + 1;
   const result: ScanningImportResult = {
     created: 0,
@@ -1230,7 +1243,7 @@ export async function importScanningFindings(
     retrievedAt: new Date().toISOString(),
     completedFolder: config.completedFolder,
   };
-  for (const [key, alerts] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+  for (const [index, [key, alerts]] of importGroups.entries()) {
     const {
       write,
       changes,
@@ -1239,8 +1252,14 @@ export async function importScanningFindings(
     nextId = nextIdAfter;
     writes.push(write);
     accumulateImportResult(result, write, changes);
+    options.onProgress?.({
+      completed: index + 1,
+      total: importGroups.length,
+      label: key,
+    });
   }
   await preflightWrites(writes);
+  if (options.isCancellationRequested?.()) throw new ScanningImportCancelledError();
   await writeImportResults(writes, root, source);
   if (result.created) {
     await config.writeConfigFile({ force: true });

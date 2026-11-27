@@ -129,20 +129,19 @@ function hasTraversalSegments(relPath: string): boolean {
 }
 
 /**
- * Resolve a workspace-relative path to a URI inside the workspace folder,
- * rejecting traversal and absolute paths. Returns undefined when the path
- * escapes the folder.
+ * Resolve a relative or absolute path to a URI inside the workspace folder.
+ * Absolute paths are accepted only when their normalized location is contained
+ * by the selected folder. Returns undefined when the path escapes the folder.
  */
-function resolveSafePath(baseUri: vscode.Uri, relPath: string): vscode.Uri | undefined {
-  if (path.isAbsolute(relPath)) {
-    return undefined;
-  }
-  if (hasTraversalSegments(relPath)) {
+function resolveSafePath(baseUri: vscode.Uri, requestedPath: string): vscode.Uri | undefined {
+  if (!path.isAbsolute(requestedPath) && hasTraversalSegments(requestedPath)) {
     return undefined;
   }
   let joined: vscode.Uri;
   try {
-    joined = vscode.Uri.joinPath(baseUri, relPath);
+    joined = path.isAbsolute(requestedPath)
+      ? vscode.Uri.file(path.resolve(requestedPath))
+      : vscode.Uri.joinPath(baseUri, requestedPath);
   } catch {
     return undefined;
   }
@@ -241,13 +240,7 @@ export class DiagnosticsService {
 
     const matched = this.collectMatching(folder.uri, targetUri, severitySet, all);
 
-    const total = matched.length;
-    let truncated = false;
-    let limited = matched;
-    if (total > limit) {
-      truncated = true;
-      limited = matched.slice(0, limit);
-    }
+    const { total, truncated, diagnostics: limited } = this.limitDiagnostics(matched, limit);
 
     const diagnostics = this.buildDiagnostics(folder.uri, limited);
 
@@ -257,6 +250,19 @@ export class DiagnosticsService {
       total,
       truncated,
       diagnostics,
+    };
+  }
+
+  private limitDiagnostics<T>(matched: T[], limit: number): {
+    total: number;
+    truncated: boolean;
+    diagnostics: T[];
+  } {
+    const total = matched.length;
+    return {
+      total,
+      truncated: total > limit,
+      diagnostics: total > limit ? matched.slice(0, limit) : matched,
     };
   }
 

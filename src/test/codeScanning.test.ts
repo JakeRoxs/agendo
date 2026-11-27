@@ -15,6 +15,7 @@ import {
   fetchSonarQubeCli,
   fetchSonarQubeCliBranches,
   importScanningFindings,
+  ScanningImportCancelledError,
   type ScanningFinding,
   scanningPriority,
   sonarQubeCliServer,
@@ -640,6 +641,54 @@ suite("native code scanning", () => {
     assert.strictEqual(repository.getMaxId("codeql"), 2);
   });
 
+  test("scanner import progress advances by known file groups for both sources and reports empty totals", async () => {
+    for (const source of ["codeql", "sonarqube"] as const) {
+      const updates: Array<{ completed: number; total: number; label: string }> = [];
+      await importScanningFindings(
+        config,
+        repository,
+        source,
+        source === "codeql" ? "owner/repo" : "server#project",
+        [
+          { ...finding, id: `${source}-1`, path: "src/a.ts" },
+          { ...finding, id: `${source}-2`, path: "src/b.ts" },
+        ],
+        "file",
+        { onProgress: (update) => updates.push(update) },
+      );
+      assert.deepStrictEqual(
+        updates.map(({ completed, total }) => [completed, total]),
+        [[0, 2], [1, 2], [2, 2]],
+      );
+      assert.ok(updates[1].label.length > 0);
+    }
+
+    const emptyUpdates: Array<{ completed: number; total: number }> = [];
+    await importScanningFindings(config, repository, "codeql", "empty-progress/repo", [], "file", {
+      onProgress: ({ completed, total }) => emptyUpdates.push({ completed, total }),
+    });
+    assert.deepStrictEqual(emptyUpdates, [{ completed: 0, total: 0 }]);
+  });
+
+  test("scanner import cancellation after staging prevents every write", async () => {
+    let cancellationRequested = false;
+    await assert.rejects(
+      importScanningFindings(config, repository, "codeql", "owner/repo", [finding], "file", {
+        onProgress: ({ completed }) => {
+          if (completed === 1) cancellationRequested = true;
+        },
+        isCancellationRequested: () => cancellationRequested,
+      }),
+      ScanningImportCancelledError,
+    );
+    assert.deepStrictEqual(await fs.readdir(root.fsPath), []);
+    assert.strictEqual(repository.getTodos().length, 0);
+
+    const result = await importScanningFindings(config, repository, "codeql", "owner/repo", [finding]);
+    assertImportCounts(result, { created: 1, updated: 0 });
+    assert.strictEqual(repository.getTodos().length, 1);
+  });
+
   test("imports default to file grouping and keep file, rule, and individual identities separate", async () => {
     const findings = [
       {
@@ -843,9 +892,13 @@ suite("native code scanning", () => {
     const chosenBranches: Array<string | undefined> = [];
     const errors: string[] = [];
     const settingWrites: Array<{ key: unknown; value: unknown }> = [];
+    const remembered = new Map<string, unknown>();
     let index: number | undefined = 0;
     let branchIndex = 0;
+    let staleBranch = false;
+    let workspaceRoot = root;
     let cancelSourcePicker = false;
+    let reuseLast = false;
     let fetches = 0;
     try {
       mock(vscode.workspace, "isTrusted", true);
@@ -859,7 +912,8 @@ suite("native code scanning", () => {
       mock(
         vscode.window,
         "showQuickPick",
-        async (items: Array<{ source?: string; grouping?: string; branch?: string }>) => {
+        async (items: Array<{ source?: string; grouping?: string; branch?: string; value?: string }>) => {
+          if (items[0].value) return reuseLast ? items[0] : items[1];
           if (items[0].source) return cancelSourcePicker ? undefined : items[0];
           if ("branch" in items[0]) return items[branchIndex];
           assert.deepStrictEqual(
@@ -873,12 +927,20 @@ suite("native code scanning", () => {
       mock(vscode.window, "showErrorMessage", async (message: string) => {
         errors.push(message);
       });
-      mock(vscode.window, "withProgress", async (_options: unknown, work: () => Promise<void>) =>
-        work(),
+      mock(
+        vscode.window,
+        "withProgress",
+        async (
+          _options: unknown,
+          work: (
+            progress: { report: (value: unknown) => void },
+            token: { isCancellationRequested: boolean },
+          ) => Promise<void>,
+        ) => work({ report: () => undefined }, { isCancellationRequested: false }),
       );
       mock(service, "fetchCodeQLBranches", async () => ({
         defaultBranch: "main",
-        branches: ["main", "dev"],
+        branches: staleBranch ? ["main", "release"] : ["main", "dev"],
       }));
       mock(service, "fetchCodeQL", async (_cwd: string, _run: unknown, branch?: string) => {
         fetches++;
@@ -908,9 +970,15 @@ suite("native code scanning", () => {
         },
       );
       registerCommands(
-        { subscriptions } as never,
         {
-          config: { getWorkspaceFolder: () => ({ uri: root }) },
+          subscriptions,
+          workspaceState: {
+            get: (key: string) => remembered.get(key),
+            update: async (key: string, value: unknown) => { remembered.set(key, value); },
+          },
+        } as never,
+        {
+          config: { getWorkspaceFolder: () => ({ uri: workspaceRoot }) },
           repository: { refresh: async () => {} },
         } as never,
       );
@@ -920,18 +988,140 @@ suite("native code scanning", () => {
         branchIndex = index === 2 ? 1 : 0;
         await command();
       }
-      assert.deepStrictEqual(chosen, ["file", "rule", "finding"]);
-      assert.deepStrictEqual(chosenBranches, [undefined, undefined, "dev"]);
-      assert.strictEqual(fetches, 3);
+      reuseLast = true;
+      await command();
+      assert.deepStrictEqual(chosen, ["file", "rule", "finding", "finding"]);
+      assert.deepStrictEqual(chosenBranches, [undefined, undefined, "dev", "dev"]);
+      assert.strictEqual(fetches, 4);
+      staleBranch = true;
+      branchIndex = 0;
+      await command();
+      assert.strictEqual(chosenBranches[chosenBranches.length - 1], undefined, "a stale saved branch prompts for a current branch");
+      assert.strictEqual(fetches, 5);
+      assert.strictEqual(remembered.size, 1);
+      const secondRoot = vscode.Uri.file(`${root.fsPath}-other`);
+      await fs.mkdir(secondRoot.fsPath);
+      workspaceRoot = secondRoot;
+      await command();
+      assert.strictEqual(fetches, 6);
+      assert.strictEqual(remembered.size, 2, "saved choices are isolated by canonical root");
+      await fs.rm(secondRoot.fsPath, { recursive: true, force: true });
+      workspaceRoot = root;
+      reuseLast = false;
       index = undefined;
       await command();
-      assert.strictEqual(fetches, 3);
+      assert.strictEqual(fetches, 6);
       assert.deepStrictEqual(errors, []);
 
+      for (const key of remembered.keys()) remembered.set(key, { source: "invalid", grouping: "oops" });
       cancelSourcePicker = true;
       await command();
-      assert.strictEqual(fetches, 3);
+      assert.strictEqual(fetches, 6);
       assert.deepStrictEqual(settingWrites, []);
+    } finally {
+      for (const undo of restore.reverse()) undo();
+      for (const subscription of subscriptions) subscription.dispose();
+    }
+  });
+
+  test("SonarQube direct-token settings are reused without persisting the secret", async () => {
+    const service =
+      require("../todos/codeScanningService") as typeof import("../todos/codeScanningService");
+    const configuration = require("../configuration") as typeof import("../configuration");
+    const restore: Array<() => void> = [];
+    const mock = (target: object, key: string, value: unknown) => {
+      const descriptor = Object.getOwnPropertyDescriptor(target, key);
+      Object.defineProperty(target, key, { configurable: true, value });
+      restore.push(() => {
+        if (descriptor) Object.defineProperty(target, key, descriptor);
+      });
+    };
+    const callbacks = new Map<string, () => Promise<void>>();
+    const subscriptions: vscode.Disposable[] = [];
+    const remembered = new Map<string, unknown>();
+    const token = "sentinel-sonarqube-token";
+    const secrets = new Map<string, string>([["agendo.sonarqube:https://sonar.example/", token]]);
+    const inputs: Array<{ prompt?: string; password?: boolean }> = [];
+    const errors: string[] = [];
+    let reuse = false;
+    let branchFetches = 0;
+    let scans = 0;
+    try {
+      mock(vscode.workspace, "isTrusted", true);
+      mock(vscode.commands, "registerCommand", (id: string, callback: () => Promise<void>) => {
+        callbacks.set(id, callback);
+        return new vscode.Disposable(() => {});
+      });
+      mock(configuration, "set", async () => {});
+      mock(configuration, "get", () => "");
+      mock(vscode.window, "showQuickPick", async (items: Array<Record<string, unknown>>) => {
+        if (items[0].value) return reuse ? items[0] : items[1];
+        if (items[0].source) return items.find((item) => item.source === "sonarqube");
+        if (items[0].cli !== undefined) return items.find((item) => item.cli === false);
+        if ("branch" in items[0]) return items.find((item) => item.branch === undefined);
+        return items.find((item) => item.grouping === "rule");
+      });
+      mock(vscode.window, "showInputBox", async (options: { prompt?: string; password?: boolean }) => {
+        inputs.push(options);
+        if (options.password) return "";
+        return options.prompt === "SonarQube server URL" ? "https://sonar.example" : "project-key";
+      });
+      mock(vscode.window, "showInformationMessage", async () => undefined);
+      mock(vscode.window, "showErrorMessage", async (message: string) => { errors.push(message); });
+      mock(vscode.window, "withProgress", async (_options: unknown, work: (progress: { report: () => void }, token: { isCancellationRequested: boolean }) => Promise<void>) =>
+        work({ report: () => {} }, { isCancellationRequested: false }));
+      mock(service, "sonarQubeDefaults", async () => ({ server: "", project: "" }));
+      mock(service, "fetchSonarQubeBranches", async () => {
+        branchFetches++;
+        return { defaultBranch: "main", branches: ["main", "develop"] };
+      });
+      mock(service, "fetchSonarQube", async () => {
+        scans++;
+        return { scope: "https://sonar.example#project-key", findings: [finding] };
+      });
+      mock(service, "importScanningFindings", async () => ({
+        created: 1, updated: 0, refreshed: 0,
+        changes: { added: 1, changed: 0, unchanged: 0, notReturned: 0, uncompared: 0 },
+        reviewRequired: [],
+      }));
+      registerCommands(
+        {
+          subscriptions,
+          workspaceState: {
+            get: (key: string) => remembered.get(key),
+            update: async (key: string, value: unknown) => { remembered.set(key, value); },
+          },
+          secrets: {
+            get: async (key: string) => secrets.get(key),
+            store: async (key: string, value: string) => { secrets.set(key, value); },
+          },
+        } as never,
+        {
+          config: { getWorkspaceFolder: () => ({ uri: root }) },
+          repository: { refresh: async () => {} },
+        } as never,
+      );
+      const command = callbacks.get(Command.ImportCodeScanning);
+      assert.ok(command);
+      await command();
+      assert.deepStrictEqual(errors, []);
+      const savedValues = [...remembered.values()];
+      assert.strictEqual(savedValues.length, 1);
+      const saved = savedValues[0] as { source: string; grouping: string; branch?: string; sonar: { server: string; project: string; cli: boolean } };
+      assert.deepStrictEqual(saved, {
+        source: "sonarqube", grouping: "rule", branch: undefined,
+        sonar: { server: "https://sonar.example/", project: "project-key", cli: false },
+      });
+      assert.ok(!JSON.stringify(savedValues).includes(token));
+      assert.ok(!JSON.stringify(savedValues).includes("password"));
+
+      reuse = true;
+      await command();
+      assert.strictEqual(branchFetches, 2);
+      assert.strictEqual(scans, 2);
+      assert.strictEqual(inputs.filter((input) => input.password).length, 2, "direct-token reuse prompts securely for the token");
+      assert.strictEqual(secrets.get("agendo.sonarqube:https://sonar.example/"), token);
+      assert.deepStrictEqual([...remembered.values()][0], saved);
     } finally {
       for (const undo of restore.reverse()) undo();
       for (const subscription of subscriptions) subscription.dispose();

@@ -37,18 +37,24 @@ function encodeRootId(rootId: string): string {
   for (const char of rootId) {
     const next = Math.trunc((hash * 31) + (char.codePointAt(0) ?? 0));
     // Preserve the signed 32-bit wraparound of the previous `| 0` hash step.
-    hash = next % 4294967296;
-    if (hash >= 2147483648) hash -= 4294967296;
-    else if (hash < -2147483648) hash += 4294967296;
+    hash = next % 4_294_967_296;
+    if (hash >= 2_147_483_648) hash -= 4_294_967_296;
+    else if (hash < -2_147_483_648) hash += 4_294_967_296;
   }
   return `r${Math.abs(hash).toString(36)}`;
 }
 
-function rootKeys(rootId: string): { filter: string; tree: string } {
+export function rootFilterKey(rootId: string, scope: TodoViewScope): string {
   const suffix = encodeRootId(rootId);
+  return scope === "code-scanning"
+    ? `agendo.codeScanning.filter.${suffix}`
+    : `agendo.filter.${suffix}`;
+}
+
+function rootKeys(rootId: string, scope: TodoViewScope): { filter: string; tree: string } {
   return {
-    filter: `agendo.filter.${suffix}`,
-    tree: `agendo.tree.collapsed.${suffix}`,
+    filter: rootFilterKey(rootId, scope),
+    tree: `agendo.tree.collapsed.${encodeRootId(rootId)}`,
   };
 }
 
@@ -102,7 +108,7 @@ export class MultiRootTreeProvider implements vscode.TreeDataProvider<MultiRootT
 
   private createChildProvider(descriptor: TodoRootDescriptor): void {
     const context = this.registry.resolveContext(descriptor);
-    const keys = rootKeys(descriptor.id);
+    const keys = rootKeys(descriptor.id, this.scope);
     const filter = new FilterService(this.workspaceState, keys.filter);
     const treeState = new TreeStateService(this.workspaceState, keys.tree);
     const rootCollapse = new TreeStateService(this.workspaceState, `${ROOT_COLLAPSE_KEY_PREFIX}.${encodeRootId(descriptor.id)}`);
@@ -135,6 +141,11 @@ export class MultiRootTreeProvider implements vscode.TreeDataProvider<MultiRootT
     const activeId = this.registry.getActiveRootId();
     if (!activeId) return undefined;
     return this.childProviders.get(activeId);
+  }
+
+  /** Filter consumed by the currently active root's visible child tree. */
+  getActiveFilter(): FilterService | undefined {
+    return this.activeProvider()?.getFilter();
   }
 
   getTreeItem(node: MultiRootTreeNode): vscode.TreeItem {

@@ -37,7 +37,7 @@ export function renderBoardCanvas(scope, nav, nonce, csp) {
         if (force || serialized !== lastSnapshot) emit({ type: 'snapshot', snapshot });
         lastSnapshot = serialized;
       };
-      globalThis.agendoBoardHost = {
+      return {
         getState: () => { try { return JSON.parse(sessionStorage.getItem('agendo-board-' + scope) || '{}'); } catch { return {}; } },
         setState: state => { try { sessionStorage.setItem('agendo-board-' + scope, JSON.stringify(state)); } catch { /* Storage is optional. */ } },
         onMessage: listener => listeners.add(listener),

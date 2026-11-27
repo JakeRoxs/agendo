@@ -16,6 +16,7 @@ import { matchesTodoScope } from "./todoModel";
 import type { TodoRootRegistry } from "./rootRegistry";
 import type { BoardReturnTarget, WorkspaceView } from "./workspaceNavigation";
 import { InMemoryMemento } from "./inMemoryMemento";
+import { rootFilterKey } from "./multiRootTreeProvider";
 
 const CANVAS_NAME = "agendo-work-session";
 
@@ -191,7 +192,10 @@ export class CanvasViewer implements vscode.Disposable {
       status: rootStatus,
       links: rootLinks,
     });
-    const rootFilter = new FilterService(this.workspaceState, `agendo.filter.${descriptor.id}`);
+    const rootFilter = new FilterService(
+      this.workspaceState,
+      rootFilterKey(descriptor.id, "todos"),
+    );
     const rootBoardProvider = new BoardViewProvider(
       context.repository,
       rootFilter,
@@ -200,9 +204,13 @@ export class CanvasViewer implements vscode.Disposable {
       "todos",
       rootTaskActions,
     );
+    const rootScanningFilter = new FilterService(
+      this.workspaceState,
+      rootFilterKey(descriptor.id, "code-scanning"),
+    );
     const rootScanningBoardProvider = new BoardViewProvider(
       context.repository,
-      rootFilter,
+      rootScanningFilter,
       rootStatus,
       this.workspaceState,
       "code-scanning",
@@ -211,6 +219,8 @@ export class CanvasViewer implements vscode.Disposable {
     return {
       ...rootTaskActions,
       getBoardSnapshot: async (scope) => {
+        const filter = scope === "code-scanning" ? rootScanningFilter : rootFilter;
+        filter.reload();
         const provider = scope === "code-scanning" ? rootScanningBoardProvider : rootBoardProvider;
         return provider.getSnapshot();
       },

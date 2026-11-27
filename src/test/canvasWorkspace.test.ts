@@ -7,6 +7,8 @@ import { pathToFileURL } from "node:url";
 import * as vscode from "vscode";
 import { CanvasViewer } from "../todos/canvasViewer";
 import { ConfigService } from "../todos/configService";
+import { FilterService } from "../todos/filterService";
+import { rootFilterKey } from "../todos/multiRootTreeProvider";
 import { StatusService } from "../todos/statusService";
 import { parseTodo } from "../todos/todoModel";
 import type { WorkspaceView } from "../todos/workspaceNavigation";
@@ -270,6 +272,86 @@ suite("Shared workspace host boundary", () => {
       assert.deepStrictEqual(captured, [["/tmp/manual-root", "manual"], ["/path/a", "workspace"]]);
     } finally {
       if (original) Object.defineProperty(vscode.env, "asExternalUri", original);
+      viewer.dispose();
+    }
+  });
+
+  test("registered-root boards read their scoped toolbar filters without cross-scope leakage", async () => {
+    const todos = [
+      parseTodo(vscode.Uri.file(todoFile()), fs.readFileSync(todoFile(), "utf8"), "docs/todos"),
+      parseTodo(
+        vscode.Uri.file(path.join(root, "docs", "todos", "002-ready-p1-second.md")),
+        fs.readFileSync(path.join(root, "docs", "todos", "002-ready-p1-second.md"), "utf8"),
+        "docs/todos",
+      ),
+      parseTodo(
+        vscode.Uri.file(path.join(root, "code-scanning", "codeql", "cql-001-pending-p2-codeql.md")),
+        "---\nstatus: pending\npriority: p2\n---\n# CodeQL\n",
+        "code-scanning/codeql",
+      ),
+      parseTodo(
+        vscode.Uri.file(path.join(root, "code-scanning", "sonarqube", "sq-001-pending-p2-sonar.md")),
+        "---\nstatus: pending\npriority: p2\n---\n# Sonar\n",
+        "code-scanning/sonarqube",
+      ),
+    ].filter((todo) => todo !== undefined);
+    const values = new Map<string, unknown>();
+    const state = {
+      get: (key: string, defaultValue?: unknown) => values.get(key) ?? defaultValue,
+      update: async (key: string, value: unknown) => {
+        values.set(key, value);
+      },
+    } as unknown as vscode.Memento;
+    const repository = {
+      getTodos: () => todos,
+      getDependencyGraph: () => ({ blockedBy: new Map(), blocking: new Map() }),
+      onDidChange: () => new vscode.Disposable(() => {}),
+    };
+    const descriptor = { id: "root-1", source: "workspace", folder: { uri: vscode.Uri.file(root) } };
+    const context = { config: {}, repository };
+    const viewer = new CanvasViewer(vscode.Uri.file(root), {}, state);
+    viewer.setRootRegistry({
+      getRoots: () => [descriptor],
+      getContext: () => context,
+    } as never);
+    try {
+      await new FilterService(state, rootFilterKey("root-1", "code-scanning")).set({
+        sources: ["sonarqube"],
+      });
+      await new FilterService(state, rootFilterKey("root-1", "todos")).set({
+        priorities: ["p2"],
+      });
+      const actions = (viewer as unknown as {
+        rootActions: (workspaceRoot: string) => {
+          getBoardSnapshot: (scope: "todos" | "code-scanning") => Promise<any>;
+        };
+      }).rootActions(root);
+      const todosSnapshot = await actions.getBoardSnapshot("todos");
+      assert.deepStrictEqual(
+        todosSnapshot.columns.flatMap((column: { todos: Array<{ title: string }> }) =>
+          column.todos.map((todo) => todo.title),
+        ),
+        ["First"],
+      );
+
+      await new FilterService(state, rootFilterKey("root-1", "todos")).set({
+        priorities: ["p1"],
+      });
+      const updatedTodosSnapshot = await actions.getBoardSnapshot("todos");
+      assert.deepStrictEqual(
+        updatedTodosSnapshot.columns.flatMap((column: { todos: Array<{ title: string }> }) =>
+          column.todos.map((todo) => todo.title),
+        ),
+        ["Second"],
+      );
+
+      const scanningSnapshot = await actions.getBoardSnapshot("code-scanning");
+      assert.deepStrictEqual(
+        scanningSnapshot.sections.map((section: { source: string }) => section.source),
+        ["sonarqube"],
+      );
+      assert.strictEqual(scanningSnapshot.sections[0].columns[0].todos[0].title, "Sonar");
+    } finally {
       viewer.dispose();
     }
   });

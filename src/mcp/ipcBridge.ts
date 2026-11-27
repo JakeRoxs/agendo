@@ -320,24 +320,14 @@ export class IpcBridge implements vscode.Disposable {
     };
 
     socket.on("data", (data: Buffer) => {
-      if (timer) {
-        clearTimeout(timer);
-      }
+      if (timer) clearTimeout(timer);
       buffer = buffer ? Buffer.concat([buffer, data]) : data;
       if (buffer.length > MAX_FRAME) {
         socket.destroy();
         buffer = undefined;
         return;
       }
-      while (true) {
-        const index = buffer.indexOf(0x0a); // newline byte
-        if (index === -1) {
-          break;
-        }
-        const lineBuf = buffer.subarray(0, index);
-        buffer = buffer.subarray(index + 1);
-        processLine(lineBuf);
-      }
+      buffer = this.processBufferedLines(buffer, processLine);
       refresh();
     });
 
@@ -351,6 +341,17 @@ export class IpcBridge implements vscode.Disposable {
         clearTimeout(timer);
       }
     });
+  }
+
+  private processBufferedLines(buffer: Buffer, processLine: (line: Buffer) => void): Buffer {
+    let remaining = buffer;
+    let index = remaining.indexOf(0x0a);
+    while (index !== -1) {
+      processLine(remaining.subarray(0, index));
+      remaining = remaining.subarray(index + 1);
+      index = remaining.indexOf(0x0a);
+    }
+    return remaining;
   }
 
   /** Validate IPC params/fields before using them, so malformed caller input

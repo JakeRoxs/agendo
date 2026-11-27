@@ -1,5 +1,5 @@
 ---
-status: ready
+status: completed
 priority: p2
 issue_id: "041"
 tags: [reporting, digest, completed-todos, agent-context]
@@ -38,19 +38,19 @@ For a large selection, emit a bounded index and stable batches. Produce partial 
 
 ## Acceptance Criteria
 
-- [ ] Users can select a bounded period or explicit set of completed todos and optionally filter by group, tags, or scanner source
-- [ ] Cancellation, backlog, and unfinished work are excluded from accomplishments by default and labeled separately if explicitly included
-- [ ] Completion-date semantics are explicit; records without trustworthy dates appear as undated rather than being assigned file modification times
-- [ ] Future completion-date capture is evaluated without silently rewriting historical completion dates
-- [ ] The deterministic packet includes IDs, source paths/links, outcomes or concise problem/solution context, criterion/verification evidence, and uncertainty
-- [ ] Large selections have item and size limits, stable batching/continuation, and explicit matched, included, and omitted counts
-- [ ] Agent instructions support per-batch summaries followed by a final synthesis with source references and retained coverage information
-- [ ] Reports group meaningful delivered outcomes rather than merely repeating titles or every work-log action
-- [ ] A completed status is not treated as proof that tests ran or criteria were verified; missing or contradictory evidence remains visible
-- [ ] Related or overlapping scanner imports are not counted as distinct delivered outcomes without explaining their overlap
-- [ ] Users can preview/copy the packet and review any generated report; compiling context does not mutate todo lifecycle, overwrite documents, or automatically send content to a provider
-- [ ] Source todo content is treated as untrusted evidence, not instructions to execute
-- [ ] Tests cover date boundaries, undated records, filtering, exclusions, deterministic batches, size limits, and source-link coverage
+- [x] Users can select a bounded period or explicit set of completed todos and optionally filter by group, tags, or scanner source
+- [x] Cancellation, backlog, and unfinished work are excluded from accomplishments by default and labeled separately if explicitly included
+- [x] Completion-date semantics are explicit; records without trustworthy dates appear as undated rather than being assigned file modification times
+- [x] Future completion-date capture is evaluated without silently rewriting historical completion dates
+- [x] The deterministic packet includes IDs, source paths/links, outcomes or concise problem/solution context, criterion/verification evidence, and uncertainty
+- [x] Large selections have item and size limits, stable batching/continuation, and explicit matched, included, and omitted counts
+- [x] Agent instructions support per-batch summaries followed by a final synthesis with source references and retained coverage information
+- [x] Reports group meaningful delivered outcomes rather than merely repeating titles or every work-log action
+- [x] A completed status is not treated as proof that tests ran or criteria were verified; missing or contradictory evidence remains visible
+- [x] Related or overlapping scanner imports are not counted as distinct delivered outcomes without explaining their overlap
+- [x] Users can preview/copy the packet and review any generated report; compiling context does not mutate todo lifecycle, overwrite documents, or automatically send content to a provider
+- [x] Source todo content is treated as untrusted evidence, not instructions to execute
+- [x] Tests cover date boundaries, undated records, filtering, exclusions, deterministic batches, size limits, and source-link coverage
 
 ## Technical Details
 
@@ -58,9 +58,9 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 
 ## Resume Context
 
-**Current state:** Accomplishments report refined. buildAccomplishmentsPacket now derives explicit completion-date semantics from updatedAt (undated when unavailable), includes source path/link, outcome, evidence disclaimer, and uncertainty note per todo; excludes non-completed statuses by default; enforces deterministic batching (date desc, then ID asc) and size limits (25 todos / 50 KB) with matched/included/omitted counts. CopyAccomplishmentsContext command now prompts for a time range (start/end date) and optional filters (group, tags, source) before building the packet. Added agendo.criteriaChanges.enabled setting (default false) registered in package.json with a toggle-criteria-changes handler in extension.ts for the dedicated settings panel.
+**Current state:** The bounded accomplishments packet, filters, evidence/uncertainty reporting, settings-panel configuration, and regression coverage are implemented and verified. All acceptance criteria are satisfied.
 
-**Next step:** Wire the canvas "Proposed Criteria Changes" panel to the new criteriaChanges.enabled setting (panel code lives in the bundled canvas distribution under resources/canvas/). Confirm the setting toggles correctly end-to-end.
+**Next step:** None for this todo. The separate canvas "Proposed Criteria Changes" panel wiring remains a follow-up.
 
 ## Work Log
 
@@ -97,6 +97,21 @@ Potential reuse: repository snapshots, `src/todos/digestService.ts`, completed-t
 - Added `agendo.criteriaChanges.enabled` setting (default false) registered in package.json; added `toggle-criteria-changes` handler in extension.ts for the dedicated settings panel.
 - Added 8 regression tests covering exclusion of non-completed statuses, inclusive date boundaries, undated records, source path/link coverage, deterministic batches, size limits, and header counts.
 - Verified: `npm run compile` clean, `npm run lint` clean, `npm test` 364 passing.
+
+### 2026-11-26 - Verify and complete
+
+**By:** Kilo
+
+**Actions:**
+
+- Reviewed all acceptance criteria against the accomplishments service, command, settings wiring, and regression tests.
+- Ran `npm test` (563 passing) and `npm run compile` (passed); `git diff --check` passed.
+- Checked all verified acceptance criteria and moved the todo to `completed`.
+- Kept the canvas proposal-panel wiring as a separate follow-up rather than blocking this todo.
+
+**Learnings:**
+
+- The report can be completed independently of the separate proposal-panel wiring follow-up.
 
 **Learnings:**
 

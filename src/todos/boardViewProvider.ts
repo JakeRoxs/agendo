@@ -1265,7 +1265,7 @@ export class BoardViewProvider implements vscode.Disposable {
       "utf8",
     );
     const hostBootstrap =
-      "((api) => { globalThis.agendoBoardHost = { postMessage: message => api.postMessage(message), onMessage: listener => window.addEventListener('message', event => listener(event.data)), getState: () => api.getState(), setState: state => api.setState(state) }; })(acquireVsCodeApi());";
+      "((api) => ({ postMessage: message => api.postMessage(message), onMessage: listener => window.addEventListener('message', event => listener(event.data)), getState: () => api.getState(), setState: state => api.setState(state) }))(acquireVsCodeApi())";
     const pageCss = readFileSync(
       path.join(__dirname, "../../resources/canvas/agendo-work-session/assets/page.css"),
       "utf8",

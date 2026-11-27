@@ -250,6 +250,40 @@ suite("shared board presentation", () => {
     assert.ok(!html.includes("__AGENDO_BOARD_"), "HTTP placeholders must be resolved");
   });
 
+  test("HTTP board bootstrap executes before the board reads its host bridge", async () => {
+    const mod = await importBoard(
+      pathToFileURL(path.join(path.dirname(BOARD_HTML_PATH), "board.mjs")).href,
+    );
+    for (const scope of ["todos", "code-scanning"]) {
+      const html = mod.renderBoardCanvas(
+        scope,
+        { recent: [] },
+        "bootstrap-nonce",
+        "script-src 'nonce-bootstrap-nonce';",
+      );
+      const script = extractScript(html);
+      const hostRead = script.indexOf("const host = globalThis.agendoBoardHost");
+      assert.notStrictEqual(hostRead, -1, "Expected board host read");
+
+      const context = {
+        globalThis: {},
+        document: {
+          body: { append: () => {} },
+          createElement: () => ({ setAttribute: () => {}, className: "", textContent: "" }),
+          querySelectorAll: () => [],
+          querySelector: () => null,
+          addEventListener: () => {},
+        },
+        setInterval: () => 0,
+      };
+      new Script(script.slice(0, hostRead)).runInNewContext(context);
+      assert.ok(
+        (context.globalThis as { agendoBoardHost?: unknown }).agendoBoardHost,
+        `Bootstrap must install the host bridge for ${scope}`,
+      );
+    }
+  });
+
   test("HTTP renderBoardCanvas for code-scanning scope", async () => {
     const mod = await importBoard(
       pathToFileURL(path.join(path.dirname(BOARD_HTML_PATH), "board.mjs")).href,
@@ -675,10 +709,33 @@ suite("shared board presentation", () => {
   });
 
   test("shared browser script renders snapshots and emits actions through a non-VS-Code host", () => {
+    const textFromMarkup = (markup: string): string => {
+      let text = "";
+      let insideTag = false;
+      for (const character of markup) {
+        if (character === "<") {
+          insideTag = true;
+        } else if (character === ">") {
+          insideTag = false;
+        } else if (!insideTag) {
+          text += character;
+        }
+      }
+      return text;
+    };
+
     class Element {
       children: Element[] = [];
       parentElement?: Element;
       textContent = "";
+      private html = "";
+      set innerHTML(value: string) {
+        this.html = value;
+        this.textContent = textFromMarkup(value);
+      }
+      get innerHTML() {
+        return this.html;
+      }
       className = "";
       dataset: Record<string, string> = {};
       attributes = new Map<string, string>();
@@ -719,10 +776,11 @@ suite("shared board presentation", () => {
     };
     const script = extractScript(readFileSync(BOARD_HTML_PATH, "utf8")).replace(
       "__AGENDO_BOARD_HOST__",
-      "",
+      "hostBridge",
     );
     new Script(script).runInNewContext({
-      globalThis: { agendoBoardHost: host },
+      globalThis: {},
+      hostBridge: host,
       document: {
         getElementById: (id: keyof typeof elements) => elements[id],
         createElement: () => new Element(),
