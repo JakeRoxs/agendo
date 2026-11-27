@@ -2,8 +2,8 @@
 
 All notable changes to the Agendo extension are documented here.
 
-## [0.3.4] - Unreleased
-Includes canvas 0.1.14
+## [0.3.4] - 2026-11-27
+Includes canvas **0.1.14**
 
 ### Added
 
