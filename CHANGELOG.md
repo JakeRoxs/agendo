@@ -3,6 +3,7 @@
 All notable changes to the Agendo extension are documented here.
 
 ## [0.3.4] - Unreleased
+Includes canvas 0.1.14
 
 ### Added
 
@@ -12,7 +13,7 @@ All notable changes to the Agendo extension are documented here.
 ### Changed
 
 - Display canvas work-log entries newest first and generate ISO-8601 UTC timestamps for new entries
-- Collapse canvas Edit, Copy Context, and Settings labels to icons when the toolbar is narrower than 620px
+- Collapse todo/group action labels and board toolbar labels to icons when their canvas toolbars are narrower than 900px
 
 ## [0.3.3] - 2026-11-24
 

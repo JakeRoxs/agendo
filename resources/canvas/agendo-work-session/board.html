@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy" content="__AGENDO_BOARD_CSP__">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agendo Task Board</title>
   __AGENDO_BOARD_STYLES__
 </head>
 <body class="board-page">
@@ -14,7 +15,7 @@
   <section id="settings" class="settings-panel" aria-label="Board card settings" hidden></section>
   <main id="board" class="board" aria-label="Agendo task board"></main>
   <script nonce="__AGENDO_BOARD_NONCE__">
-__AGENDO_BOARD_HOST__
+(() => __AGENDO_BOARD_HOST__)();
 const host = globalThis.agendoBoardHost;
 const toolbar = document.getElementById("toolbar");
 const settings = document.getElementById("settings");
@@ -27,21 +28,37 @@ let settingsOpen = Boolean(host.getState?.()?.settingsOpen);
 function renderToolbar(snapshot) {
   toolbar.replaceChildren();
   const prefix = snapshot.scope === "code-scanning" ? "agendo.codeScanning" : "agendo";
-  for (const [label, action] of [["Refresh", "refresh"], ["Filter", "filter"], ["Search", "search"], ["Clear Filters", "clearFilters"]]) {
+  for (const [label, action, icon] of [
+    ["Refresh", "refresh", '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2"/>'],
+    ["Filter", "filter", '<path d="M4 5h16l-6 7v6l-4 2v-8z"/>'],
+    ["Search", "search", '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/>'],
+    ["Clear Filters", "clearFilters", '<path d="M4 5h16l-6 7v6l-4 2v-8z"/><path d="m9 9 6 6m0-6-6 6"/>'],
+  ]) {
     const button = document.createElement("button");
+    button.className = "board-toolbar-button";
     button.type = "button";
-    button.textContent = label;
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">' + icon + '</svg><span>' + label + '</span>';
     button.addEventListener("click", () => host.postMessage({ type: "scopedCommand", command: prefix + "." + action }));
     toolbar.append(button);
   }
   const settingsToggle = document.createElement("button");
   settingsToggle.className = "settings-toggle";
   settingsToggle.type = "button";
-  settingsToggle.textContent = settingsOpen ? "Close card settings" : "Card settings";
+  const settingsLabel = settingsOpen ? "Close card settings" : "Card settings";
+  settingsToggle.setAttribute("aria-label", settingsLabel);
+  settingsToggle.title = settingsLabel;
+  settingsToggle.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.5.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.5-.9l-1.7.7-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.8l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.5-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.5.9l1.7-.7 1.4 2.4-1.4 1.1a7 7 0 0 1 0 1.8Z"/></svg><span>' + settingsLabel + '</span>';
   settingsToggle.setAttribute("aria-expanded", String(settingsOpen));
   settingsToggle.addEventListener("click", () => {
     settingsOpen = !settingsOpen;
-    host.setState?.({ ...(host.getState?.() ?? {}), settingsOpen });
+    const priorState = host.getState?.();
+    if (priorState == null) {
+      host.setState?.({ settingsOpen });
+    } else {
+      host.setState?.({ ...priorState, settingsOpen });
+    }
     renderToolbar(snapshot);
     renderSettings(snapshot);
   });
@@ -50,7 +67,8 @@ function renderToolbar(snapshot) {
   const settingsLink = document.createElement("button");
   settingsLink.className = "settings-toggle";
   settingsLink.type = "button";
-  settingsLink.textContent = "Settings";
+  settingsLink.setAttribute("aria-label", "Settings");
+  settingsLink.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24" focusable="false"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19.4 15 .1.1 1.4 1.1-1.4 2.4-1.7-.7a8 8 0 0 1-1.5.9l-.3 1.8h-2.8l-.3-1.8a8 8 0 0 1-1.5-.9l-1.7.7-1.4-2.4 1.4-1.1a7 7 0 0 1 0-1.8l-1.4-1.1 1.4-2.4 1.7.7a8 8 0 0 1 1.5-.9l.3-1.8h2.8l.3 1.8a8 8 0 0 1 1.5.9l1.7-.7 1.4 2.4-1.4 1.1a7 7 0 0 1 0 1.8Z"/></svg><span>Settings</span>';
   settingsLink.title = "Settings and About";
   settingsLink.addEventListener("click", () => host.postMessage({ type: "settings" }));
   toolbar.append(settingsLink);
@@ -308,13 +326,21 @@ function formatDate(timestamp, format) {
   if (format === "relative") {
     const seconds = Math.round((timestamp - Date.now()) / 1000);
     const absoluteSeconds = Math.abs(seconds);
-    const [value, unit] = absoluteSeconds < 60
-      ? [seconds, "second"]
-      : absoluteSeconds < 3600
-        ? [Math.round(seconds / 60), "minute"]
-        : absoluteSeconds < 86400
-          ? [Math.round(seconds / 3600), "hour"]
-          : [Math.round(seconds / 86400), "day"];
+    let value;
+    let unit;
+    if (absoluteSeconds < 60) {
+      value = seconds;
+      unit = "second";
+    } else if (absoluteSeconds < 3600) {
+      value = Math.round(seconds / 60);
+      unit = "minute";
+    } else if (absoluteSeconds < 86400) {
+      value = Math.round(seconds / 3600);
+      unit = "hour";
+    } else {
+      value = Math.round(seconds / 86400);
+      unit = "day";
+    }
     return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(value, unit);
   }
   return date.toLocaleString();
@@ -375,13 +401,14 @@ function groupTodos(todos, grouping) {
   if (grouping === "none") return [{ label: "", todos }];
   const groups = new Map();
   for (const todo of todos) {
-    const label = grouping === "priority"
-      ? todo.priority.toUpperCase()
-      : grouping === "group"
-        ? todo.group || "Ungrouped"
-        : todo.epic
-          ? "Epic"
-          : "Standard";
+    let label;
+    if (grouping === "priority") {
+      label = todo.priority.toUpperCase();
+    } else if (grouping === "group") {
+      label = todo.group || "Ungrouped";
+    } else {
+      label = todo.epic ? "Epic" : "Standard";
+    }
     const group = groups.get(label) || [];
     group.push(todo);
     groups.set(label, group);

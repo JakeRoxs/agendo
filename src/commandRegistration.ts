@@ -395,6 +395,18 @@ async function chooseScanningImport(
   savedConfig: { key: string; value?: SavedScanningImport },
 ): Promise<ScanningSelection | undefined> {
   const saved = savedConfig.value;
+  const choice = await chooseScanningSource(saved);
+  if (!choice) return undefined;
+  const { source, reuse } = choice;
+  const sonar = await chooseScanningSonar(context, workspace, source, reuse, saved);
+  if (source.source === "sonarqube" && !sonar) return undefined;
+  const branches = await loadScanningBranches(workspace, source, sonar);
+  return chooseScanningBranchAndGrouping(source, branches, reuse, saved, sonar);
+}
+
+async function chooseScanningSource(
+  saved?: SavedScanningImport,
+): Promise<{ source: ScanningImportSource; reuse: boolean } | undefined> {
   const mode = saved
     ? await vscode.window.showQuickPick(
         [
@@ -431,12 +443,21 @@ async function chooseScanningImport(
   if (!source) {
     return undefined;
   }
-  const sonar = await chooseScanningSonar(context, workspace, source, reuse, saved);
-  if (source.source === "sonarqube" && !sonar) return undefined;
-  const branches = await loadScanningBranches(workspace, source, sonar);
-  const branch = await chooseScanningBranch(source, branches, reuse, saved);
+  return { source, reuse };
+}
+
+async function chooseScanningBranchAndGrouping(
+  source: ScanningImportSource,
+  branches: Awaited<ReturnType<typeof fetchCodeQLBranches>>,
+  reuse: boolean,
+  saved: SavedScanningImport | undefined,
+  sonar: ScanningSelection["sonar"],
+): Promise<ScanningSelection | undefined> {
+  let branch = reuse && saved ? reuseScanningBranch(branches, saved) : undefined;
+  branch ??= await promptScanningBranch(source, branches);
   if (!branch) return undefined;
-  const grouping = await chooseScanningGrouping(reuse, saved);
+  let grouping = reuse && saved ? reuseScanningGrouping(saved) : undefined;
+  grouping ??= await promptScanningGrouping();
   if (!grouping) return undefined;
   return { source, sonar, branch, grouping };
 }
@@ -478,18 +499,22 @@ async function loadScanningBranches(
   );
 }
 
-async function chooseScanningBranch(
+function reuseScanningBranch(
+  branches: Awaited<ReturnType<typeof loadScanningBranches>>,
+  saved: SavedScanningImport,
+): ScanningSelection["branch"] | undefined {
+  if (saved.branch !== undefined && !branches.branches.includes(saved.branch)) return undefined;
+  return {
+    label: saved.branch ?? `${branches.defaultBranch} (default)`,
+    branch: saved.branch,
+  };
+}
+
+async function promptScanningBranch(
   source: ScanningImportSource,
   branches: Awaited<ReturnType<typeof loadScanningBranches>>,
-  reuse: boolean,
-  saved?: SavedScanningImport,
 ): Promise<ScanningSelection["branch"] | undefined> {
-  return reuse && saved && (saved.branch === undefined || branches.branches.includes(saved.branch))
-    ? {
-        label: saved.branch ?? `${branches.defaultBranch} (default)`,
-        branch: saved.branch,
-      }
-    : await vscode.window.showQuickPick(
+  return vscode.window.showQuickPick(
     [
       {
         label: `${branches.defaultBranch} (default)`,
@@ -508,13 +533,15 @@ async function chooseScanningBranch(
     );
 }
 
-async function chooseScanningGrouping(
-  reuse: boolean,
-  saved?: SavedScanningImport,
-): Promise<ScanningSelection["grouping"] | undefined> {
-  return reuse && saved
-    ? { label: `By ${saved.grouping}`, grouping: saved.grouping }
-    : await vscode.window.showQuickPick(
+function reuseScanningGrouping(
+  saved: SavedScanningImport,
+): ScanningSelection["grouping"] | undefined {
+  if (!["file", "rule", "finding"].includes(saved.grouping)) return undefined;
+  return { label: `By ${saved.grouping}`, grouping: saved.grouping };
+}
+
+async function promptScanningGrouping(): Promise<ScanningSelection["grouping"] | undefined> {
+  return vscode.window.showQuickPick(
     [
       {
         label: "By file (default)",

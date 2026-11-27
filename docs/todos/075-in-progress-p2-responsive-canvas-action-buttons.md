@@ -1,5 +1,5 @@
 ---
-status: ready
+status: in-progress
 priority: p2
 issue_id: "075"
 tags: [canvas, responsive, ux]
@@ -16,17 +16,18 @@ Canvas action buttons currently take up space for both their icons and text labe
 
 ## Acceptance Criteria
 
-- [x] Edit, Copy Context, and Settings buttons display only their existing icons when the canvas is below the 620px container-width threshold.
+- [x] Edit, Copy Context, and Settings buttons display only their existing icons when the canvas is below the 900px container-width threshold.
 - [x] Button labels return when sufficient toolbar width is available.
 - [x] Icon-only controls retain accessible names and usable hover/focus tooltips via `aria-label` and native `title`.
 - [x] Responsive behavior is shared by todo and group canvas toolbars and does not introduce toolbar overflow.
 - [x] Tests cover the responsive breakpoint and preserve existing button behavior.
+- [x] Board view toolbar controls also collapse to icon-only below the compact breakpoint, retaining accessible names/tooltips and action behavior.
 
 ## Resume Context
 
-**Current state:** Responsive icon-only behavior is implemented for todo and group toolbars, with accessible labels/tooltips preserved and regression coverage passing.
+**Current state:** Responsive icon-only behavior is implemented for todo and group toolbars. Board view has a separate toolbar and is being extended to use compact icon-only controls below its own inline-size breakpoint; visual confirmation in an embedded canvas remains pending.
 
-**Next step:** Verify the controls in an embedded canvas at narrow and wide widths, then complete the todo.
+**Next step:** Run the canvas tests and compile, then verify todo/group and board controls in an embedded canvas at narrow and wide widths.
 
 ## Work Log
 
@@ -60,6 +61,37 @@ Canvas action buttons currently take up space for both their icons and text labe
 
 - Todo/group views share the page toolbar; the board canvas has a separate toolbar and does not render these Edit/Copy/Settings actions.
 - The implementation keeps the existing visible action label "Copy Context" and its existing clipboard behavior (the todo refers to this action as Copy Content).
+- Board view has separate Refresh, Filter, Search, Clear Filters, Card settings/Close card settings, and Settings controls; responsive changes must preserve their scoped commands and settings state.
+
+### 2026-11-27 - Extend Responsive Controls to Board View
+
+**By:** Kilo
+
+**Actions:**
+
+- Added inline SVG icons and label spans to each board toolbar control, with accessible names and native titles; the card-settings toggle updates both as it changes between open and closed.
+- Reused the shared canvas-toolbar container width for the board-only query, so compact mode tracks available canvas width without affecting todo/group controls.
+- Kept narrow-mode labels in the accessibility tree using visually hidden text in addition to the buttons' `aria-label` and native `title`.
+- Added regression assertions for board responsive styling, labels, names, settings-toggle semantics, and existing command dispatch.
+- Ran `npm run test:canvas` (302 passed), `npm run compile`, and `git diff --check`.
+
+**Learnings:**
+
+- Automated checks cannot confirm the embedded canvas appearance; keep this item in progress until narrow and wide board rendering is visually confirmed.
+
+### 2026-11-27 - Integration Review
+
+**By:** Kilo
+
+**Actions:**
+
+- Bound the board-only container query to the shared canvas toolbar width so it follows available canvas space while remaining scoped to board controls.
+- Kept label text in the accessibility tree in compact mode using visually hidden text, alongside `aria-label` and native `title`.
+- Re-ran `npm run test:canvas` (302 passed), `npm run compile`, and `git diff --check`.
+
+**Learnings:**
+
+- Embedded narrow/wide visual verification is still pending; automated source tests do not exercise container-query layout.
 
 ### 2026-11-26 - Review responsive toolbar implementation
 
@@ -74,3 +106,16 @@ Canvas action buttons currently take up space for both their icons and text labe
 **Learnings:**
 
 - Automated tests assert the container-query breakpoint and retained accessible names; embedded visual verification remains the final confirmation.
+
+### 2026-11-26 - Raise Compact Toolbar Breakpoint
+
+**By:** Kilo
+
+**Actions:**
+
+- Raised the shared container-query breakpoint from 620px to 900px so action labels collapse before the toolbar reaches the wrapping layout shown in the report.
+- Updated the CSS regression assertion to require the new threshold; existing accessible names, tooltips, and button behavior are unchanged.
+
+**Learnings:**
+
+- The previous 620px threshold allowed the action labels to remain visible at widths where the toolbar was already wrapping.

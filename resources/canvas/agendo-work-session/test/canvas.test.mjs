@@ -330,10 +330,28 @@ describe('loadGroupTodos', () => {
 import { renderSettingsPage } from '../settings.mjs';
 
 describe('Settings button and page', () => {
+  it('makes board toolbar controls icon-only in its own narrow container', () => {
+    const css = readFileSync(new URL('../assets/page.css', import.meta.url), 'utf8');
+    const html = readFileSync(new URL('../board.html', import.meta.url), 'utf8');
+    assert.match(css, /\.canvas-toolbar\s*\{[^}]*container-type:\s*inline-size/);
+    assert.match(css, /@container\s*\(max-width:\s*900px\)\s*\{\s*\.board-page\s+#toolbar button span\s*\{\s*position:\s*absolute[^}]*clip:\s*rect\(0 0 0 0\)/);
+    assert.match(html, /className = "board-toolbar-button"/);
+    assert.match(html, /setAttribute\("aria-label", label\)/);
+    assert.match(html, /button\.title = label/);
+    assert.match(html, /settingsOpen \? "Close card settings" : "Card settings"/);
+    assert.match(html, /settingsToggle\.setAttribute\("aria-label", settingsLabel\)/);
+    assert.match(html, /settingsToggle\.title = settingsLabel/);
+    for (const label of ['"Refresh"', '"Filter"', '"Search"', '"Clear Filters"', '"Settings"']) {
+      assert.ok(html.includes(label), `Board toolbar should retain ${label}`);
+    }
+    assert.match(html, /command: prefix \+ "\." \+ action/);
+    assert.match(html, /type: "settings"/);
+  });
+
   it('collapses shared toolbar action labels only when its container is narrow', () => {
     const css = readFileSync(new URL('../assets/page.css', import.meta.url), 'utf8');
     assert.match(css, /container-type:\s*inline-size/);
-    assert.match(css, /@container\s*\(max-width:\s*620px\)/);
+    assert.match(css, /@container\s*\(max-width:\s*900px\)/);
     assert.match(css, /\.toolbar-actions\s+\.edit-button>span\s*\{\s*display:\s*none/);
     assert.match(css, /\.edit-button\s*>\s*span\s*\{[^}]*display:\s*inline-block/);
   });
