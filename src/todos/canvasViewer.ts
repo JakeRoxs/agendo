@@ -16,6 +16,7 @@ import { matchesTodoScope } from "./todoModel";
 import type { TodoRootRegistry } from "./rootRegistry";
 import type { BoardReturnTarget, WorkspaceView } from "./workspaceNavigation";
 import { InMemoryMemento } from "./inMemoryMemento";
+import { rootFilterKey } from "./multiRootTreeProvider";
 
 const CANVAS_NAME = "agendo-work-session";
 
@@ -202,7 +203,7 @@ export class CanvasViewer implements vscode.Disposable {
     );
     const rootScanningFilter = new FilterService(
       this.workspaceState,
-      "agendo.codeScanning.filter",
+      rootFilterKey(descriptor.id, "code-scanning"),
     );
     const rootScanningBoardProvider = new BoardViewProvider(
       context.repository,

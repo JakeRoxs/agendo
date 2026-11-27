@@ -117,7 +117,11 @@ function registerRootTool(server, name, options, handler) {
     { description: options.description, inputSchema: options.inputSchema },
     async (args) => {
       const { workspaceRoot, rootMode } = await resolveRootForCall(args);
-      return handler(args, workspaceRoot, rootMode);
+      const result = await handler(args, workspaceRoot, rootMode);
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+        structuredContent: Array.isArray(result) ? { result } : result,
+      };
     }
   );
 }
@@ -148,7 +152,7 @@ function getTodoContextHandler(args, workspaceRoot, rootMode) {
   };
 }
 
-function listGroupsHandler(workspaceRoot, rootMode) {
+function listGroupsHandler(_args, workspaceRoot, rootMode) {
   const groups = listGroups(workspaceRoot, rootMode);
   return groups.map((g) => ({
     name: g,

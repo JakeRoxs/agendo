@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { CanvasViewer } from "../todos/canvasViewer";
 import { ConfigService } from "../todos/configService";
 import { FilterService } from "../todos/filterService";
+import { rootFilterKey } from "../todos/multiRootTreeProvider";
 import { StatusService } from "../todos/statusService";
 import { parseTodo } from "../todos/todoModel";
 import type { WorkspaceView } from "../todos/workspaceNavigation";
@@ -313,7 +314,9 @@ suite("Shared workspace host boundary", () => {
           getBoardSnapshot: (scope: "todos" | "code-scanning") => Promise<any>;
         };
       }).rootActions(root);
-      await new FilterService(state, "agendo.codeScanning.filter").set({ sources: ["sonarqube"] });
+      await new FilterService(state, rootFilterKey("root-1", "code-scanning")).set({
+        sources: ["sonarqube"],
+      });
       await new FilterService(state, "agendo.filter.root-1").set({ sources: ["codeql"] });
       const snapshot = await actions.getBoardSnapshot("code-scanning");
       assert.deepStrictEqual(snapshot.sections.map((section: { source: string }) => section.source), [

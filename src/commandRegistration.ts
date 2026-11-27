@@ -71,6 +71,7 @@ import { boardReturnTarget } from "./todos/workspaceNavigation";
  * `MultiRootTreeProvider` satisfy it without unsafe casts. */
 export interface RefreshableTreeProvider {
   refresh(): void;
+  getActiveFilter?(): FilterService | undefined;
 }
 
 export interface CommandServices {
@@ -1053,7 +1054,10 @@ function registerFilterCommands(
   busy: BusyIndicator,
   scope: TodoViewScope = "todos",
 ): void {
-  const { repository, filter, treeProvider } = services;
+  const { repository, treeProvider } = services;
+  // Multi-root tree children own root-scoped filters. Commands must update the
+  // filter consumed by the currently visible child, not the legacy default.
+  const getFilter = () => treeProvider.getActiveFilter?.() ?? services.filter;
   const commands =
     scope === "code-scanning"
       ? {
@@ -1100,16 +1104,19 @@ function registerFilterCommands(
     }
   });
   register(commands.ClearFilters, async () => {
+    const filter = getFilter();
     await filter.clear();
     await updateFilterContexts(filter, prefix);
     treeProvider.refresh();
     services.boardViewProvider.refresh();
   });
   register(commands.Filter, async () => {
+    const filter = getFilter();
     await runFilterPicker(filter, treeProvider, repository, scope);
     services.boardViewProvider.refresh();
   });
   register(commands.Search, async () => {
+    const filter = getFilter();
     const text = await vscode.window.showInputBox({
       prompt: "Search todos (id, title, tag, key, dependency)",
       value: filter.current.text ?? "",
@@ -1124,6 +1131,7 @@ function registerFilterCommands(
     services.boardViewProvider.refresh();
   });
   register(commands.ClearSearch, async () => {
+    const filter = getFilter();
     await filter.set({ ...filter.current, text: undefined });
     await updateFilterContexts(filter, prefix);
     treeProvider.refresh();

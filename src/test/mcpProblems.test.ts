@@ -452,7 +452,35 @@ suite("mcpProblems", () => {
     }
   });
 
-  test("getProblems rejects path traversal", async () => {
+  test("getProblems accepts absolute paths contained by the workspace", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
+      mockGetDiagnostics([
+        [
+          makeUri("/ws/inside/file.ts"),
+          [
+            makeDiagnostic(
+              makeUri("/ws/inside/file.ts"),
+              "inside",
+              vscode.DiagnosticSeverity.Error,
+            ),
+          ],
+        ],
+      ]),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      const result = await service.getProblems({ path: "/ws/inside/file.ts" });
+      assert.strictEqual(result.total, 1);
+      assert.strictEqual(result.diagnostics[0].path, "inside/file.ts");
+    } finally {
+      for (const r of restore) {
+        r();
+      }
+    }
+  });
+
+  test("getProblems rejects path traversal and absolute paths outside the workspace", async () => {
     const restore = [
       mockWorkspaceFolders([{ uri: makeUri("/ws"), name: "ws", index: 0 }]),
       mockGetDiagnostics([]),
@@ -466,7 +494,7 @@ suite("mcpProblems", () => {
         );
         return true;
       });
-      await assert.rejects(service.getProblems({ path: "/absolute/foo" }), (error) => {
+      await assert.rejects(service.getProblems({ path: "/outside/foo" }), (error) => {
         assert.ok(
           error instanceof Error &&
             (error as { code?: string }).code === ProblemErrorCode.PATH_TRAVERSAL,

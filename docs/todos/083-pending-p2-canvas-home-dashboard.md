@@ -1,7 +1,7 @@
 ---
 status: pending
 priority: p2
-issue_id: "077"
+issue_id: "083"
 tags: [canvas, dashboard, navigation]
 dependencies: []
 ---
@@ -46,3 +46,16 @@ The full Agendo Canvas should provide a useful landing page instead of requiring
 **Learnings:**
 
 - Route names and action wiring remain for implementation discovery; no unsupported command names are assumed.
+
+### 2026-11-27 - Resolve Duplicate Todo ID
+
+**By:** Kilo
+
+**Actions:**
+
+- Renumbered this new pending dashboard todo to `083` after discovering that `077` already identifies the completed test-toolchain upgrade todo.
+- Preserved the established completed todo's ID and history.
+
+**Learnings:**
+
+- The highest existing regular todo ID was `082`; `083` is the next available ID.

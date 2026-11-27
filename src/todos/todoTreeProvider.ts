@@ -245,6 +245,10 @@ export class TodoTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     this.onDidChangeTreeDataEmitter.fire(undefined);
   }
 
+  getFilter(): FilterService {
+    return this.filter;
+  }
+
   private visibleTodos(): Todo[] {
     const dependencyGraph = this.repository.getDependencyGraph();
     return this.repository

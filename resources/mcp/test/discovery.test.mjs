@@ -68,10 +68,30 @@ test('workspace discovery routes by Kilo parent PID, CWD, and sole-endpoint fall
     };
   }
 
+  async function connectTodoClient() {
+    const client = new Client({ name: 'agendo-todo-envelope-test', version: '1.0.0' });
+    clients.push(client);
+    await client.connect(new StdioClientTransport({
+      command: process.execPath,
+      args: [fileURLToPath(new URL('../server.mjs', import.meta.url)), '--workspace-discovery', registry],
+      env: {},
+    }));
+    return client;
+  }
+
   try {
     // No bridge registered, no PID: unavailable.
     const call = await connect();
     assert.match(JSON.stringify(await call()), /editor_unavailable/);
+
+    // Root todo tools must return MCP CallToolResult envelopes, including
+    // array-valued handlers such as list_groups.
+    const todoClient = await connectTodoClient();
+    const groupsResult = await todoClient.callTool({ name: 'list_groups', arguments: {} });
+    assert.notEqual(groupsResult.isError, true);
+    assert.equal(groupsResult.content[0].type, 'text');
+    assert.deepEqual(JSON.parse(groupsResult.content[0].text), groupsResult.structuredContent.result);
+    assert.ok(Array.isArray(groupsResult.structuredContent.result));
 
     // One bridge, no PID: sole-endpoint fallback succeeds.
     const first = await openBridge('first');

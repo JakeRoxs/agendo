@@ -15,6 +15,12 @@ Includes canvas 0.1.14
 - Display canvas work-log entries newest first and generate ISO-8601 UTC timestamps for new entries
 - Collapse todo/group action labels and board toolbar labels to icons when their canvas toolbars are narrower than 900px
 
+### Fixed
+
+- Pass handler arguments correctly to MCP `list_groups`
+- Return standard MCP content and `structuredContent` for todo tools
+- Accept absolute MCP `get_problems` paths within the selected workspace while rejecting paths outside it
+
 ## [0.3.3] - 2026-11-24
 
 Includes Agendo skill **1.9.0** and work-session canvas **0.1.13**

@@ -212,6 +212,78 @@ suite("MultiRootTreeProvider", () => {
     registry.dispose();
   });
 
+  test("active-root search filters visible todos by ID", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-search-"));
+    restore.push(() => fs.rm(dir, { recursive: true, force: true }));
+    const { registry, provider, restore: cleanup } = await setupRegistry(
+      [makeFolder("search", dir)],
+      [],
+      [{
+        dir: path.join(dir, "docs", "todos"),
+        files: [
+          { id: "077", status: "pending", priority: "p2", title: "First" },
+          { id: "078", status: "pending", priority: "p2", title: "Second" },
+        ],
+      }],
+    );
+    restore.push(cleanup);
+    const filter = provider.getActiveFilter();
+    assert.ok(filter);
+    await filter.set({ text: "077" });
+    assert.deepStrictEqual(collectTodos(provider.getChildren(), provider).map((todo) => todo.id), ["077"]);
+    provider.dispose();
+    registry.dispose();
+  });
+
+  test("regular and code-scanning root filters persist independently", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-scoped-search-"));
+    restore.push(() => fs.rm(dir, { recursive: true, force: true }));
+    const { registry, memento, provider, restore: cleanup } = await setupRegistry(
+      [makeFolder("search", dir)],
+      [],
+      [{
+        dir: path.join(dir, "docs", "todos"),
+        files: [
+          { id: "077", status: "pending", priority: "p2", title: "Todo match" },
+          { id: "078", status: "pending", priority: "p2", title: "Todo other" },
+          { id: "cql-077", status: "pending", priority: "p2", title: "Scanner match" },
+          { id: "cql-078", status: "pending", priority: "p2", title: "Scanner other" },
+        ],
+      }],
+    );
+    restore.push(cleanup);
+    const scanning = new MultiRootTreeProvider(registry, memento, undefined, "code-scanning");
+    const regularFilter = provider.getActiveFilter();
+    const scanningFilter = scanning.getActiveFilter();
+    assert.ok(regularFilter);
+    assert.ok(scanningFilter);
+    await regularFilter.set({ text: "077" });
+    await scanningFilter.set({ text: "cql-078" });
+
+    assert.deepStrictEqual(collectTodos(provider.getChildren(), provider).map((todo) => todo.id), ["077"]);
+    assert.deepStrictEqual(
+      collectTodos(scanning.getChildren(), scanning).map((todo) => todo.id),
+      ["cql-078"],
+    );
+
+    const restoredRegular = new MultiRootTreeProvider(registry, memento);
+    const restoredScanning = new MultiRootTreeProvider(registry, memento, undefined, "code-scanning");
+    assert.deepStrictEqual(
+      collectTodos(restoredRegular.getChildren(), restoredRegular).map((todo) => todo.id),
+      ["077"],
+    );
+    assert.deepStrictEqual(
+      collectTodos(restoredScanning.getChildren(), restoredScanning).map((todo) => todo.id),
+      ["cql-078"],
+    );
+
+    provider.dispose();
+    scanning.dispose();
+    restoredRegular.dispose();
+    restoredScanning.dispose();
+    registry.dispose();
+  });
+
   test("multi mode shows named root containers with separate child hierarchies", async () => {
     const dir1 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root1-"));
     const dir2 = await fs.mkdtemp(path.join(os.tmpdir(), "agendo-root2-"));
