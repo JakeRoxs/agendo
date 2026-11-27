@@ -276,8 +276,14 @@ suite("Shared workspace host boundary", () => {
     }
   });
 
-  test("registered-root scanning board reads the scanning toolbar filter, not todo filter state", async () => {
+  test("registered-root boards read their scoped toolbar filters without cross-scope leakage", async () => {
     const todos = [
+      parseTodo(vscode.Uri.file(todoFile()), fs.readFileSync(todoFile(), "utf8"), "docs/todos"),
+      parseTodo(
+        vscode.Uri.file(path.join(root, "docs", "todos", "002-ready-p1-second.md")),
+        fs.readFileSync(path.join(root, "docs", "todos", "002-ready-p1-second.md"), "utf8"),
+        "docs/todos",
+      ),
       parseTodo(
         vscode.Uri.file(path.join(root, "code-scanning", "codeql", "cql-001-pending-p2-codeql.md")),
         "---\nstatus: pending\npriority: p2\n---\n# CodeQL\n",
@@ -309,20 +315,42 @@ suite("Shared workspace host boundary", () => {
       getContext: () => context,
     } as never);
     try {
+      await new FilterService(state, rootFilterKey("root-1", "code-scanning")).set({
+        sources: ["sonarqube"],
+      });
+      await new FilterService(state, rootFilterKey("root-1", "todos")).set({
+        priorities: ["p2"],
+      });
       const actions = (viewer as unknown as {
         rootActions: (workspaceRoot: string) => {
           getBoardSnapshot: (scope: "todos" | "code-scanning") => Promise<any>;
         };
       }).rootActions(root);
-      await new FilterService(state, rootFilterKey("root-1", "code-scanning")).set({
-        sources: ["sonarqube"],
+      const todosSnapshot = await actions.getBoardSnapshot("todos");
+      assert.deepStrictEqual(
+        todosSnapshot.columns.flatMap((column: { todos: Array<{ title: string }> }) =>
+          column.todos.map((todo) => todo.title),
+        ),
+        ["First"],
+      );
+
+      await new FilterService(state, rootFilterKey("root-1", "todos")).set({
+        priorities: ["p1"],
       });
-      await new FilterService(state, "agendo.filter.root-1").set({ sources: ["codeql"] });
-      const snapshot = await actions.getBoardSnapshot("code-scanning");
-      assert.deepStrictEqual(snapshot.sections.map((section: { source: string }) => section.source), [
-        "sonarqube",
-      ]);
-      assert.strictEqual(snapshot.sections[0].columns[0].todos[0].title, "Sonar");
+      const updatedTodosSnapshot = await actions.getBoardSnapshot("todos");
+      assert.deepStrictEqual(
+        updatedTodosSnapshot.columns.flatMap((column: { todos: Array<{ title: string }> }) =>
+          column.todos.map((todo) => todo.title),
+        ),
+        ["Second"],
+      );
+
+      const scanningSnapshot = await actions.getBoardSnapshot("code-scanning");
+      assert.deepStrictEqual(
+        scanningSnapshot.sections.map((section: { source: string }) => section.source),
+        ["sonarqube"],
+      );
+      assert.strictEqual(scanningSnapshot.sections[0].columns[0].todos[0].title, "Sonar");
     } finally {
       viewer.dispose();
     }

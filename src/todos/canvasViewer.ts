@@ -192,7 +192,10 @@ export class CanvasViewer implements vscode.Disposable {
       status: rootStatus,
       links: rootLinks,
     });
-    const rootFilter = new FilterService(this.workspaceState, `agendo.filter.${descriptor.id}`);
+    const rootFilter = new FilterService(
+      this.workspaceState,
+      rootFilterKey(descriptor.id, "todos"),
+    );
     const rootBoardProvider = new BoardViewProvider(
       context.repository,
       rootFilter,
@@ -216,10 +219,9 @@ export class CanvasViewer implements vscode.Disposable {
     return {
       ...rootTaskActions,
       getBoardSnapshot: async (scope) => {
+        const filter = scope === "code-scanning" ? rootScanningFilter : rootFilter;
+        filter.reload();
         const provider = scope === "code-scanning" ? rootScanningBoardProvider : rootBoardProvider;
-        if (scope === "code-scanning") {
-          rootScanningFilter.reload();
-        }
         return provider.getSnapshot();
       },
       handleBoardMessage: async (scope, message) => {
