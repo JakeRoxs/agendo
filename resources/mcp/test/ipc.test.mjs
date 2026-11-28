@@ -105,6 +105,25 @@ describe('getProblemsInputSchema', () => {
       !schema.safeParse({ path: 'x', workspaceFolder: 'x', severity: [], limit: '1' }).success
     );
   });
+
+  it('accepts bridgeId when provided', () => {
+    const schema = z.object(getProblemsInputSchema());
+    assert.ok(
+      schema.safeParse({ path: 'x', workspaceFolder: 'x', bridgeId: '550e8400-e29b-41d4-a716-446655440000' }).success
+    );
+  });
+
+  it('accepts omitted bridgeId (all optional)', () => {
+    const schema = z.object(getProblemsInputSchema());
+    assert.ok(schema.safeParse({}).success);
+  });
+
+  it('rejects non-string bridgeId', () => {
+    const schema = z.object(getProblemsInputSchema());
+    assert.ok(
+      !schema.safeParse({ path: 'x', workspaceFolder: 'x', bridgeId: 123 }).success
+    );
+  });
 });
 
 describe('sendGetProblemsRequest', () => {

@@ -204,6 +204,7 @@ export function getProblemsInputSchema() {
       'Severity levels to include'
     ),
     limit: z.number().int().optional().describe('Maximum number of problems to return (default 100, capped at 500)'),
+    bridgeId: z.string().optional().describe('Opaque registration-scoped ID of a specific diagnostics bridge to use (from list_diagnostic_bridges). Mutually exclusive with --endpoint.'),
   };
 }
 

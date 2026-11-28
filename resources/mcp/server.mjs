@@ -12,7 +12,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discoverEndpoint, collectWorkspaceRegistrations, resolveRootForCall as resolveRootFromRegistrations } from './discovery.mjs';
+import {
+  discoverEndpoint,
+  collectWorkspaceRegistrations,
+  collectRegistrations,
+  resolveRootForCall as resolveRootFromRegistrations,
+  listLiveBridges,
+  isListening,
+} from './discovery.mjs';
 import { STATUSES } from '../canvas/agendo-work-session/statusLifecycle.js';
 import {
   getProblemsHandler,
@@ -77,19 +84,65 @@ async function diagnosticsEndpoint() {
 
   // Kilo supplies the launching window's identity through the inherited
   // KILO_PARENT_PID environment variable. Never require it in user config.
-  const kiloParentPid = process.env.KILO_PARENT_PID;
-  let hostPid;
-  if (kiloParentPid !== undefined && kiloParentPid !== '') {
-    const parsed = parseKiloParentPid(kiloParentPid);
-    if (parsed === undefined) {
-      throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
-    }
-    hostPid = parsed;
-  }
+  const hostPid = resolveCallHostPid();
 
   // The server's CWD is the workspace root for Kilo (Instance.directory); for
   // generic clients it is wherever the MCP client launched the server.
   return discoverEndpoint(registryRoot, { hostPid, cwd: process.cwd() });
+}
+
+function resolveCallHostPid() {
+  const kiloParentPid = process.env.KILO_PARENT_PID;
+  if (kiloParentPid === undefined || kiloParentPid === '') return hostPid;
+  const parsed = parseKiloParentPid(kiloParentPid);
+  if (parsed === undefined) {
+    throw new Error('invalid_input: KILO_PARENT_PID must be a VS Code extension-host PID.');
+  }
+  return parsed;
+}
+
+/**
+ * Resolve the diagnostics endpoint for a `get_problems` call.
+ *
+ * Precedence:
+ * 1. `--endpoint` (process-level CLI override) wins outright; `bridgeId` is
+ *    rejected when both are present because the semantics would be ambiguous.
+ * 2. Explicit `bridgeId`: validated against current registrations and the host
+ *    PID (KILO_PARENT_PID). Stale or unknown IDs fail safely with
+ *    `invalid_input`; a registration that is no longer listening fails with
+ *    `editor_unavailable`. Raw socket paths and PIDs are never exposed.
+ * 3. Automatic routing via `discoverEndpoint` (unchanged): sole-endpoint
+ *    fallback, CWD identity match, Kilo host-PID filter, otherwise ambiguous.
+ */
+async function resolveProblemsEndpoint(args) {
+  // --endpoint takes precedence; bridgeId is rejected when both are present.
+  if (endpoint !== undefined) {
+    if (args.bridgeId !== undefined) {
+      throw new Error('invalid_input: bridgeId is not allowed when --endpoint is configured');
+    }
+    return endpoint;
+  }
+
+  // Validate KILO_PARENT_PID at call time so an invalid value is reported
+  // as invalid_input rather than silently falling through to routing.
+  const callHostPid = resolveCallHostPid();
+
+  // Explicit bridge selection: validate ID against registrations and host PID.
+  if (args.bridgeId !== undefined) {
+    const records = await collectRegistrations(registryRoot);
+    const candidates = callHostPid === undefined ? records : records.filter((record) => record.hostPid === callHostPid);
+    const record = candidates.find((record) => record.id === args.bridgeId);
+    if (!record) {
+      throw new Error('invalid_input: bridgeId not found or stale');
+    }
+    if (!(await isListening(record.endpoint))) {
+      throw new Error('editor_unavailable: bridge is not live');
+    }
+    return record.endpoint;
+  }
+
+  // Automatic routing (unchanged).
+  return discoverEndpoint(registryRoot, { hostPid: callHostPid, cwd: process.cwd() });
 }
 
 function option(name) {
@@ -313,10 +366,27 @@ server.registerTool(
     annotations: { readOnlyHint: true },
   },
   async (args) => {
-    const result = await getProblemsHandler(await diagnosticsEndpoint(), args);
+    const endpoint = await resolveProblemsEndpoint(args);
+    const result = await getProblemsHandler(endpoint, args);
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
       structuredContent: result,
+    };
+  }
+);
+
+server.registerTool(
+  'list_diagnostic_bridges',
+  {
+    description: 'List live VS Code diagnostics bridges selectable for get_problems. Each entry has an opaque registration-scoped ID plus workspace and label details. Raw endpoint paths and PIDs are not exposed. IDs may change after restart.',
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => {
+    const bridges = await listLiveBridges(registryRoot, { hostPid: resolveCallHostPid() });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(bridges, null, 2) }],
+      structuredContent: { bridges },
     };
   }
 );

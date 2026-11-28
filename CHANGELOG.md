@@ -3,7 +3,7 @@
 All notable changes to the Agendo extension are documented here.
 
 ## [0.3.5] - Unreleased
-Includes work-session canvas **0.1.15**
+Includes Agendo skill **1.9.1** and work-session canvas **0.1.15**
 
 ### Fixed
 
@@ -12,6 +12,8 @@ Includes work-session canvas **0.1.15**
 - Treat `set_group` as a no-op when the target group is unchanged
 - Refresh root-scoped code-scanning trees after deletion so removed findings disappear
 - Shut down canvas extensions cleanly on deactivation, closing lingering connections
+- Select a specific VS Code diagnostics bridge when multiple windows make automatic routing ambiguous
+- Guide agents to select diagnostics bridges explicitly when automatic window routing is ambiguous
 
 ## [0.3.4] - 2026-11-27
 Includes canvas **0.1.14**

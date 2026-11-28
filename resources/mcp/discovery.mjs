@@ -41,7 +41,12 @@ async function readEndpoint(fullPath, name) {
     // buildCandidates can apply its safe default ('workspace').
     const rootMode = typeof record.rootMode === 'string' ? record.rootMode : undefined;
     const label = typeof record.label === 'string' ? record.label : undefined;
+    // The registration filename (without extension) is a registration-scoped,
+    // opaque bridge ID. It may change after restart because a new UUID is
+    // generated for each registration.
+    const id = name.replace(/\.json$/, '');
     return {
+      id,
       endpoint: record.endpoint,
       hostPid: Number.isSafeInteger(record.hostPid) && record.hostPid > 1 ? record.hostPid : undefined,
       // Preserve the workspace path published by the bridge so consumers can
@@ -73,7 +78,7 @@ async function readRegistrations(directory, identity) {
   return records.filter(Boolean).map((record) => ({ ...record, identity }));
 }
 
-async function collectRegistrations(directory) {
+export async function collectRegistrations(directory) {
   const entries = await readDirectory(directory);
   const directIdentity = /^[a-f0-9]{64}$/.test(basename(directory)) ? basename(directory) : undefined;
   const directories = entries.filter((entry) => entry.isDirectory() && /^[a-f0-9]{64}$/.test(entry.name));
@@ -117,7 +122,7 @@ function selectEndpoint(live, { hostPid, cwdIdentity }) {
   throw new Error('editor_unavailable: No VS Code diagnostics bridge is listening for this workspace. Open it in VS Code with Agendo enabled.');
 }
 
-function isListening(endpoint) {
+export function isListening(endpoint) {
   return new Promise((resolve, reject) => {
     const socket = createConnection(endpoint);
     const finish = () => {
@@ -162,6 +167,35 @@ export async function discoverEndpoint(directory, options = {}) {
   const candidates = selectHostRecords(records, hostPid);
   const scoped = scopeToWorkspace(candidates, cwdIdentity);
   return selectEndpoint(await liveEndpoints(scoped), { hostPid, cwdIdentity });
+}
+
+/**
+ * List live diagnostics bridges selectable for `get_problems`.
+ *
+ * Returns registration-scoped IDs with workspace and label details. Raw
+ * endpoint paths and PIDs are not exposed. IDs are registration-scoped and may
+ * change after restart. When `hostPid` is supplied (Kilo via inherited
+ * `KILO_PARENT_PID`), only registrations from that host are considered. Listing
+ * includes only endpoints that are currently listening.
+ */
+export async function listLiveBridges(directory, { hostPid } = {}) {
+  const records = await collectRegistrations(directory);
+  const candidates = hostPid === undefined ? records : records.filter((record) => record.hostPid === hostPid);
+  const live = await liveEndpoints(candidates);
+  const liveSet = new Set(live);
+  const seen = new Set();
+  const bridges = [];
+  for (const record of candidates) {
+    if (!liveSet.has(record.endpoint)) continue;
+    if (seen.has(record.endpoint)) continue;
+    seen.add(record.endpoint);
+    bridges.push({
+      id: record.id,
+      workspace: record.workspace,
+      label: record.label,
+    });
+  }
+  return bridges;
 }
 
 /**

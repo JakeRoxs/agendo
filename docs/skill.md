@@ -81,8 +81,19 @@ active/registered root. In multi-root, never assume the first root; require expl
 MCP todo tools accept an optional `workspaceFolder` that selects any registered workspace or manual
 root by label/basename or exact absolute path. When labels collide, use the exact absolute path.
 When multiple roots are registered and the call cannot be disambiguated, the tool rejects the call
-rather than guessing. The read-only diagnostics tool (`get_problems`) follows the same model: omit
-`workspaceFolder` for a single root, provide it when multiple roots are open.
+rather than guessing. Diagnostics bridge selection is separate from todo-root selection:
+`workspaceFolder` scopes diagnostic paths within the selected bridge, while `bridgeId` selects a
+bridge/window when automatic routing is ambiguous.
+
+When multiple VS Code windows share the same workspace and automatic routing cannot uniquely
+identify the originating window, `get_problems` rejects with `ambiguous_window` rather than guessing.
+In that case, call the read-only `list_diagnostic_bridges` tool to enumerate live diagnostics
+bridges. Each entry exposes an opaque, registration-scoped `id` plus `workspace` and `label`
+details (raw socket paths and PIDs are not exposed). IDs may change after restart. Pass the chosen
+`id` as the `bridgeId` argument to `get_problems` to route the diagnostics query to that specific
+bridge. Stale or unknown `bridgeId` values fail safely; a bridge that is no longer listening is
+reported as unavailable. The process-level `--endpoint` CLI override takes precedence over
+`bridgeId` and both cannot be used together.
 
 Use **Agendo: Choose Workspace Folder** to switch the active workspace folder (saved with the
 workspace). Use **Agendo: Choose Root** to select the todo directory within the active folder — the
