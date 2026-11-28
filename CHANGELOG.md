@@ -7,6 +7,7 @@ Includes Agendo skill **1.9.3** and work-session canvas **0.1.15**
 
 ### Fixed
 
+- Show SonarQube issue, rule, and duplication progress during retrieval, before todo preparation and writes
 - Use SonarQube issue status to skip closed-only imports and reconcile existing todos; record the reported analysis date separately from retrieval time
 - Resolve MCP `get_problems` folder selection by name, path, or file URI in multi-root workspaces
 - Infer absolute MCP diagnostic paths correctly across workspace roots

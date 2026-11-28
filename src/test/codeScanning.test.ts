@@ -1391,6 +1391,7 @@ suite("native code scanning", () => {
   test("SonarQube pagination encodes project keys and preserves component paths", async () => {
     const original = globalThis.fetch;
     const requests: URL[] = [];
+    const progress: Array<[number, string]> = [];
     globalThis.fetch = (async (url, options) => {
       requests.push(new URL(String(url)));
       assert.strictEqual(options?.redirect, "error");
@@ -1456,7 +1457,18 @@ suite("native code scanning", () => {
         undefined,
         undefined,
         "feature/branch-selector",
+        (message) => progress.push([requests.length, message]),
       );
+      assert.deepStrictEqual(progress, [
+        [0, "Fetching issues…"],
+        [1, "Fetching issues: 1/2"],
+        [2, "Fetching issues: 2/2"],
+        [2, "Fetching rule details: 0/1"],
+        [3, "Fetching rule details: 1/1"],
+        [3, "Checking duplication: 0/1 files"],
+        [4, "Checking duplication: 1/1 files"],
+        [4, "Reading analysis metadata…"],
+      ]);
       assert.strictEqual(result.branch, "feature/branch-selector");
       assert.strictEqual(result.findings.length, 2);
       assert.strictEqual(result.findings[0].path, "src/example.ts");
@@ -1623,6 +1635,7 @@ suite("native code scanning", () => {
 
   test("SonarQube CLI imports share pagination, encoding, and identity with direct imports", async () => {
     const calls: string[][] = [];
+    const progress: string[] = [];
     const run = async (args: string[], cwd: string) => {
       assert.strictEqual(cwd, root.fsPath);
       calls.push(args);
@@ -1676,7 +1689,11 @@ suite("native code scanning", () => {
       "org:project & test",
       run,
       "feature/branch-selector",
+      (message) => progress.push(message),
     );
+    assert.strictEqual(progress[0], "Fetching issues…");
+    assert.ok(progress.includes("Fetching issues: 1/2"));
+    assert.ok(progress.includes("Checking duplication: 1/1 files"));
     const callTypes = calls.map((args) => args[0]);
     assert.strictEqual(callTypes.filter((t) => t === "auth").length, 10);
     assert.strictEqual(callTypes.filter((t) => t === "api").length, 5);

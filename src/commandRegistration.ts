@@ -582,7 +582,9 @@ async function runScanningImport(
   await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: `Importing ${source.label} todos...` },
     async (progress, token) => {
-      const scan = await loadScanningFindings(workspace, source, sonar, branch.branch);
+      const scan = await loadScanningFindings(workspace, source, sonar, branch.branch, (message) =>
+        progress.report({ message }),
+      );
       if (!scan) return;
       if (token.isCancellationRequested) {
         vscode.window.showInformationMessage(`${source.label} import cancelled before any todos were written.`);
@@ -590,6 +592,7 @@ async function runScanningImport(
       }
       let result: Awaited<ReturnType<typeof importScanningFindings>>;
       try {
+        progress.report({ message: "Preparing findings…" });
         result = await importScanningFindings(
           config,
           repository,
@@ -602,12 +605,12 @@ async function runScanningImport(
             analyzedAt: scan.analyzedAt,
             analysisBranch: scan.analysisBranch,
             isCancellationRequested: () => token.isCancellationRequested,
+            onWriting: () => progress.report({ message: "Writing todos…" }),
             onProgress: ({ completed, total, label }) => {
               progress.report({
                 message: total === 0
                   ? "No findings to import"
-                  : `${completed}/${total} groups · ${label}`,
-                ...(total > 0 && completed > 0 ? { increment: 100 / total } : {}),
+                  : `Preparing groups: ${completed}/${total} · ${label}`,
               });
             },
           },
@@ -635,14 +638,15 @@ async function loadScanningFindings(
   source: ScanningImportSource,
   sonar: ScanningSelection["sonar"],
   branch: string | undefined,
+  reportProgress: (message: string) => void,
 ): Promise<Awaited<ReturnType<typeof fetchSonarQube>> | undefined> {
   if (source.source === "codeql") return fetchCodeQL(workspace.uri.fsPath, undefined, branch);
   if (sonar?.cli) {
-    return fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project, undefined, branch);
+    return fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project, undefined, branch, reportProgress);
   }
   if (sonar) {
     return fetchSonarQube(
-      sonar.server, sonar.project, sonar.token, undefined, undefined, branch,
+      sonar.server, sonar.project, sonar.token, undefined, undefined, branch, reportProgress,
     );
   }
   return undefined;

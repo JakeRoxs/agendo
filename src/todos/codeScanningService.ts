@@ -516,6 +516,7 @@ export async function fetchSonarQubeCli(
   project: string,
   run: SonarCliRunner = runSonarCli,
   branch?: string,
+  reportProgress?: (message: string) => void,
 ): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } & SonarAnalysis> {
   return fetchSonarQube(
     server,
@@ -524,6 +525,7 @@ export async function fetchSonarQubeCli(
     createSonarCliRequest(cwd, server, run),
     undefined,
     branch,
+    reportProgress,
   );
 }
 
@@ -651,6 +653,7 @@ async function fetchPaginatedIssues(
   token: string,
   request?: (url: URL) => Promise<unknown>,
   branch?: string,
+  reportProgress?: (message: string) => void,
 ): Promise<ScanningFinding[]> {
   const findings: ScanningFinding[] = [];
   for (let page = 1; ; page++) {
@@ -676,6 +679,7 @@ async function fetchPaginatedIssues(
     for (const issue of payload.issues) {
       findings.push(sonarIssueFinding(issue, base, project, branch));
     }
+    reportProgress?.(`Fetching issues: ${findings.length}/${payload.paging.total}`);
     if (findings.length >= payload.paging.total) {
       break;
     }
@@ -803,9 +807,11 @@ async function checkDuplicationMetrics(
   token: string,
   request: ((url: URL) => Promise<unknown>) | undefined,
   branch: string | undefined,
-  options: { threshold: number; description: string },
+  options: { threshold: number; description: string; reportProgress?: (message: string) => void },
 ): Promise<ScanningFinding[]> {
   const duplicationFindings: ScanningFinding[] = [];
+  let checked = 0;
+  if (filePaths.size) options.reportProgress?.(`Checking duplication: 0/${filePaths.size} files`);
   for (const filePath of filePaths) {
     const finding = await duplicationFindingForFile(
       base,
@@ -817,6 +823,8 @@ async function checkDuplicationMetrics(
       options,
     );
     if (finding) duplicationFindings.push(finding);
+    checked++;
+    options.reportProgress?.(`Checking duplication: ${checked}/${filePaths.size} files`);
   }
   return duplicationFindings;
 }
@@ -859,13 +867,18 @@ export async function fetchSonarQube(
   request?: (url: URL) => Promise<unknown>,
   duplicationThreshold?: number,
   branch?: string,
+  reportProgress?: (message: string) => void,
 ): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } & SonarAnalysis> {
   const base = validateSonarUrl(server);
   const threshold = duplicationThreshold ?? 0.05;
-  const findings = await fetchPaginatedIssues(base, project, token, request, branch);
+  reportProgress?.("Fetching issues…");
+  const findings = await fetchPaginatedIssues(base, project, token, request, branch, reportProgress);
   const rules = new Map<string, { title: string; description: string }>();
-  for (const key of new Set(findings.map((finding) => finding.rule))) {
+  const ruleKeys = new Set(findings.map((finding) => finding.rule));
+  if (ruleKeys.size) reportProgress?.(`Fetching rule details: 0/${ruleKeys.size}`);
+  for (const key of ruleKeys) {
     rules.set(key, await fetchRuleDetail(base, key, token, request));
+    reportProgress?.(`Fetching rule details: ${rules.size}/${ruleKeys.size}`);
   }
   for (const finding of findings) {
     const rule = rules.get(finding.rule);
@@ -883,9 +896,11 @@ export async function fetchSonarQube(
     {
       threshold,
       description: rules.get(duplicationRuleKey)?.description ?? DUPLICATION_RULE_DESCRIPTION,
+      reportProgress,
     },
   );
   findings.push(...duplicationFindings);
+  reportProgress?.("Reading analysis metadata…");
   const analysis = await readSonarAnalysis(base, project, token, request, branch);
   return { scope: `${base.toString()}#${project}`, ...(branch ? { branch } : {}), ...analysis, findings };
 }
@@ -1319,6 +1334,7 @@ export async function importScanningFindings(
     analysisBranch?: string;
     analyzedAt?: string;
     onProgress?: (progress: { completed: number; total: number; label: string }) => void;
+    onWriting?: () => void;
     isCancellationRequested?: () => boolean;
   } = {},
 ): Promise<ScanningImportResult> {
@@ -1393,6 +1409,7 @@ export async function importScanningFindings(
   }
   await preflightWrites(writes);
   if (options.isCancellationRequested?.()) throw new ScanningImportCancelledError();
+  if (writes.length) options.onWriting?.();
   await writeImportResults(writes, root, source);
   if (result.created) {
     await config.writeConfigFile({ force: true });
