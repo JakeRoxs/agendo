@@ -3,7 +3,7 @@
 ![VS Code Extension](https://img.shields.io/badge/VSCode-Extension-007ACC?logo=visual-studio-code)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Extension Version](https://img.shields.io/badge/extension-0.3.5-blue.svg)
-![Skill Version](https://img.shields.io/badge/skill-1.9.1-orange.svg)
+![Skill Version](https://img.shields.io/badge/skill-1.9.3-orange.svg)
 ![Canvas Version](https://img.shields.io/badge/canvas-0.1.15-purple.svg)
 
 Agendo is a VS Code extension for managing Markdown-backed engineering work. Todos stay as ordinary

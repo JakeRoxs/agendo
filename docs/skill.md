@@ -117,8 +117,11 @@ CodeQL and SonarQube todos use separate `cql-` and `sq-` IDs and source-specific
 can work on those imported todos, but it does not fetch scanner alerts; use **Agendo: Import
 Code-Scanning Todos...** in the extension for server-scanner imports. When inspecting live
 SonarQube IDE diagnostics, the skill prefers a host-provided VS Code Problems tool and falls back to
-Agendo's read-only MCP diagnostics tool when that is unavailable. IDE diagnostics are a point-in-time
-snapshot, not a complete SonarQube server scan.
+Agendo's read-only MCP diagnostics tool when that is unavailable. For a file-level check, identify
+the target VS Code window and folder, open the file in that window, then query after analysis
+finishes if its status is available. Reading the file from disk is not equivalent to opening it in
+VS Code. An empty result is inconclusive if opening or analysis could not be confirmed. Even after
+confirmed analysis, IDE diagnostics are a point-in-time snapshot, not a SonarQube server scan.
 
 ## Keep work resumable
 

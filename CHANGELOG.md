@@ -3,7 +3,7 @@
 All notable changes to the Agendo extension are documented here.
 
 ## [0.3.5] - Unreleased
-Includes Agendo skill **1.9.1** and work-session canvas **0.1.15**
+Includes Agendo skill **1.9.3** and work-session canvas **0.1.15**
 
 ### Fixed
 
@@ -14,6 +14,7 @@ Includes Agendo skill **1.9.1** and work-session canvas **0.1.15**
 - Shut down canvas extensions cleanly on deactivation, closing lingering connections
 - Select a specific VS Code diagnostics bridge when multiple windows make automatic routing ambiguous
 - Guide agents to select diagnostics bridges explicitly when automatic window routing is ambiguous
+- Guide agents to open the target file in VS Code before querying diagnostics and treat empty results as inconclusive when analysis is unconfirmed
 
 ## [0.3.4] - 2026-11-27
 Includes canvas **0.1.14**

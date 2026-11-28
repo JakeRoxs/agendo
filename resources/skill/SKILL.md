@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.9.2
+version: 1.9.3
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -236,35 +236,34 @@ completion. The lifecycle and verification rules below apply equally to scanner 
 
 #### SonarQube Diagnostics Source Selection
 
-When collecting SonarQube-related findings for the current VS Code workspace, prefer live editor
-diagnostics in this order:
+For a file-level SonarQube IDE check, use this order:
 
-1. Use a host-provided VS Code Problems tool if one is available in the current tool set.
-2. If no host Problems tool is available, or it fails because the editor/connection is unavailable,
-   call Agendo MCP `agendo_get_problems` as the fallback. If it reports `ambiguous_window`, call
-   Agendo MCP `agendo_list_diagnostic_bridges`, select the intended live bridge from its returned
-    IDs, `registeredWorkspace`, VS Code `workspaceName`, and
-    `availableWorkspaceFolders`, then retry `agendo_get_problems` with that ID as `bridgeId`. If
-   candidates are indistinguishable (for example, two windows on the same workspace), ask the user
-   which ID to use rather than guessing. Bridge IDs may change after restart; list them again if an
-   ID is stale or unavailable. Do not use the fallback to mask invalid arguments; correct the
-   workspace/path/severity parameters and retry the original tool first.
-3. For a multi-root workspace, provide `workspaceFolder` to select an open folder inside the
-   selected bridge (by folder name, absolute path, or file URI). This may differ from the bridge's
-   registered workspace; a valid open folder remains queryable. `path` then scopes within the
-   selected folder. The result includes the bridge identity, `requestedWorkspaceFolder`,
-   `resolvedWorkspaceFolder` (selected name and absolute path), and
-   `selectionDiffersFromRegisteredWorkspace`. If selection is required or invalid, the error includes
-   available folder names and paths. Use
-   supported severity values only. The Agendo tool defaults to 100 results and caps `limit` at 500;
-   if `truncated` is true, narrow the scope and query again rather than treating the partial result
-   as a complete scan.
+1. **Resolve the target.** Identify the file, its workspace folder, and the VS Code window that
+   contains it. If Agendo's bridge routing is unclear, use `list_diagnostic_bridges` and match
+   `workspaceName` and `availableWorkspaceFolders`, not just `registeredWorkspace`. If multiple
+   windows still match, ask which to use. Bridge IDs may change after restart; relist stale IDs.
+2. **Open the file in that VS Code window before querying.** Use a host editor-open action if
+   available; otherwise ask the user to open the file there. A filesystem `read` does not open an
+   editor or trigger analysis. If the analyzer exposes a file-analysis action or status, use it to
+   run or confirm analysis for the current file contents before querying. An open editor alone
+   does not prove analysis finished.
+3. **Query the same window and file.** Prefer the host-provided VS Code Problems tool. If it is
+   unavailable or cannot reach the editor, use Agendo MCP `get_problems`. Pass the selected
+   `bridgeId` when needed, `workspaceFolder` to select an open folder within that bridge (name,
+   absolute path, or file URI), and `path` relative to that folder. The resolved folder may differ
+   from the registration path. Verify `resolvedWorkspaceFolder` when present. If routing is
+   ambiguous, resolve it and confirm the file is open in the chosen window before retrying.
+   Correct invalid selectors or filters instead of switching tools. If `truncated` is true, narrow
+   the scope and query again.
+4. **Interpret the snapshot.** If the file wasn't opened or analysis for its current contents
+   could not be confirmed, an empty result is **inconclusive**. If analysis is still running,
+   query again after it completes; don't poll blindly or mark a finding resolved from an empty
+   snapshot. After confirmed analysis, report only that no matching IDE diagnostics were
+   published at capture time. A folder-level query likewise isn't evidence that every file was
+   analyzed.
 
-These tools return a point-in-time snapshot of diagnostics currently published by VS Code language
-extensions. They can include diagnostics for unsaved edits when an extension publishes them, but
-they are not a complete SonarQube server issue inventory. An empty diagnostics array means no
-diagnostics were published in the requested scope at capture time; it does not prove that the
-SonarQube server has no open findings. Do not issue a `read` operation to try to populate Problems.
+Both tools read diagnostics published by the editor, which can include unsaved changes. Neither
+triggers analysis or replaces a SonarQube server scan.
 
 For SonarQube scanner imports, include only results whose diagnostic `source` and/or `code`
 identifies a SonarQube/SonarLint rule. Keep their source and capture time in Scanner Evidence, and
