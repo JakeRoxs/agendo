@@ -10,7 +10,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   discoverEndpoint,
@@ -19,6 +19,7 @@ import {
   resolveRootForCall as resolveRootFromRegistrations,
   listLiveBridges,
   isListening,
+  workspaceIdentity,
 } from './discovery.mjs';
 import { STATUSES } from '../canvas/agendo-work-session/statusLifecycle.js';
 import {
@@ -385,8 +386,29 @@ server.registerTool(
         rootMode: record.rootMode,
       });
     }
+    const firstRegistration = selectedRegistrations[0];
+    const registeredWorkspace = firstRegistration?.workspace === undefined
+      ? null
+      : {
+          name: basename(firstRegistration.workspace),
+          path: firstRegistration.workspace,
+        };
+    const resolvedWorkspaceFolder = result.workspaceFolderDetails ?? null;
+    const selectionDiffersFromRegisteredWorkspace = resolvedWorkspaceFolder && registeredWorkspaces.length > 0
+      ? !registeredWorkspaces.some((workspace) =>
+          workspaceIdentity(workspace.path) === workspaceIdentity(resolvedWorkspaceFolder.path)
+        )
+      : null;
     const attributedResult = {
       ...result,
+      requestedWorkspaceFolder: args.workspaceFolder ?? null,
+      resolvedWorkspaceFolder,
+      bridge: {
+        id: args.bridgeId ?? firstRegistration?.id ?? null,
+        workspaceName: result.workspaceName ?? null,
+        registeredWorkspace,
+      },
+      selectionDiffersFromRegisteredWorkspace,
       registeredWorkspace: registeredWorkspaces[0] ?? null,
       registeredWorkspaces,
     };
@@ -400,7 +422,7 @@ server.registerTool(
 server.registerTool(
   'list_diagnostic_bridges',
   {
-    description: 'List live VS Code diagnostics bridges selectable for get_problems. Each entry distinguishes the registered workspace path/label from the live VS Code workspace name and its open workspace folders. `workspaceFolder` on get_problems selects one of those open folders within the selected bridge; it does not select a bridge and is not merely a path filter. Folder metadata may be unavailable for older or unreachable bridges. Raw endpoint paths and PIDs are not exposed. IDs may change after restart.',
+    description: 'List live VS Code diagnostics bridges selectable for get_problems. Each entry distinguishes `registeredWorkspace` (the registered path) from the live VS Code workspace name and `availableWorkspaceFolders`. The legacy `workspace` and `folders` fields remain. `workspaceFolder` on get_problems selects one available open folder within the selected bridge; it does not select a bridge and is not merely a path filter. `defaultWorkspaceFolder` is null when no default is configured. Folder metadata may be unavailable for older or unreachable bridges. Raw socket paths and PIDs are not exposed. IDs may change after restart.',
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },

@@ -232,14 +232,27 @@ export async function listLiveBridges(directory, { hostPid } = {}) {
       });
     }
     const firstRegistration = entry.registrations[0];
+    const registeredWorkspace = firstRegistration.workspace === undefined
+      ? null
+      : {
+          name: basename(firstRegistration.workspace),
+          path: firstRegistration.workspace,
+        };
+    const availableWorkspaceFolders = workspaceInfo?.availableWorkspaceFolders
+      ?? workspaceInfo?.folders
+      ?? [];
     return {
       id: entry.id,
       // `workspace` and `label` remain as aliases for the first registration.
       workspace: firstRegistration.workspace,
       label: firstRegistration.label,
+      registeredWorkspace,
       registeredWorkspaces,
       workspaceName: workspaceInfo?.workspaceName ?? null,
-      folders: workspaceInfo?.folders ?? [],
+      availableWorkspaceFolders,
+      defaultWorkspaceFolder: workspaceInfo?.defaultWorkspaceFolder ?? null,
+      // `folders` remains as a compatibility alias for availableWorkspaceFolders.
+      folders: availableWorkspaceFolders,
       foldersTruncated: workspaceInfo?.truncated ?? false,
       folderMetadataAvailable: workspaceInfo !== undefined,
     };

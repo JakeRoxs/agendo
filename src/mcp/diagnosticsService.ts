@@ -71,6 +71,10 @@ export interface WorkspaceFoldersResult {
   workspaceName: string | null;
   /** Open workspace folders available to diagnostics queries. */
   folders: Array<{ name: string; path: string }>;
+  /** Explicitly named alias for `folders`. */
+  availableWorkspaceFolders: Array<{ name: string; path: string }>;
+  /** No default is selected for multi-root workspaces. */
+  defaultWorkspaceFolder: null;
   /** True when more folders exist than are returned. */
   truncated: boolean;
 }
@@ -229,12 +233,15 @@ export class DiagnosticsService {
 
     const folders = vscode.workspace.workspaceFolders ?? [];
     const maxFolders = 100;
+    const availableWorkspaceFolders = folders.slice(0, maxFolders).map((folder) => ({
+      name: folder.name,
+      path: folder.uri.fsPath,
+    }));
     return {
       workspaceName: vscode.workspace.name || null,
-      folders: folders.slice(0, maxFolders).map((folder) => ({
-        name: folder.name,
-        path: folder.uri.fsPath,
-      })),
+      folders: availableWorkspaceFolders,
+      availableWorkspaceFolders,
+      defaultWorkspaceFolder: null,
       truncated: folders.length > maxFolders,
     };
   }
@@ -321,7 +328,7 @@ export class DiagnosticsService {
     if (!workspaceFolder && !pathHint) {
       throw new McpError(
         ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
-        "Multiple workspace folders are open; specify workspaceFolder.",
+        `Multiple workspace folders are open; specify workspaceFolder. ${this.availableFoldersMessage(folders)}`,
       );
     }
 
@@ -337,7 +344,7 @@ export class DiagnosticsService {
     if (!workspaceFolder) {
       throw new McpError(
         ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
-        "Multiple workspace folders are open; specify workspaceFolder.",
+        `Multiple workspace folders are open; specify workspaceFolder. ${this.availableFoldersMessage(folders)}`,
       );
     }
 
@@ -348,10 +355,28 @@ export class DiagnosticsService {
     if (!match) {
       throw new McpError(
         ProblemErrorCode.WORKSPACE_NOT_FOUND,
-        `Workspace folder "${workspaceFolder}" not found.`,
+        `Workspace folder "${workspaceFolder}" not found. ${this.availableFoldersMessage(folders)}`,
       );
     }
     return match;
+  }
+
+  private availableFoldersMessage(folders: readonly vscode.WorkspaceFolder[]): string {
+    if (folders.length === 0) {
+      return "No workspace folders are open.";
+    }
+    const maxDisplayedFolders = 20;
+    const displayedFolders = folders.slice(0, maxDisplayedFolders);
+    const available = displayedFolders
+      .map((folder) => {
+        const name = folder.name.slice(0, 256);
+        const folderPath = folder.uri.fsPath.slice(0, 512);
+        return `${name} (${folderPath})`;
+      })
+      .join(", ");
+    const omitted = folders.length - displayedFolders.length;
+    const suffix = omitted > 0 ? `, and ${omitted} more` : "";
+    return `Available workspace folders: ${available}${suffix}.`;
   }
 
   /** Resolve a workspace folder identifier (name, absolute path, or file URI) to

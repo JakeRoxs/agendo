@@ -427,6 +427,8 @@ suite("mcpProblems", () => {
           error instanceof Error &&
             (error as { code?: string }).code === ProblemErrorCode.MULTIPLE_ROOTS_REQUIRED,
         );
+        assert.match((error as Error).message, /ws1 \(\/ws1\)/);
+        assert.match((error as Error).message, /ws2 \(\/ws2\)/);
         return true;
       });
     } finally {
@@ -480,6 +482,11 @@ suite("mcpProblems", () => {
           { name: "random", path: "/home/jake/repos/random" },
           { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
         ],
+        availableWorkspaceFolders: [
+          { name: "random", path: "/home/jake/repos/random" },
+          { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
+        ],
+        defaultWorkspaceFolder: null,
         truncated: false,
       });
     } finally {
@@ -502,6 +509,7 @@ suite("mcpProblems", () => {
           error instanceof Error &&
             (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND,
         );
+        assert.match((error as Error).message, /Available workspace folders: ws1 \(\/ws1\), ws2 \(\/ws2\)/);
         return true;
       });
     } finally {
@@ -523,6 +531,7 @@ suite("mcpProblems", () => {
           error instanceof Error &&
             (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND,
         );
+        assert.match((error as Error).message, /Available workspace folders: ws1 \(\/ws1\)/);
         return true;
       });
     } finally {
@@ -1616,6 +1625,11 @@ suite("mcpProblems", () => {
           { name: "random", path: "/home/jake/repos/random" },
           { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
         ],
+        availableWorkspaceFolders: [
+          { name: "random", path: "/home/jake/repos/random" },
+          { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
+        ],
+        defaultWorkspaceFolder: null,
         truncated: false,
       });
     } finally {

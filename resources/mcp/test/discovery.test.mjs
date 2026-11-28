@@ -348,8 +348,11 @@ test('diagnostics bridge lists actual VS Code folders separately from registered
       id,
       workspace: registeredWorkspace,
       label: 'todos',
+      registeredWorkspace: { name: 'random', path: registeredWorkspace },
       registeredWorkspaces: [{ path: registeredWorkspace, label: 'todos', rootMode: 'workspace' }],
       workspaceName: 'random',
+      availableWorkspaceFolders: workspaceFolders,
+      defaultWorkspaceFolder: null,
       folders: workspaceFolders,
       foldersTruncated: false,
       folderMetadataAvailable: true,
@@ -362,6 +365,14 @@ test('diagnostics bridge lists actual VS Code folders separately from registered
     assert.notEqual(query.isError, true);
     assert.equal(query.structuredContent.workspaceName, 'random');
     assert.deepEqual(query.structuredContent.workspaceFolderDetails, selectedFolder);
+    assert.equal(query.structuredContent.requestedWorkspaceFolder, selectedFolder.path);
+    assert.deepEqual(query.structuredContent.resolvedWorkspaceFolder, selectedFolder);
+    assert.deepEqual(query.structuredContent.bridge, {
+      id,
+      workspaceName: 'random',
+      registeredWorkspace: { name: 'random', path: registeredWorkspace },
+    });
+    assert.equal(query.structuredContent.selectionDiffersFromRegisteredWorkspace, true);
     assert.deepEqual(query.structuredContent.registeredWorkspace, {
       path: registeredWorkspace,
       label: 'todos',

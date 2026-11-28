@@ -90,14 +90,19 @@ When multiple VS Code windows share the same workspace and automatic routing can
 identify the originating window, `get_problems` rejects with `ambiguous_window` rather than guessing.
 In that case, call the read-only `list_diagnostic_bridges` tool to enumerate live diagnostics
 bridges. Each entry exposes an opaque, registration-scoped `id`, the registered workspace path
-(`workspace` / `registeredWorkspaces`), the live VS Code workspace display name (`workspaceName`),
-and the open workspace folders (`folders`, each with a name and path), when the bridge supports
-folder metadata. The registered workspace is a discovery/todo-root identity and may differ from an
-open folder the bridge can query. Raw socket paths and PIDs are not exposed. IDs may change after
-restart. Pass the chosen `id` as the `bridgeId` argument to `get_problems` to route the diagnostics
-query to that specific bridge. `get_problems` reports the selected folder in
-`workspaceFolderDetails` and reports the registered workspace separately; a valid open folder may
-differ from the registered workspace. Unknown folders retain the `WORKSPACE_NOT_FOUND` error.
+(`workspace` / `registeredWorkspace` / `registeredWorkspaces`), the live VS Code workspace display
+name (`workspaceName`), and available open workspace folders (`availableWorkspaceFolders`, each
+with a name and path), when the bridge supports folder metadata. `folders` remains as a compatibility
+alias. `defaultWorkspaceFolder` is currently null because no default is configured. The registered
+workspace is a discovery/todo-root identity and may differ from an open folder the bridge can query.
+Raw socket paths and PIDs are not exposed. IDs may change after restart. Pass the chosen `id` as the
+`bridgeId` argument to `get_problems` to route the diagnostics query to that specific bridge.
+`workspaceFolder` selects an available VS Code folder inside that bridge; `path` then scopes to a
+file or directory within that folder. The result echoes `requestedWorkspaceFolder`, identifies the
+`resolvedWorkspaceFolder`, and includes the bridge's registered workspace. A valid open folder may
+differ from the registered workspace; `selectionDiffersFromRegisteredWorkspace` makes that explicit
+without rejecting the query. Unknown or missing selections retain `WORKSPACE_NOT_FOUND` or
+`MULTIPLE_ROOTS_REQUIRED`, with available folder names/paths in the message.
 Stale or unknown `bridgeId` values fail safely; a bridge that is no longer listening is reported
 as unavailable. The process-level `--endpoint` CLI override takes precedence over `bridgeId` and
 both cannot be used together.
