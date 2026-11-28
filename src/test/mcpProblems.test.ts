@@ -30,6 +30,7 @@ function makeDiagnostic(
 
 const originalGetDiagnostics = vscode.languages.getDiagnostics;
 const originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+const originalWorkspaceName = vscode.workspace.name;
 
 function mockGetDiagnostics(entries: [vscode.Uri, vscode.Diagnostic[]][]): () => void {
   Object.defineProperty(vscode.languages, "getDiagnostics", {
@@ -52,6 +53,19 @@ function mockWorkspaceFolders(folders: vscode.WorkspaceFolder[]): () => void {
   return () => {
     Object.defineProperty(vscode.workspace, "workspaceFolders", {
       value: originalWorkspaceFolders,
+      configurable: true,
+    });
+  };
+}
+
+function mockWorkspaceName(name: string | undefined): () => void {
+  Object.defineProperty(vscode.workspace, "name", {
+    value: name,
+    configurable: true,
+  });
+  return () => {
+    Object.defineProperty(vscode.workspace, "name", {
+      value: originalWorkspaceName,
       configurable: true,
     });
   };
@@ -424,6 +438,7 @@ suite("mcpProblems", () => {
 
   test("getProblems resolves workspaceFolder by name", async () => {
     const restore = [
+      mockWorkspaceName("Random Workspace"),
       mockWorkspaceFolders([
         { uri: makeUri("/ws1"), name: "ws1", index: 0 },
         { uri: makeUri("/ws2"), name: "ws2", index: 1 },
@@ -439,11 +454,36 @@ suite("mcpProblems", () => {
       const service = new DiagnosticsService();
       const result = await service.getProblems({ workspaceFolder: "ws2" });
       assert.strictEqual(result.workspaceFolder, "ws2");
+      assert.strictEqual(result.workspaceName, "Random Workspace");
+      assert.deepStrictEqual(result.workspaceFolderDetails, { name: "ws2", path: "/ws2" });
       assert.strictEqual(result.total, 1);
     } finally {
       for (const r of restore) {
         r();
       }
+    }
+  });
+
+  test("getWorkspaceFolders reports the live VS Code workspace and available folders", () => {
+    const restore = [
+      mockWorkspaceName("Random Workspace"),
+      mockWorkspaceFolders([
+        { uri: makeUri("/home/jake/repos/random"), name: "random", index: 0 },
+        { uri: makeUri("/home/jake/repos/llama-catalog-proxy"), name: "llama-catalog-proxy", index: 1 },
+      ]),
+    ];
+    try {
+      const result = new DiagnosticsService().getWorkspaceFolders();
+      assert.deepStrictEqual(result, {
+        workspaceName: "Random Workspace",
+        folders: [
+          { name: "random", path: "/home/jake/repos/random" },
+          { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
+        ],
+        truncated: false,
+      });
+    } finally {
+      for (const r of restore) r();
     }
   });
 
@@ -468,6 +508,25 @@ suite("mcpProblems", () => {
       for (const r of restore) {
         r();
       }
+    }
+  });
+
+  test("getProblems rejects a mismatched workspaceFolder even with one open folder", async () => {
+    const restore = [
+      mockWorkspaceFolders([{ uri: makeUri("/ws1"), name: "ws1", index: 0 }]),
+      mockGetDiagnostics([]),
+    ];
+    try {
+      const service = new DiagnosticsService();
+      await assert.rejects(service.getProblems({ workspaceFolder: "/different" }), (error) => {
+        assert.ok(
+          error instanceof Error &&
+            (error as { code?: string }).code === ProblemErrorCode.WORKSPACE_NOT_FOUND,
+        );
+        return true;
+      });
+    } finally {
+      for (const r of restore) r();
     }
   });
 
@@ -1523,6 +1582,45 @@ suite("mcpProblems", () => {
       for (const r of restore) {
         r();
       }
+    }
+  });
+
+  test("IpcBridge lists live VS Code workspace folders", async () => {
+    const restore = [
+      mockWorkspaceName("Random Workspace"),
+      mockWorkspaceFolders([
+        { uri: makeUri("/home/jake/repos/random"), name: "random", index: 0 },
+        { uri: makeUri("/home/jake/repos/llama-catalog-proxy"), name: "llama-catalog-proxy", index: 1 },
+      ]),
+      mockGetDiagnostics([]),
+      mockMcpProblemsEnabled(),
+    ];
+    let bridge: IpcBridge | undefined;
+    try {
+      bridge = await IpcBridge.create({ context: mockContext, diagnostics: new DiagnosticsService() });
+      const endpoint = bridge.getEndpoint();
+      await waitForListening(endpoint);
+
+      const socket = net.createConnection(endpoint);
+      const response = await requestResponse(socket, {
+        id: 43,
+        method: "list_workspace_folders",
+        params: {},
+      });
+      socket.end();
+
+      assert.strictEqual(response.ok, true);
+      assert.deepStrictEqual(response.result, {
+        workspaceName: "Random Workspace",
+        folders: [
+          { name: "random", path: "/home/jake/repos/random" },
+          { name: "llama-catalog-proxy", path: "/home/jake/repos/llama-catalog-proxy" },
+        ],
+        truncated: false,
+      });
+    } finally {
+      bridge?.dispose();
+      for (const r of restore) r();
     }
   });
 

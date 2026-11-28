@@ -4,7 +4,7 @@ description: This skill should be used when managing the file-based todo trackin
 argument-hint: "[todo operation]"
 category: tracking
 user-invocable: true
-version: 1.9.1
+version: 1.9.2
 ---
 
 # Agendo — File-Based Todo Tracking Skill
@@ -127,7 +127,8 @@ multiple roots are registered and the call cannot be disambiguated, the tool rej
 than guessing; do not fall back to another root silently. The read-only diagnostics tool
 (`get_problems`) has separate selectors: `workspaceFolder` scopes the diagnostic query to a folder
 within the selected diagnostics bridge, while `bridgeId` chooses a specific VS Code diagnostics
-bridge/window when automatic routing is ambiguous. `workspaceFolder` does not select a window.
+bridge/window when automatic routing is ambiguous. `workspaceFolder` selects an open VS Code folder
+inside the selected bridge; it does not select a bridge and is not merely a path filter.
 
 **Config.** `.agendo-config.json` is per resolved todo root, read from that root only. A manual root
 is a directory URI, not a workspace folder, so it has no folder-scoped `agendo.root`; its root is its
@@ -242,13 +243,17 @@ diagnostics in this order:
 2. If no host Problems tool is available, or it fails because the editor/connection is unavailable,
    call Agendo MCP `agendo_get_problems` as the fallback. If it reports `ambiguous_window`, call
    Agendo MCP `agendo_list_diagnostic_bridges`, select the intended live bridge from its returned
-   IDs and workspace/label details, then retry `agendo_get_problems` with that ID as `bridgeId`. If
+   IDs, registered workspace, VS Code workspace name, and open folders, then retry
+   `agendo_get_problems` with that ID as `bridgeId`. If
    candidates are indistinguishable (for example, two windows on the same workspace), ask the user
    which ID to use rather than guessing. Bridge IDs may change after restart; list them again if an
    ID is stale or unavailable. Do not use the fallback to mask invalid arguments; correct the
    workspace/path/severity parameters and retry the original tool first.
-3. For a multi-root workspace, provide the selected `workspaceFolder` to scope the query within
-   the selected bridge. Use workspace-relative `path` to scope a file or directory, and use
+3. For a multi-root workspace, provide `workspaceFolder` to select an open folder inside the
+   selected bridge (by folder name, absolute path, or file URI). This may differ from the bridge's
+   registered workspace; a valid open folder remains queryable. The result reports both
+   `registeredWorkspace` and `workspaceFolderDetails` (selected name and absolute path). Use
+   workspace-relative `path` to scope a file or directory, and use
    supported severity values only. The Agendo tool defaults to 100 results and caps `limit` at 500;
    if `truncated` is true, narrow the scope and query again rather than treating the partial result
    as a complete scan.

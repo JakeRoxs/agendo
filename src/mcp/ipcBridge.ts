@@ -9,6 +9,7 @@ import type {
   DiagnosticsService,
   GetProblemsParams,
   GetProblemsResult,
+  WorkspaceFoldersResult,
 } from "./diagnosticsService";
 import { McpError, ProblemErrorCode } from "./diagnosticsService";
 import { publishEndpoint } from "./workspaceDiscovery";
@@ -16,6 +17,14 @@ import { publishEndpoint } from "./workspaceDiscovery";
 const MAX_FRAME = 64 * 1024; // 64 KiB, aligned with the MCP client's outbound request cap
 const MAX_RESPONSE = 1024 * 1024; // 1 MiB, aligned with the MCP client's inbound response cap
 const REQUEST_TIMEOUT = 30_000; // 30 seconds
+
+type IpcResult = GetProblemsResult | WorkspaceFoldersResult;
+type IpcResponse = {
+  id: unknown;
+  ok: boolean;
+  result?: IpcResult;
+  error?: { code: string; message: string };
+};
 
 export interface IpcBridgeOptions {
   context: vscode.ExtensionContext;
@@ -414,15 +423,29 @@ export class IpcBridge implements vscode.Disposable {
   /** Bound the serialized response to the 1 MiB frame by truncating diagnostics
    * when the result is large. `total` stays the count of all matching
    * diagnostics; `truncated` is true whenever any diagnostics are dropped. */
-  private boundResponse(response: { id: unknown; ok: boolean; result?: GetProblemsResult }): {
-    id: unknown;
-    ok: boolean;
-    result?: GetProblemsResult;
-  } {
+  private boundResponse(response: IpcResponse): IpcResponse {
     if (!response.ok || !response.result) {
       return response;
     }
     const result = response.result;
+    if ("folders" in result) {
+      let folders = result.folders;
+      let truncated = result.truncated;
+      let payload = `${JSON.stringify(response)}\n`;
+      while (Buffer.byteLength(payload) > MAX_RESPONSE && folders.length > 0) {
+        folders = folders.slice(0, Math.floor(folders.length / 2));
+        truncated = true;
+        response = { ...response, result: { ...result, folders, truncated } };
+        payload = `${JSON.stringify(response)}\n`;
+      }
+      if (Buffer.byteLength(payload) > MAX_RESPONSE) {
+        response = {
+          ...response,
+          result: { ...result, workspaceName: null, folders: [], truncated: true },
+        };
+      }
+      return response;
+    }
     const total = result.total;
     let truncated = result.truncated;
     let kept = result.diagnostics;
@@ -443,12 +466,7 @@ export class IpcBridge implements vscode.Disposable {
   /** Handle one JSONL request and send one JSONL response, then close. */
   private async handleRequest(socket: net.Socket, line: string): Promise<void> {
     let id: unknown;
-    let response: {
-      id: unknown;
-      ok: boolean;
-      result?: GetProblemsResult;
-      error?: { code: string; message: string };
-    };
+    let response: IpcResponse;
     try {
       const parsed = JSON.parse(line);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -456,13 +474,17 @@ export class IpcBridge implements vscode.Disposable {
       }
       id = (parsed as { id?: unknown }).id;
       const method = (parsed as { method?: unknown }).method;
-      if (method !== "get_problems") {
+      if (method === "get_problems") {
+        const params = (parsed as { params?: unknown }).params ?? {};
+        this.validateParams(params);
+        const result = await this.diagnostics.getProblems(params as GetProblemsParams);
+        response = { id, ok: true, result };
+      } else if (method === "list_workspace_folders") {
+        const result = this.diagnostics.getWorkspaceFolders();
+        response = { id, ok: true, result };
+      } else {
         throw new McpError(ProblemErrorCode.INVALID_PARAMS, `Unknown method: ${String(method)}`);
       }
-      const params = (parsed as { params?: unknown }).params ?? {};
-      this.validateParams(params);
-      const result = await this.diagnostics.getProblems(params as GetProblemsParams);
-      response = { id, ok: true, result };
     } catch (error) {
       response = {
         id: id ?? null,

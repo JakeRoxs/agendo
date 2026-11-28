@@ -3,6 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { createConnection } from 'node:net';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { sendListWorkspaceFoldersRequest } from './ipc.mjs';
 
 const uuid = '[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}';
 const registrationName = new RegExp(String.raw`^${uuid}\.json$`);
@@ -183,19 +184,66 @@ export async function listLiveBridges(directory, { hostPid } = {}) {
   const candidates = hostPid === undefined ? records : records.filter((record) => record.hostPid === hostPid);
   const live = await liveEndpoints(candidates);
   const liveSet = new Set(live);
-  const seen = new Set();
-  const bridges = [];
+  const byEndpoint = new Map();
   for (const record of candidates) {
     if (!liveSet.has(record.endpoint)) continue;
-    if (seen.has(record.endpoint)) continue;
-    seen.add(record.endpoint);
-    bridges.push({
-      id: record.id,
-      workspace: record.workspace,
-      label: record.label,
-    });
+    let entry = byEndpoint.get(record.endpoint);
+    if (!entry) {
+      entry = { id: record.id, endpoint: record.endpoint, registrations: [] };
+      byEndpoint.set(record.endpoint, entry);
+    }
+    entry.registrations.push(record);
   }
-  return bridges;
+
+  return Promise.all([...byEndpoint.values()].map(async (entry) => {
+    let workspaceInfo;
+    try {
+      const result = await sendListWorkspaceFoldersRequest(entry.endpoint);
+      if (
+        result &&
+        typeof result === 'object' &&
+        (typeof result.workspaceName === 'string' || result.workspaceName === null) &&
+        Array.isArray(result.folders) &&
+        result.folders.every((folder) =>
+          folder &&
+          typeof folder.name === 'string' &&
+          typeof folder.path === 'string'
+        ) &&
+        typeof result.truncated === 'boolean'
+      ) {
+        workspaceInfo = result;
+      }
+    } catch {
+      // Keep bridge enumeration useful when an older or unhealthy bridge cannot
+      // provide live folder metadata.
+    }
+
+    const registeredWorkspaces = [];
+    const seenWorkspaces = new Set();
+    for (const record of entry.registrations) {
+      if (record.workspace === undefined) continue;
+      const key = `${record.workspace}\0${record.label ?? ''}\0${record.rootMode ?? ''}`;
+      if (seenWorkspaces.has(key)) continue;
+      seenWorkspaces.add(key);
+      registeredWorkspaces.push({
+        path: record.workspace,
+        label: record.label,
+        rootMode: record.rootMode,
+      });
+    }
+    const firstRegistration = entry.registrations[0];
+    return {
+      id: entry.id,
+      // `workspace` and `label` remain as aliases for the first registration.
+      workspace: firstRegistration.workspace,
+      label: firstRegistration.label,
+      registeredWorkspaces,
+      workspaceName: workspaceInfo?.workspaceName ?? null,
+      folders: workspaceInfo?.folders ?? [],
+      foldersTruncated: workspaceInfo?.truncated ?? false,
+      folderMetadataAvailable: workspaceInfo !== undefined,
+    };
+  }));
 }
 
 /**

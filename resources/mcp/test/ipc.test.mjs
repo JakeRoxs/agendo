@@ -11,6 +11,7 @@ import {
   MAX_RESPONSE_BYTES,
   REQUEST_TIMEOUT_MS,
   sendGetProblemsRequest,
+  sendListWorkspaceFoldersRequest,
   getProblemsInputSchema,
   getProblemsHandler,
   setCreateConnection,
@@ -283,6 +284,23 @@ describe('sendGetProblemsRequest', () => {
       assert.ok(err.message.includes('editor_unavailable:'));
       return true;
     });
+  });
+
+  it('requests live workspace folder metadata with a distinct IPC method', async () => {
+    const socket = new FakeSocket();
+    mockCreateConnection(socket);
+    const promise = sendListWorkspaceFoldersRequest('endpoint');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const request = captureRequest(socket);
+    assert.equal(request.method, 'list_workspace_folders');
+    assert.deepEqual(request.params, {});
+    const result = {
+      workspaceName: 'Random Workspace',
+      folders: [{ name: 'llama-catalog-proxy', path: '/home/jake/repos/llama-catalog-proxy' }],
+      truncated: false,
+    };
+    socket.emit('data', Buffer.from(JSON.stringify({ id: request.id, ok: true, result }) + '\n'));
+    assert.deepEqual(await promise, result);
   });
 });
 

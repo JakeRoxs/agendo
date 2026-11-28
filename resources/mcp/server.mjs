@@ -361,16 +361,38 @@ registerRootTool(server, 'get_todo_file',
 server.registerTool(
   'get_problems',
   {
-    description: 'Get diagnostic problems for a path or workspace folder (read-only)',
+    description: 'Get diagnostics from the selected VS Code bridge. `workspaceFolder` selects an open workspace folder within that bridge (by name, absolute path, or file URI); it does not select a bridge and is not merely a path filter. The result identifies both the selected folder and the bridge registered workspace.',
     inputSchema: getProblemsInputSchema(),
     annotations: { readOnlyHint: true },
   },
   async (args) => {
     const endpoint = await resolveProblemsEndpoint(args);
     const result = await getProblemsHandler(endpoint, args);
+    const registrations = await collectRegistrations(registryRoot);
+    const selectedRegistrations = args.bridgeId !== undefined
+      ? registrations.filter((record) => record.id === args.bridgeId)
+      : registrations.filter((record) => record.endpoint === endpoint);
+    const registeredWorkspaces = [];
+    const seenWorkspaces = new Set();
+    for (const record of selectedRegistrations) {
+      if (record.workspace === undefined) continue;
+      const key = `${record.workspace}\0${record.label ?? ''}\0${record.rootMode ?? ''}`;
+      if (seenWorkspaces.has(key)) continue;
+      seenWorkspaces.add(key);
+      registeredWorkspaces.push({
+        path: record.workspace,
+        label: record.label,
+        rootMode: record.rootMode,
+      });
+    }
+    const attributedResult = {
+      ...result,
+      registeredWorkspace: registeredWorkspaces[0] ?? null,
+      registeredWorkspaces,
+    };
     return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
-      structuredContent: result,
+      content: [{ type: 'text', text: JSON.stringify(attributedResult, null, 2) }],
+      structuredContent: attributedResult,
     };
   }
 );
@@ -378,7 +400,7 @@ server.registerTool(
 server.registerTool(
   'list_diagnostic_bridges',
   {
-    description: 'List live VS Code diagnostics bridges selectable for get_problems. Each entry has an opaque registration-scoped ID plus workspace and label details. Raw endpoint paths and PIDs are not exposed. IDs may change after restart.',
+    description: 'List live VS Code diagnostics bridges selectable for get_problems. Each entry distinguishes the registered workspace path/label from the live VS Code workspace name and its open workspace folders. `workspaceFolder` on get_problems selects one of those open folders within the selected bridge; it does not select a bridge and is not merely a path filter. Folder metadata may be unavailable for older or unreachable bridges. Raw endpoint paths and PIDs are not exposed. IDs may change after restart.',
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },

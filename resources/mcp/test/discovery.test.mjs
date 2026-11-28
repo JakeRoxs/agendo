@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -279,6 +279,99 @@ test('get_problems supports explicit bridgeId selection; list_diagnostic_bridges
     for (const cleanup of cleanups.reverse()) await cleanup();
     await rm(registry, { recursive: true, force: true });
     await rm(ws, { recursive: true, force: true });
+  }
+});
+
+test('diagnostics bridge lists actual VS Code folders separately from registered workspaces', async () => {
+  const registry = await mkdtemp(join(tmpdir(), 'agendo-workspace-metadata-'));
+  const socketDirectory = join(tmpdir(), `agendo-ipc-${randomUUID()}`);
+  const endpoint = process.platform === 'win32'
+    ? String.raw`\\.\pipe\agendo-${randomUUID()}`
+    : join(socketDirectory, 'socket');
+  const registeredWorkspace = '/home/jake/repos/random';
+  const selectedFolder = {
+    name: 'llama-catalog-proxy',
+    path: '/home/jake/repos/llama-catalog-proxy',
+  };
+  const workspaceFolders = [
+    { name: 'random', path: registeredWorkspace },
+    selectedFolder,
+  ];
+  const hostPid = 7001;
+  const bridge = createServer((socket) => {
+    let frame = '';
+    socket.setEncoding('utf8');
+    socket.on('data', (chunk) => {
+      frame += chunk;
+      if (!frame.endsWith('\n')) return;
+      const request = JSON.parse(frame);
+      const result = request.method === 'list_workspace_folders'
+        ? { workspaceName: 'random', folders: workspaceFolders, truncated: false }
+        : {
+            workspaceName: 'random',
+            workspaceFolder: selectedFolder.name,
+            workspaceFolderDetails: selectedFolder,
+            capturedAt: new Date().toISOString(),
+            total: 1,
+            truncated: false,
+            diagnostics: [],
+          };
+      socket.end(`${JSON.stringify({ id: request.id, ok: true, result })}\n`);
+    });
+  });
+  let client;
+  const registrationPath = join(registry, `${randomUUID()}.json`);
+  try {
+    if (process.platform !== 'win32') await mkdir(socketDirectory, { mode: 0o700 });
+    await new Promise((resolve, reject) => {
+      bridge.once('error', reject);
+      bridge.listen(endpoint, resolve);
+    });
+    const id = basename(registrationPath).replace(/\.json$/, '');
+    await writeFile(registrationPath, JSON.stringify({
+      endpoint,
+      hostPid,
+      workspace: registeredWorkspace,
+      rootMode: 'workspace',
+      label: 'todos',
+    }));
+    client = new Client({ name: 'agendo-workspace-metadata-test', version: '1.0.0' });
+    await client.connect(new StdioClientTransport({
+      command: process.execPath,
+      args: [fileURLToPath(new URL('../server.mjs', import.meta.url)), '--workspace-discovery', registry],
+      env: { KILO_PARENT_PID: String(hostPid) },
+    }));
+
+    const list = await client.callTool({ name: 'list_diagnostic_bridges', arguments: {} });
+    assert.notEqual(list.isError, true);
+    assert.deepEqual(list.structuredContent.bridges, [{
+      id,
+      workspace: registeredWorkspace,
+      label: 'todos',
+      registeredWorkspaces: [{ path: registeredWorkspace, label: 'todos', rootMode: 'workspace' }],
+      workspaceName: 'random',
+      folders: workspaceFolders,
+      foldersTruncated: false,
+      folderMetadataAvailable: true,
+    }]);
+
+    const query = await client.callTool({
+      name: 'get_problems',
+      arguments: { bridgeId: id, workspaceFolder: selectedFolder.path, path: 'internal/benchmark/benchmark_test.go' },
+    });
+    assert.notEqual(query.isError, true);
+    assert.equal(query.structuredContent.workspaceName, 'random');
+    assert.deepEqual(query.structuredContent.workspaceFolderDetails, selectedFolder);
+    assert.deepEqual(query.structuredContent.registeredWorkspace, {
+      path: registeredWorkspace,
+      label: 'todos',
+      rootMode: 'workspace',
+    });
+  } finally {
+    await client?.close();
+    await new Promise((resolve) => bridge.close(resolve));
+    await rm(registry, { recursive: true, force: true });
+    if (process.platform !== 'win32') await rm(socketDirectory, { recursive: true, force: true });
   }
 });
 

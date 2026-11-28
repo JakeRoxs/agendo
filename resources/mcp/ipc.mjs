@@ -79,14 +79,14 @@ export function buildProblemsParams(params) {
  * request/response exceeds byte bounds, or the response is malformed. The MCP
  * tool handler turns this into a clear MCP error result.
  */
-export async function sendGetProblemsRequest(endpoint, params) {
+async function sendIpcRequest(endpoint, method, params) {
   if (!isValidEndpoint(endpoint)) {
     throw new Error(`${EDITOR_UNAVAILABLE_CODE}: no IPC endpoint configured`);
   }
 
-  const requestParams = buildProblemsParams(params);
+  const requestParams = method === 'get_problems' ? buildProblemsParams(params) : params;
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const requestObject = { id, method: 'get_problems', params: requestParams };
+  const requestObject = { id, method, params: requestParams };
   const requestBytes = Buffer.from(`${JSON.stringify(requestObject)}\n`, 'utf8');
   if (requestBytes.length > MAX_REQUEST_BYTES) {
     throw new Error(
@@ -185,6 +185,14 @@ export async function sendGetProblemsRequest(endpoint, params) {
 
     socket.write(requestBytes);
   });
+}
+
+export function sendGetProblemsRequest(endpoint, params) {
+  return sendIpcRequest(endpoint, 'get_problems', params);
+}
+
+export function sendListWorkspaceFoldersRequest(endpoint) {
+  return sendIpcRequest(endpoint, 'list_workspace_folders', {});
 }
 
 /**

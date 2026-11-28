@@ -51,12 +51,28 @@ export interface ProblemDiagnostic {
 export interface GetProblemsResult {
   /** Canonical workspace folder identifier used for the query. */
   workspaceFolder: string;
+  /** Name of the VS Code workspace containing the selected folder, if named. */
+  workspaceName: string | null;
+  /** Exact VS Code workspace folder selected for this query. */
+  workspaceFolderDetails: {
+    name: string;
+    path: string;
+  };
   /** ISO-8601 timestamp when the snapshot was taken. */
   capturedAt: string;
   /** Total diagnostics matching the filters (before truncation). */
   total: number;
   truncated: boolean;
   diagnostics: ProblemDiagnostic[];
+}
+
+export interface WorkspaceFoldersResult {
+  /** Name of the VS Code workspace, or null when VS Code has no workspace name. */
+  workspaceName: string | null;
+  /** Open workspace folders available to diagnostics queries. */
+  folders: Array<{ name: string; path: string }>;
+  /** True when more folders exist than are returned. */
+  truncated: boolean;
 }
 
 export interface McpProblemsError {
@@ -202,6 +218,27 @@ function validateLimit(value: unknown): void {
 }
 
 export class DiagnosticsService {
+  /** Return current VS Code workspace identity and its open folders. */
+  getWorkspaceFolders(): WorkspaceFoldersResult {
+    if (!isLocalDesktopHost()) {
+      throw new McpError(
+        ProblemErrorCode.UNSUPPORTED_HOST,
+        "Diagnostics are only supported in a local desktop host.",
+      );
+    }
+
+    const folders = vscode.workspace.workspaceFolders ?? [];
+    const maxFolders = 100;
+    return {
+      workspaceName: vscode.workspace.name || null,
+      folders: folders.slice(0, maxFolders).map((folder) => ({
+        name: folder.name,
+        path: folder.uri.fsPath,
+      })),
+      truncated: folders.length > maxFolders,
+    };
+  }
+
   /**
    * Snapshot the current diagnostics for the selected workspace folder, apply
    * filters, and return a bounded result. Diagnostics are read at request time
@@ -248,6 +285,11 @@ export class DiagnosticsService {
 
     return {
       workspaceFolder: folder.name,
+      workspaceName: vscode.workspace.name || null,
+      workspaceFolderDetails: {
+        name: folder.name,
+        path: folder.uri.fsPath,
+      },
       capturedAt: new Date().toISOString(),
       total,
       truncated,
@@ -273,7 +315,7 @@ export class DiagnosticsService {
     folders: readonly vscode.WorkspaceFolder[],
     pathHint: string | undefined,
   ): vscode.WorkspaceFolder {
-    if (folders.length === 1) {
+    if (folders.length === 1 && workspaceFolder === undefined) {
       return folders[0];
     }
     if (!workspaceFolder && !pathHint) {
