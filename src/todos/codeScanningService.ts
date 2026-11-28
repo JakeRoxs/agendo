@@ -310,8 +310,11 @@ function evidence(findings: ScanningFinding[], snapshot?: ScanningSnapshot): str
       (finding) =>
         `#### File: ${text(finding.path || "Project-level finding")} | Line: ${finding.line || "not reported"}\n\n**Rule:** ${text(finding.rule)}\n\n**Problem:** ${text(finding.message)}\n\n**Severity:** ${text(finding.severity)}\n\n${missing.has(finding.id) ? "**Observation:** Not returned in the latest successful result; resolution is not verified.\n\n" : ""}[View finding ${text(finding.id)}](<${finding.url.replace(/[<>\r\n]/g, "")}>)`,
     );
+  const latestAnalysis = snapshot?.source === "sonarqube"
+    ? `**Latest analysis reported by SonarQube:** ${snapshot.analyzedAt ?? "Unknown"}\n\n`
+    : "";
   const refresh = snapshot
-    ? `**Retrieved:** ${snapshot.retrievedAt}\n\n**Branch:** ${text(snapshot.branch || "Default branch")}\n\n${findings.length - missing.size} reported; ${missing.size} not returned. This retrieves existing scanner results, not a new analysis.\n\n`
+    ? `**Retrieved:** ${snapshot.retrievedAt}\n\n**Branch:** ${text(snapshot.analysisBranch || snapshot.branch || "Default branch")}\n\n${latestAnalysis}${findings.length - missing.size} reported; ${missing.size} not returned. This retrieves existing scanner results, not a new analysis.\n\n`
     : "";
   const baseline = snapshot ? `\n\n${serializeScanningSnapshot(snapshot)}` : "";
   return `${START}\n## Scanner Evidence\n\n${refresh}### Affected Locations\n\n${rows.join("\n\n")}${problem}${baseline}\n${END}`;
@@ -513,7 +516,7 @@ export async function fetchSonarQubeCli(
   project: string,
   run: SonarCliRunner = runSonarCli,
   branch?: string,
-): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } & SonarAnalysis> {
   return fetchSonarQube(
     server,
     project,
@@ -524,6 +527,8 @@ export async function fetchSonarQubeCli(
   );
 }
 
+class SonarCliConnectionChangedError extends Error {}
+
 function createSonarCliRequest(
   cwd: string,
   server: string,
@@ -533,7 +538,7 @@ function createSonarCliRequest(
   const expectedServer = base.toString();
   const checkConnection = async () => {
     if ((await sonarQubeCliServer(cwd, run)) !== expectedServer) {
-      throw new Error("SonarQube CLI connection changed. Start the import again.");
+      throw new SonarCliConnectionChangedError("SonarQube CLI connection changed. Start the import again.");
     }
   };
   return async (url) => {
@@ -596,8 +601,24 @@ interface SonarIssue {
   message: string;
   component: string;
   line?: number;
-  /** Date the issue was resolved, or undefined when still open. */
-  resolved?: string;
+  issueStatus?: string;
+  status?: string;
+  resolution?: string;
+  resolved?: boolean | string;
+}
+
+const SONAR_INACTIVE_STATUSES = new Set(["CLOSED", "RESOLVED", "FIXED", "FALSE_POSITIVE", "ACCEPTED"]);
+const SONAR_ACTIVE_STATUSES = new Set(["OPEN", "CONFIRMED", "REOPENED", "IN_SANDBOX"]);
+
+function isSonarIssueResolved(issue: SonarIssue): boolean {
+  // Prefer the current issue status over legacy status, resolution or dates.
+  const status = issue.issueStatus ?? issue.status;
+  if (status !== undefined) {
+    if (SONAR_INACTIVE_STATUSES.has(status)) return true;
+    if (SONAR_ACTIVE_STATUSES.has(status)) return false;
+    throw new Error("SonarQube returned an unsupported issue status. No todos were imported.");
+  }
+  return Boolean(issue.resolution || issue.resolved);
 }
 
 function sonarIssueFinding(
@@ -620,8 +641,7 @@ function sonarIssueFinding(
       : issue.component,
     line: issue.line,
     url: link.toString(),
-    /** A SonarQube issue is resolved when it has a resolved date. */
-    resolved: Boolean(issue.resolved),
+    resolved: isSonarIssueResolved(issue),
   };
 }
 
@@ -731,6 +751,51 @@ async function readDuplicationMetrics(
   };
 }
 
+async function duplicationFindingForFile(
+  base: URL,
+  project: string,
+  filePath: string,
+  token: string,
+  request: ((url: URL) => Promise<unknown>) | undefined,
+  branch: string | undefined,
+  options: { threshold: number; description: string },
+): Promise<ScanningFinding | undefined> {
+  try {
+    const url = new URL("api/measures/component", base);
+    url.search = new URLSearchParams({
+      component: `${project}:${filePath}`,
+      metricKeys: "duplicated_lines,duplicated_lines_density",
+      ...(branch ? { branch } : {}),
+    }).toString();
+    const measures = await readDuplicationMetrics(url, token, request);
+    if (!measures) return undefined;
+    const { density, duplicatedLines } = measures;
+    if (density < options.threshold || duplicatedLines <= 0) return undefined;
+    const link = new URL("project/issues", base);
+    const linkParams = new URLSearchParams({
+      id: project,
+      view: "duplications",
+      file: filePath,
+    });
+    if (branch) linkParams.set("branch", branch);
+    link.search = linkParams.toString();
+    return {
+      id: `dup-${project}-${filePath}`,
+      rule: "sonarqube:duplicated_lines",
+      severity: "MAJOR",
+      message: `${duplicatedLines} duplicated lines (${Math.round(density)}% density) in ${filePath}`,
+      path: filePath,
+      url: link.toString(),
+      ruleTitle: "Duplicated code detected",
+      ruleDescription: options.description,
+    };
+  } catch (error) {
+    if (error instanceof SonarCliConnectionChangedError) throw error;
+    // Skip files where duplication metrics are unavailable
+    return undefined;
+  }
+}
+
 async function checkDuplicationMetrics(
   base: URL,
   project: string,
@@ -740,44 +805,51 @@ async function checkDuplicationMetrics(
   branch: string | undefined,
   options: { threshold: number; description: string },
 ): Promise<ScanningFinding[]> {
-  const duplicationRuleKey = "sonarqube:duplicated_lines";
   const duplicationFindings: ScanningFinding[] = [];
   for (const filePath of filePaths) {
-    try {
-      const url = new URL("api/measures/component", base);
-      url.search = new URLSearchParams({
-        component: `${project}:${filePath}`,
-        metricKeys: "duplicated_lines,duplicated_lines_density",
-        ...(branch ? { branch } : {}),
-      }).toString();
-      const measures = await readDuplicationMetrics(url, token, request);
-      if (!measures) continue;
-      const { density, duplicatedLines } = measures;
-      if (density >= options.threshold && duplicatedLines > 0) {
-        const link = new URL("project/issues", base);
-        const linkParams = new URLSearchParams({
-          id: project,
-          view: "duplications",
-          file: filePath,
-        });
-        if (branch) linkParams.set("branch", branch);
-        link.search = linkParams.toString();
-        duplicationFindings.push({
-          id: `dup-${project}-${filePath}`,
-          rule: duplicationRuleKey,
-          severity: "MAJOR",
-          message: `${duplicatedLines} duplicated lines (${Math.round(density)}% density) in ${filePath}`,
-          path: filePath,
-          url: link.toString(),
-          ruleTitle: "Duplicated code detected",
-          ruleDescription: options.description,
-        });
-      }
-    } catch {
-      // Skip files where duplication metrics are unavailable
-    }
+    const finding = await duplicationFindingForFile(
+      base,
+      project,
+      filePath,
+      token,
+      request,
+      branch,
+      options,
+    );
+    if (finding) duplicationFindings.push(finding);
   }
   return duplicationFindings;
+}
+
+type SonarAnalysis = { analysisBranch?: string; analyzedAt?: string };
+
+async function readSonarAnalysis(
+  base: URL,
+  project: string,
+  token: string,
+  request?: (url: URL) => Promise<unknown>,
+  branch?: string,
+): Promise<SonarAnalysis> {
+  const url = new URL("api/project_branches/list", base);
+  url.searchParams.set("project", project);
+  try {
+    const payload = (await (request ? request(url) : fetchSonarQubePage(url, token))) as {
+      branches?: Array<{ name?: string; isMain?: boolean; analysisDate?: string }>;
+    };
+    const selected = payload.branches?.find((entry) =>
+      branch === undefined ? entry.isMain === true : entry.name === branch,
+    );
+    if (!selected?.name) return {};
+    const timestamp = Date.parse(selected.analysisDate ?? "");
+    return {
+      analysisBranch: selected.name,
+      ...(Number.isFinite(timestamp) ? { analyzedAt: new Date(timestamp).toISOString() } : {}),
+    };
+  } catch (error) {
+    if (error instanceof SonarCliConnectionChangedError) throw error;
+    // Some editions/permissions do not expose branch metadata.
+    return {};
+  }
 }
 
 export async function fetchSonarQube(
@@ -787,7 +859,7 @@ export async function fetchSonarQube(
   request?: (url: URL) => Promise<unknown>,
   duplicationThreshold?: number,
   branch?: string,
-): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] }> {
+): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } & SonarAnalysis> {
   const base = validateSonarUrl(server);
   const threshold = duplicationThreshold ?? 0.05;
   const findings = await fetchPaginatedIssues(base, project, token, request, branch);
@@ -804,7 +876,7 @@ export async function fetchSonarQube(
   const duplicationFindings = await checkDuplicationMetrics(
     base,
     project,
-    new Set(findings.map((f) => f.path)),
+    new Set(findings.filter((finding) => finding.resolved !== true).map((finding) => finding.path)),
     token,
     request,
     branch,
@@ -814,7 +886,8 @@ export async function fetchSonarQube(
     },
   );
   findings.push(...duplicationFindings);
-  return { scope: `${base.toString()}#${project}`, ...(branch ? { branch } : {}), findings };
+  const analysis = await readSonarAnalysis(base, project, token, request, branch);
+  return { scope: `${base.toString()}#${project}`, ...(branch ? { branch } : {}), ...analysis, findings };
 }
 
 async function fetchSonarQubePage(url: URL, token: string): Promise<unknown> {
@@ -860,6 +933,7 @@ interface ImportContext {
   existing: Todo[];
   root: vscode.Uri;
   retrievedAt: string;
+  analysis: SonarAnalysis;
   /** Completed folder name (e.g. "completed") for moving auto-completed todos. */
   completedFolder: string;
 }
@@ -885,6 +959,86 @@ async function readImportBaseline(context: ImportContext, provenance: ScanningPr
   return { todo, before, previous };
 }
 
+async function processExistingImportGroup(
+  context: ImportContext,
+  key: string,
+  alerts: ScanningFinding[],
+  todo: Todo | undefined,
+  before: string | undefined,
+  previous: ScanningSnapshot | undefined,
+  options: {
+    snapshot: ScanningSnapshot;
+    review: boolean;
+    reviewRequired: string[];
+    observations: ScanningFinding[];
+    provenance: { source: ScanningSource; grouping: ScanningGrouping; target: string };
+    changed: boolean;
+  },
+): Promise<{ write: ImportGroupWrite } | undefined> {
+  if (!todo || before === undefined) return undefined;
+
+  const { snapshot, review, reviewRequired, observations, provenance, changed } = options;
+
+  /** All findings for this todo are resolved by the scanner. */
+  const allResolved =
+    snapshot.findings.length > 0 && snapshot.findings.every((f) => f.returned && f.resolved === true);
+  const autoComplete = todo && todo.status !== "completed" && allResolved;
+
+  let content = before;
+  let targetUri = todo.uri;
+  let sourceUri = todo.uri;
+  let effectiveReview = review;
+
+  if (autoComplete) {
+    // Transition the todo to completed: update status, add work log, move to completed folder.
+    content = updateFrontmatterStatus(content, "completed");
+    content = addWorkLogEntry(
+      content,
+      "All scanner findings for this todo are resolved; auto-completed by import.",
+    );
+    const sourceFolder = codeScanningBase(todo.folder);
+    const completedFolderPath = sourceFolder
+      ? `${sourceFolder}/${context.completedFolder}`
+      : context.completedFolder;
+    targetUri = vscode.Uri.joinPath(
+      context.root,
+      completedFolderPath,
+      buildFileName(todo.id, "completed", todo.priority, todo.description),
+    );
+    sourceUri = todo.uri;
+    effectiveReview = false;
+  }
+
+  const updatedContent = updateImportedGroup(
+    content,
+    provenance.source,
+    provenance.grouping,
+    key,
+    alerts,
+    previous,
+  );
+  const after = writeScanningProvenance(
+    updateFindingsChecklist(
+      updateScanningEvidence(updatedContent, observations, snapshot),
+      observations,
+      snapshot,
+    ),
+    snapshot,
+    effectiveReview,
+  );
+  return {
+    write: {
+      uri: targetUri,
+      sourceUri,
+      before,
+      after,
+      changed,
+      reviewRequired: autoComplete ? [] : reviewRequired,
+      ...(autoComplete ? { autoCompleted: true } : {}),
+    },
+  };
+}
+
 async function processImportGroup(
   context: ImportContext,
   key: string,
@@ -899,6 +1053,7 @@ async function processImportGroup(
     alerts,
     Boolean(todo),
     context.retrievedAt,
+    context.analysis,
   );
   const changed =
     !previous ||
@@ -916,68 +1071,23 @@ async function processImportGroup(
     ruleDescription: rules.get(finding.rule)?.description,
   }));
 
-  /** All findings for this todo are resolved by the scanner. */
-  const allResolved =
-    snapshot.findings.length > 0 && snapshot.findings.every((f) => f.resolved === true);
-  const autoComplete = todo && todo.status !== "completed" && allResolved;
-
-  if (todo && before !== undefined) {
-    let content = before;
-    let targetUri = todo.uri;
-    let sourceUri = todo.uri;
-    let effectiveReview = review;
-
-    if (autoComplete) {
-      // Transition the todo to completed: update status, add work log, move to completed folder.
-      content = updateFrontmatterStatus(content, "completed");
-      content = addWorkLogEntry(
-        content,
-        "All scanner findings for this todo are resolved; auto-completed by import.",
-      );
-      const sourceFolder = codeScanningBase(todo.folder);
-      const completedFolderPath = sourceFolder
-        ? `${sourceFolder}/${context.completedFolder}`
-        : context.completedFolder;
-      targetUri = vscode.Uri.joinPath(
-        context.root,
-        completedFolderPath,
-        buildFileName(todo.id, "completed", todo.priority, todo.description),
-      );
-      sourceUri = todo.uri;
-      effectiveReview = false;
-    }
-
-    const updatedContent = updateImportedGroup(
-      content,
-      provenance.source,
-      provenance.grouping,
-      key,
-      alerts,
-      previous,
-    );
-    const after = writeScanningProvenance(
-      updateFindingsChecklist(
-        updateScanningEvidence(updatedContent, observations, snapshot),
-        observations,
-        snapshot,
-      ),
+  const existing = await processExistingImportGroup(
+    context,
+    key,
+    alerts,
+    todo,
+    before,
+    previous,
+    {
       snapshot,
-      effectiveReview,
-    );
-    return {
-      write: {
-        uri: targetUri,
-        sourceUri,
-        before,
-        after,
-        changed,
-        reviewRequired,
-        ...(autoComplete ? { autoCompleted: true } : {}),
-      },
-      changes,
-      nextId,
-    };
-  }
+      review,
+      reviewRequired,
+      observations,
+      provenance,
+      changed,
+    },
+  );
+  if (existing) return { ...existing, changes, nextId };
   const id = `${SCANNING_ID_PREFIX[provenance.source]}-${String(nextId).padStart(3, "0")}`;
   return {
     write: newImportWrite(context, provenance, snapshot, observations, alerts, id),
@@ -1145,7 +1255,8 @@ async function addExistingImportGroups(
   groups: Map<string, ScanningFinding[]>,
   existing: Todo[],
   scope: Omit<ScanningProvenance, "target">,
-): Promise<void> {
+): Promise<Set<string>> {
+  const targets = new Set<string>();
   for (const todo of existing) {
     if (
       getTodoSource(todo) !== scope.source ||
@@ -1158,8 +1269,10 @@ async function addExistingImportGroups(
     const provenance = readScanningProvenance(await readText(todo.uri));
     if (provenance?.source !== scope.source)
       throw new Error("Invalid scanner provenance for an existing import.");
+    targets.add(provenance.target);
     if (!groups.has(provenance.target)) groups.set(provenance.target, []);
   }
+  return targets;
 }
 
 function accumulateImportResult(
@@ -1180,6 +1293,19 @@ function accumulateImportResult(
   if (write.autoCompleted) result.autoCompleted++;
 }
 
+function filterResolvedSonarQubeFindings(
+  groups: Map<string, ScanningFinding[]>,
+  existingTargets: Set<string>,
+): void {
+  for (const [key, alerts] of groups) {
+    if (existingTargets.has(key)) continue;
+    // Keep terminal observations for reconciliation, not as new active work.
+    const active = alerts.filter((finding) => finding.resolved !== true);
+    if (active.length) groups.set(key, active);
+    else groups.delete(key);
+  }
+}
+
 export async function importScanningFindings(
   config: ConfigService,
   repository: TodoRepository,
@@ -1190,6 +1316,8 @@ export async function importScanningFindings(
   options: {
     target?: string;
     branch?: string;
+    analysisBranch?: string;
+    analyzedAt?: string;
     onProgress?: (progress: { completed: number; total: number; label: string }) => void;
     isCancellationRequested?: () => boolean;
   } = {},
@@ -1217,7 +1345,8 @@ export async function importScanningFindings(
     grouping,
     ...(options.branch === undefined ? {} : { branch: options.branch }),
   };
-  await addExistingImportGroups(groups, existing, provenance);
+  const existingTargets = await addExistingImportGroups(groups, existing, provenance);
+  filterResolvedSonarQubeFindings(groups, existingTargets);
   if (options.target !== undefined) {
     const findingsForTarget = groups.get(options.target) ?? [];
     groups.clear();
@@ -1241,6 +1370,10 @@ export async function importScanningFindings(
     existing,
     root,
     retrievedAt: new Date().toISOString(),
+    analysis: {
+      analysisBranch: options.analysisBranch,
+      analyzedAt: options.analyzedAt,
+    },
     completedFolder: config.completedFolder,
   };
   for (const [index, [key, alerts]] of importGroups.entries()) {

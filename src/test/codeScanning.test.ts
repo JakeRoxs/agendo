@@ -1394,6 +1394,15 @@ suite("native code scanning", () => {
     globalThis.fetch = (async (url, options) => {
       requests.push(new URL(String(url)));
       assert.strictEqual(options?.redirect, "error");
+      if (requests[requests.length - 1].pathname.endsWith("/api/project_branches/list")) {
+        return new Response(JSON.stringify({
+          branches: [{
+            name: "feature/branch-selector",
+            isMain: false,
+            analysisDate: "2026-10-05T10:00:00-0700",
+          }],
+        }));
+      }
       if (requests[requests.length - 1].pathname.endsWith("/api/measures/component")) {
         return new Response(
           JSON.stringify({
@@ -1457,8 +1466,8 @@ suite("native code scanning", () => {
       assert.strictEqual(requests[0].searchParams.get("componentKeys"), "org:project");
       assert.strictEqual(
         requests.length,
-        4,
-        "fetch issues, rule explanation, and duplication metrics",
+        5,
+        "fetch analysis date, issues, rule explanation, and duplication metrics",
       );
       const ruleRequest = requests.find((r) => r.pathname.endsWith("/api/rules/show"));
       assert.strictEqual(ruleRequest?.searchParams.get("key"), "ts:S1");
@@ -1479,7 +1488,7 @@ suite("native code scanning", () => {
         result.scope,
         result.findings,
         "file",
-        { branch: result.branch },
+        { branch: result.branch, analyzedAt: result.analyzedAt, analysisBranch: result.analysisBranch },
       );
       const content = await readText(repository.getTodos()[0].uri);
       assert.strictEqual(
@@ -1487,6 +1496,9 @@ suite("native code scanning", () => {
         "feature/branch-selector",
       );
       assert.match(content, /\*\*Branch:\*\* feature\/branch-selector/);
+      assert.match(content, /scan_analyzed_at: "2026-10-05T17:00:00.000Z"/);
+      assert.match(content, /scan_analysis_branch: "feature\/branch-selector"/);
+      assert.match(content, /scan_refreshed_at: "/);
       assert.match(content, /### Rule: Use a comparison function/);
       assert.match(content, /Why this matters/);
       const updated = updateScanningEvidence(
@@ -1497,6 +1509,37 @@ suite("native code scanning", () => {
     } finally {
       globalThis.fetch = original;
     }
+  });
+
+  test("SonarQube import skips closed history but reconciles an existing issue by status", async () => {
+    const makeIssue = (key: string, status: Record<string, unknown>) => ({
+      key,
+      rule: "ts:S1",
+      severity: "MAJOR",
+      message: "Issue",
+      component: `project:src/${key}.ts`,
+      ...status,
+    });
+    const active = makeIssue("tracked", { issueStatus: "OPEN", status: "RESOLVED", resolution: "FIXED" });
+    const closed = makeIssue("old", { status: "CLOSED" });
+    let issues = [active, closed];
+    const request = async (url: URL) => {
+      if (url.pathname.endsWith("/issues/search")) return { issues, paging: { total: issues.length } };
+      if (url.pathname.endsWith("/rules/show")) return { rule: { key: "ts:S1", name: "Rule" } };
+      return {};
+    };
+    const first = await fetchSonarQube("https://sonar.example", "project", "", request);
+    assert.deepStrictEqual(first.findings.map((finding) => finding.resolved), [false, true]);
+    const imported = await importScanningFindings(config, repository, "sonarqube", first.scope, first.findings);
+    assert.strictEqual(imported.created, 1);
+    assert.match(await readText(repository.getTodos()[0].uri), /\*\*Latest analysis reported by SonarQube:\*\* Unknown/);
+
+    issues = [makeIssue("tracked", { issueStatus: "FIXED" }), closed];
+    const second = await fetchSonarQube("https://sonar.example", "project", "", request);
+    const refreshed = await importScanningFindings(config, repository, "sonarqube", second.scope, second.findings);
+    assert.strictEqual(refreshed.created, 0);
+    assert.strictEqual(refreshed.autoCompleted, 1);
+    assert.strictEqual(refreshed.changes.changed, 1);
   });
 
   test("SonarQube branch discovery includes the main branch and encoded project key", async () => {
@@ -1589,6 +1632,12 @@ suite("native code scanning", () => {
       }
       assert.deepStrictEqual(args.slice(0, 2), ["api", "get"]);
       const url = new URL(args[2], "https://sonar.example");
+      if (url.pathname === "/api/project_branches/list") {
+        assert.strictEqual(url.searchParams.get("project"), "org:project & test");
+        return JSON.stringify({
+          branches: [{ name: "feature/branch-selector", analysisDate: "2026-10-05T10:00:00Z" }],
+        });
+      }
       if (url.pathname === "/api/measures/component") {
         return JSON.stringify({
           component: {
@@ -1629,8 +1678,9 @@ suite("native code scanning", () => {
       "feature/branch-selector",
     );
     const callTypes = calls.map((args) => args[0]);
-    assert.strictEqual(callTypes.filter((t) => t === "auth").length, 8);
-    assert.strictEqual(callTypes.filter((t) => t === "api").length, 4);
+    assert.strictEqual(callTypes.filter((t) => t === "auth").length, 10);
+    assert.strictEqual(callTypes.filter((t) => t === "api").length, 5);
+    assert.strictEqual(result.analyzedAt, "2026-10-05T10:00:00.000Z");
     assert.strictEqual(result.scope, "https://sonar.example/context/#org:project & test");
     assert.strictEqual(result.branch, "feature/branch-selector");
     assert.strictEqual(result.findings.length, 2);

@@ -20,7 +20,6 @@ import {
   fetchSonarQubeCliBranches,
   importScanningFindings,
   ScanningImportCancelledError,
-  type ScanningFinding,
   sonarQubeCliServer,
   sonarQubeDefaults,
   sonarQubeEnvironmentToken,
@@ -600,6 +599,8 @@ async function runScanningImport(
           grouping.grouping,
           {
             branch: branch.branch,
+            analyzedAt: scan.analyzedAt,
+            analysisBranch: scan.analysisBranch,
             isCancellationRequested: () => token.isCancellationRequested,
             onProgress: ({ completed, total, label }) => {
               progress.report({
@@ -634,7 +635,7 @@ async function loadScanningFindings(
   source: ScanningImportSource,
   sonar: ScanningSelection["sonar"],
   branch: string | undefined,
-): Promise<{ scope: string; branch?: string; findings: ScanningFinding[] } | undefined> {
+): Promise<Awaited<ReturnType<typeof fetchSonarQube>> | undefined> {
   if (source.source === "codeql") return fetchCodeQL(workspace.uri.fsPath, undefined, branch);
   if (sonar?.cli) {
     return fetchSonarQubeCli(workspace.uri.fsPath, sonar.server, sonar.project, undefined, branch);
@@ -867,7 +868,7 @@ async function refreshCodeQLTodo(
 async function importAndReportScanningFindings(
   services: CommandServices,
   todo: Todo,
-  scan: { scope: string; branch?: string; findings: ScanningFinding[] },
+  scan: Awaited<ReturnType<typeof fetchSonarQube>>,
   provenance: ScanningProvenance,
   source: ScanningSource,
   displayLabel: string,
@@ -890,7 +891,12 @@ async function importAndReportScanningFindings(
     scan.scope,
     scan.findings,
     provenance.grouping,
-    { target: provenance.target, branch: provenance.branch },
+    {
+      target: provenance.target,
+      branch: provenance.branch,
+      analyzedAt: scan.analyzedAt,
+      analysisBranch: scan.analysisBranch,
+    },
   );
   showScanningImportResult(displayLabel, todo.id, result);
 }

@@ -22,6 +22,8 @@ export interface FindingChanges {
 export interface ScanningSnapshot extends ScanningProvenance {
   version: 1;
   retrievedAt: string;
+  analysisBranch?: string;
+  analyzedAt?: string;
   findings: Array<Omit<ScanningFinding, "ruleTitle" | "ruleDescription"> & { returned: boolean }>;
   rules: Array<{ id: string; title?: string; description?: string }>;
 }
@@ -116,7 +118,7 @@ export function writeScanningProvenance(
     .split(/\r?\n/)
     .filter(
       (line) =>
-        !/^scan_(?:source|scope|grouping|target|branch|refreshed_at|review_required):/.test(line),
+        !/^scan_(?:source|scope|grouping|target|branch|analysis_branch|analyzed_at|refreshed_at|review_required):/.test(line),
     );
   lines.push(
     `scan_source: ${snapshot.source}`,
@@ -125,6 +127,8 @@ export function writeScanningProvenance(
     `scan_target: ${JSON.stringify(snapshot.target)}`,
     ...(snapshot.branch === undefined ? [] : [`scan_branch: ${JSON.stringify(snapshot.branch)}`]),
     `scan_refreshed_at: ${JSON.stringify(snapshot.retrievedAt)}`,
+    ...(snapshot.analysisBranch ? [`scan_analysis_branch: ${JSON.stringify(snapshot.analysisBranch)}`] : []),
+    ...(snapshot.analyzedAt ? [`scan_analyzed_at: ${JSON.stringify(snapshot.analyzedAt)}`] : []),
     `scan_review_required: ${review}`,
   );
   return `---${eol}${lines.join(eol)}${eol}---${eol}${content.slice(header[0].length)}`;
@@ -140,6 +144,9 @@ export function readScanningSnapshot(
   if (
     snapshot?.version !== 1 ||
     !Number.isFinite(Date.parse(snapshot.retrievedAt)) ||
+    (snapshot.analyzedAt !== undefined &&
+      (typeof snapshot.analyzedAt !== "string" || !Number.isFinite(Date.parse(snapshot.analyzedAt)))) ||
+    (snapshot.analysisBranch !== undefined && typeof snapshot.analysisBranch !== "string") ||
     snapshot.source !== provenance.source ||
     snapshot.scope !== provenance.scope ||
     snapshot.grouping !== provenance.grouping ||
@@ -171,6 +178,7 @@ export function reconcileScanningSnapshot(
   findings: ScanningFinding[],
   existing: boolean,
   retrievedAt: string,
+  analysis: { analysisBranch?: string; analyzedAt?: string } = {},
 ): { snapshot: ScanningSnapshot; changes: FindingChanges } {
   const old = new Map(previous?.findings.map((f) => [f.id, f]) ?? []);
   const rules = new Map(previous?.rules.map((rule) => [rule.id, rule]) ?? []);
@@ -185,7 +193,7 @@ export function reconcileScanningSnapshot(
     if (existing && !previous) changes.uncompared++;
     else if (!before) changes.added++;
     else if (
-      ["rule", "severity", "message", "path", "line", "url"].some(
+      ["rule", "severity", "message", "path", "line", "url", "resolved"].some(
         (key) => before[key as keyof typeof fields] !== fields[key as keyof typeof fields],
       ) ||
       !before.returned
@@ -209,6 +217,7 @@ export function reconcileScanningSnapshot(
       ...provenance,
       version: 1,
       retrievedAt,
+      ...analysis,
       findings: current,
       rules: [...rules.values()]
         .filter((rule) => usedRules.has(rule.id))
